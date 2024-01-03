@@ -113,7 +113,7 @@ class GaudiAccelerator(Accelerator):
                     f"Unknown mixed_precision mode: {mixed_precision}. Choose between {PrecisionType.list()}"
                 )
             elif mixed_precision == "fp16":
-                raise ValueError("fp16 is not supported on Habana Gaudi.")
+                raise ValueError("fp16 is not supported on Intel Gaudi AI Accelerator.")
 
         dynamo_plugin = (
             GaudiTorchDynamoPlugin() if dynamo_backend is None else GaudiTorchDynamoPlugin(backend=dynamo_backend)
@@ -252,7 +252,7 @@ class GaudiAccelerator(Accelerator):
 
     @property
     def use_fp16(self):
-        raise ValueError("fp16 is not supported on Habana Gaudi.")
+        raise ValueError("fp16 is not supported on Intel® Gaudi® AI Accelerator.")
 
     def prepare_model(self, model: torch.nn.Module, device_placement: bool = None, evaluation_mode: bool = False):
         """

@@ -18,7 +18,7 @@
 ###############################################################################
 
 """
-Fast and lightweight alternative to DistributeDataParallel for Habana Gaudi
+Fast and lightweight alternative to DistributeDataParallel for Intel® Gaudi® AI Accelerator
 """
 
 import torch

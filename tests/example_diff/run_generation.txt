@@ -3,7 +3,7 @@
 19c18,19
 < 
 ---
-> Conditional text generation on Habana Gaudi/Gaudi2.
+> Conditional text generation on Intel® Gaudi® AI Accelerator.
 > """
 22c22
 < import inspect

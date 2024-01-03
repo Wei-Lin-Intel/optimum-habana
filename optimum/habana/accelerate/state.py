@@ -183,6 +183,6 @@ class GaudiAcceleratorState(AcceleratorState):
             mixed_precision = self._mixed_precision
 
         if mixed_precision == "fp16":
-            raise ValueError("fp16 is not supported on Habana Gaudi.")
+            raise ValueError("fp16 is not supported on Intel Gaudi AI Accelerator.")
 
         return mixed_precision

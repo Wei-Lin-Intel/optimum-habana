@@ -14,9 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 
-# Text Generation Inference on Habana Gaudi
+# Text Generation Inference on Intel® Gaudi® AI Accelerator
 
-To use [🤗 text-generation-inference](https://github.com/huggingface/text-generation-inference) on Habana Gaudi/Gaudi2, follow these steps:
+To use [🤗 text-generation-inference](https://github.com/huggingface/text-generation-inference) on Intel Gaudi AI Accelerator, follow these steps:
 
 1. Build the Docker image located in this folder with:
    ```bash
@@ -79,6 +79,6 @@ Enviroment Variables Added:
 </div>
 
 
-> The license to use TGI on Habana Gaudi is the one of TGI: https://github.com/huggingface/text-generation-inference/blob/main/LICENSE
+> The license to use TGI on Intel® Gaudi® AI Accelerator is the one of TGI: https://github.com/huggingface/text-generation-inference/blob/main/LICENSE
 >
 > Please reach out to api-enterprise@huggingface.co if you have any question.

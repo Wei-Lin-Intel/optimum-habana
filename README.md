@@ -27,7 +27,7 @@ The list of officially validated models and tasks is available [here](https://gi
 ## What is a Habana Processing Unit (HPU)?
 
 HPUs offer fast model training and inference as well as a great price-performance ratio.
-Check out [this blog post about BERT pre-training](https://huggingface.co/blog/pretraining-bert) and [this article benchmarking Habana Gaudi2 versus Nvidia A100 GPUs](https://huggingface.co/blog/habana-gaudi-2-benchmark) for concrete examples.
+Check out [this blog post about BERT pre-training](https://huggingface.co/blog/pretraining-bert) and [this article benchmarking Intel® Gaudi® 2 AI Accelerator versus Nvidia A100 GPUs](https://huggingface.co/blog/habana-gaudi-2-benchmark) for concrete examples.
 If you are not familiar with HPUs and would like to know more about them, we recommend you take a look at [our conceptual guide](https://huggingface.co/docs/optimum/habana/concept_guides/hpu).
 
 
@@ -197,7 +197,7 @@ If you find any issues while using those, please open an issue or a pull request
 
 ## Gaudi Setup
 
-Please refer to Habana Gaudi's official [installation guide](https://docs.habana.ai/en/latest/Installation_Guide/index.html).
+Please refer to Intel® Gaudi® AI Accelerator's official [installation guide](https://docs.habana.ai/en/latest/Installation_Guide/index.html).
 
 > Tests should be run in a Docker container based on Habana Docker images.
 >

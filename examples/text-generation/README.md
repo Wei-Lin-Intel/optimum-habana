@@ -253,7 +253,7 @@ QUANT_CONFIG=./quantization_config//maxabs_quant.json deepspeed --num_gpus 8 run
 --fp8
 ```
 
-Alternatively use this command to quantize based on the measurements from the previous command. 
+Alternatively, use this command to quantize based on the measurements from the previous command. 
 It runs batch size 277, max_new_tokens and max_input_tokens 2048 on the 70B model and prints performance statistics:
 
 ```bash

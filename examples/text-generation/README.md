@@ -98,7 +98,7 @@ Here are a few settings you may be interested in:
 - `--prompt` to benchmark the model on one or several prompts of your choice
 - `--attn_softmax_bf16` to run attention softmax layer in bfloat16 precision provided that the model (such as Llama) supports it
 - `--trim_logits` to calculate logits only for the last token in the first time step provided that the model (such as Llama) supports it
-- `--kv_cache_fp8` Store kv-cache in float8 when kv-cache is used
+- `--kv_cache_fp8` Deprecated - Store kv-cache in float8 when kv-cache is used. should not be used with HQT.
 - `--fp8` Enable Quantization to fp8
 
 For example, you can reproduce the results presented in [this blog post](https://huggingface.co/blog/habana-gaudi-2-bloom) with the following command:
@@ -236,7 +236,8 @@ QUANT_CONFIG=./quantization_config//maxabs_measure.json deepspeed --num_gpus 8 r
 --batch_size 1
 ```
 
-Use this command to quantize the model based on the measurements and run the 70B model:
+Use this command to quantize the model based on the measurements from the previous command.
+It runs the quantized 70B model on all tasks and emits the accuracy:
 
 ```bash
 QUANT_CONFIG=./quantization_config//maxabs_quant.json deepspeed --num_gpus 8 run_lm_eval.py \
@@ -252,8 +253,8 @@ QUANT_CONFIG=./quantization_config//maxabs_quant.json deepspeed --num_gpus 8 run
 --fp8
 ```
 
-Use this command to quantize based on the measurements and run batch size 277,
-2048 max_new_tokens and max_input_tokens on the 70B model:
+Alternatively use this command to quantize based on the measurements from the previous command. 
+It runs batch size 277, max_new_tokens and max_input_tokens 2048 on the 70B model and prints performance statistics:
 
 ```bash
 QUANT_CONFIG=./quantization_config//maxabs_quant.json deepspeed --num_gpus 8 run_generation.py \

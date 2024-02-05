@@ -867,7 +867,7 @@ def main(args):
             "original_sizes": original_sizes,
             "crop_top_lefts": crop_top_lefts,
         }
-    print("libin debug dataset leng ", len(train_dataset))
+
     # DataLoaders creation:
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
@@ -876,7 +876,7 @@ def main(args):
         batch_size=args.train_batch_size,
         num_workers=args.dataloader_num_workers,
     )
-    print("libin debug dataset leng ", len(train_dataset) , len(train_dataloader))
+
     # Set unet as trainable.
     unet.train()
 

@@ -7,7 +7,7 @@ python ../gaudi_spawn.py --world_size 8 --use_mpi train_text_to_image_sdxl.py \
   --random_flip \
   --proportion_empty_prompts=0.2 \
   --train_batch_size 16 \
-  --max_train_steps 2500 \
+  --max_train_steps 313 \
   --learning_rate 1e-05 \
   --max_grad_norm 1 \
   --lr_scheduler constant \

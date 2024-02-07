@@ -1,6 +1,7 @@
 import contextlib
 import math
 from typing import Optional, Tuple, Union
+import os
 
 import torch
 
@@ -161,6 +162,59 @@ def gaudi_falcon_attention_split_heads(
         value = torch.index_select(fused_qkv, 2, index=torch.tensor([d2 + 1], device=fused_qkv.device))
         return query, key, value
 
+
+###sc
+class Softmax(nn.Module):
+      def __init__(self):
+        super().__init__()
+
+      def forward(self, x, dim = None):
+        return torch.softmax(x, dim)
+
+class Matmul(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, *args, **kwargs):
+        return torch.matmul(*args, **kwargs)
+
+# ScaledDotProductAttention is based on torch.nn.functional.scaled_dot_product_attention
+class ScaledDotProductAttention(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.bmm1 = Matmul()
+        self.bmm2 = Matmul()
+        self.softmax = Softmax()
+
+    def forward(self, query, key, value, attn_mask=None, dropout_p=0.0,
+    is_causal=False, scale=None) -> torch.Tensor:
+        # Efficient implementation equivalent to the following:
+        L, S = query.size(-2), key.size(-2)
+        scale_factor = 1 / math.sqrt(query.size(-1)) if scale is None else scale
+        #attn_bias = torch.zeros(1,1,L, S, dtype=query.dtype).to('hpu') #####sc
+
+        if is_causal:
+            assert attn_mask is None
+            temp_mask = torch.ones(L, S, dtype=torch.bool).tril(diagonal=0)
+            attn_bias.masked_fill_(temp_mask.logical_not(), float("-inf"))
+            attn_bias.to(query.dtype)
+
+        if attn_mask is not None:
+            if attn_mask.dtype == torch.bool:
+                attn_mask.masked_fill_(attn_mask.logical_not(), float("-inf"))
+            #else:
+            #    print("***************bias", attn_bias.shape)
+            #    print("***************mask", attn_mask.shape)
+            #    attn_bias += attn_mask
+
+        attn_weight = self.bmm1(query, key.transpose(-2, -1)) * scale_factor
+        #print("************attn_weight", attn_weight.shape)
+        attn_weight += attn_mask #bias ####sc
+        attn_weight = self.softmax(attn_weight, dim=-1)
+        attn_weight = torch.dropout(attn_weight, dropout_p, train=True)
+        return self.bmm2(attn_weight, value)
+
+
 class GaudiFalconAttention(FalconAttention):
     def __init__(self, config:FalconConfig):
         super().__init__(config)
@@ -173,6 +227,8 @@ class GaudiFalconAttention(FalconAttention):
             qkv_out_dim = 3 * self.hidden_size
         self.query_key_value = nn.Linear(self.hidden_size, qkv_out_dim, bias=config.bias) ##FalonLinear
         self.dense = nn.Linear(self.hidden_size, self.hidden_size, bias=config.bias) ##FalconLinear
+
+        self.sdpa = ScaledDotProductAttention() ######only when env 
 
     def forward(
         self,
@@ -251,10 +307,13 @@ class GaudiFalconAttention(FalconAttention):
                 attn_output = attention_scores @ value_layer_
             else:
                 if FusedSDPA:
-                    with sdp_kernel(enable_recompute=False) if SDPContext else contextlib.nullcontext():
-                        attn_output = FusedSDPA.apply(
-                            query_layer_, key_layer_, value_layer_, attention_mask_float, 0.0, False
-                        )
+                    if os.getenv("QUANT_CONFIG", ""):
+                        attn_output = self.sdpa(query_layer_, key_layer_, value_layer_, attention_mask_float, 0.0, is_causal=False)
+                    else:
+                        with sdp_kernel(enable_recompute=False) if SDPContext else contextlib.nullcontext():
+                            attn_output = FusedSDPA.apply(
+                                query_layer_, key_layer_, value_layer_, attention_mask_float, 0.0, False
+                            )
                 else:
                     # Workaround util scaled_dot_product_attention support broadcast.
                     if self.training is True and query_layer_.shape != key_layer_.shape:

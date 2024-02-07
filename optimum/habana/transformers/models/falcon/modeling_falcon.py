@@ -37,6 +37,7 @@ from transformers.modeling_outputs import (
 from transformers.models.falcon.configuration_falcon import FalconConfig
 from transformers.models.falcon.modeling_falcon import (
     FalconAttention,
+    FalconDecoderLayer,
     FalconForCausalLM,
     FalconMLP,
     FalconModel,
@@ -44,6 +45,7 @@ from transformers.models.falcon.modeling_falcon import (
     dropout_add,
     rotate_half,
 )
+from ..modeling_all_models import ScopedLinearAllReduce
 from transformers.utils import logging
 
 
@@ -230,6 +232,7 @@ class GaudiFalconAttention(FalconAttention):
 
         self.sdpa = ScaledDotProductAttention() ######only when env 
 
+    '''
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -377,6 +380,166 @@ class GaudiFalconAttention(FalconAttention):
                 return output_tensor, present, attention_probs
             else:
                 return output_tensor, present
+    '''
+
+    def pre_attn_forward(
+        self,
+        hidden_states: torch.Tensor,
+        alibi: Optional[torch.Tensor],
+        attention_mask: torch.Tensor,
+        position_ids: Optional[torch.LongTensor] = None,
+        layer_past: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+        head_mask: Optional[torch.Tensor] = None,
+        use_cache: bool = False,
+        output_attentions: bool = False,
+        token_idx: Optional[torch.Tensor] = None,
+    ):
+        """
+        Copied from FalconAttention: https://github.com/huggingface/transformers/blob/main/src/transformers/models/falcon/modeling_falcon.py
+        The only differences are:
+        - add new args token_idx and position_ids
+        - replace F.scaled_dot_product_attention with Habana torch's version
+        """
+        fused_qkv = self.query_key_value(hidden_states)  # [batch_size, seq_length, 3 x hidden_size]
+        # 3 x [batch_size, seq_length, num_heads, head_dim]
+        (query_layer, key_layer, value_layer) = self._split_heads(fused_qkv)
+
+        batch_size, query_length, _, _ = query_layer.shape
+
+        query_layer = query_layer.transpose(1, 2).reshape(-1, query_length, self.head_dim)
+        key_layer = key_layer.transpose(1, 2).reshape(-1, query_length, self.head_dim)
+        value_layer = value_layer.transpose(1, 2).reshape(-1, query_length, self.head_dim)
+
+        past_kv_length = 0
+        seq_len = query_layer.shape[1]
+        if layer_past is not None:
+            if token_idx is not None:
+                # When token_idx is used,
+                # past_kv_length = 0
+                # static seq len = (input token len + max output token len)
+                seq_len = layer_past[0].shape[1]
+            else:
+                past_kv_length = layer_past[0].shape[1]
+
+        query_layer, key_layer = self.maybe_rotary(query_layer, key_layer, seq_len, position_ids, past_kv_length)
+
+        if layer_past is not None:
+            past_key, past_value = layer_past
+            if token_idx is not None:
+                past_key.index_copy_(1, token_idx - 1, key_layer)
+                past_value.index_copy_(1, token_idx - 1, value_layer)
+                key_layer = past_key
+                value_layer = past_value
+            else:
+                # concatenate along seq_length dimension:
+                #  - key: [batch_size * self.num_heads, kv_length, head_dim]
+                #  - value: [batch_size * self.num_heads, kv_length, head_dim]
+                key_layer = torch.cat((past_key, key_layer), dim=1)
+                value_layer = torch.cat((past_value, value_layer), dim=1)
+
+        _, kv_length, _ = key_layer.shape
+        if use_cache:
+            present = (key_layer, value_layer)
+        else:
+            present = None
+
+        float_min = torch.finfo(query_layer.dtype).min
+        attention_mask_float = (attention_mask * 1.0).masked_fill(attention_mask, float_min).to(query_layer.dtype)
+
+        query_layer_ = query_layer.reshape(batch_size, -1, query_length, self.head_dim)
+        key_layer_ = key_layer.reshape(batch_size, -1, seq_len, self.head_dim)
+        value_layer_ = value_layer.reshape(batch_size, -1, seq_len, self.head_dim)
+
+        if alibi is None:
+            if output_attentions:
+                attention_scores = query_layer_ @ key_layer_.transpose(-1, -2)
+                attention_scores /= math.sqrt(self.head_dim)
+
+                attention_scores = F.softmax(attention_scores + attention_mask_float, dim=-1, dtype=hidden_states.dtype)
+                attn_output = attention_scores @ value_layer_
+            else:
+                if FusedSDPA:
+                    if os.getenv("QUANT_CONFIG", ""):
+                        attn_output = self.sdpa(query_layer_, key_layer_, value_layer_, attention_mask_float, 0.0, is_causal=False)
+                    else:
+                        with sdp_kernel(enable_recompute=False) if SDPContext else contextlib.nullcontext():
+                            attn_output = FusedSDPA.apply(
+                                query_layer_, key_layer_, value_layer_, attention_mask_float, 0.0, False
+                            )
+                else:
+                    # Workaround util scaled_dot_product_attention support broadcast.
+                    if self.training is True and query_layer_.shape != key_layer_.shape:
+                        key_layer_ = torch.broadcast_to(key_layer_, query_layer_.shape)
+                        value_layer_ = torch.broadcast_to(value_layer_, query_layer_.shape)
+                    attn_output = F.scaled_dot_product_attention(
+                        query_layer_, key_layer_, value_layer_, attention_mask_float, 0.0, is_causal=False
+                    )
+                # Performance improvement for HPU
+                if self.training is True and htcore:
+                    htcore.mark_step()
+                attention_scores = None
+
+            attn_output = attn_output.view(batch_size, -1, query_length, self.head_dim)
+            attn_output = attn_output.permute(0, 2, 1, 3)
+            attn_output = attn_output.reshape(batch_size, query_length, -1)
+
+            output_tensor = self.dense(attn_output)
+
+            if output_attentions:
+                return output_tensor, present, attention_scores
+            else:
+                return output_tensor, present
+
+        else:
+            matmul_result = query_layer_ @ key_layer_.transpose(-1, -2)
+
+            # change view to [batch_size, num_heads, q_length, kv_length]
+            attention_scores = matmul_result.view(batch_size, self.num_heads, query_length, kv_length)
+
+            # cast attention scores to fp32, compute scaled softmax and cast back to initial dtype - [batch_size, num_heads, q_length, kv_length]
+            input_dtype = attention_scores.dtype
+            # `float16` has a minimum value of -65504.0, whereas `bfloat16` and `float32` have a minimum value of `-3.4e+38`
+            if input_dtype == torch.float16 or input_dtype == torch.bfloat16:
+                attention_scores = attention_scores.to(torch.float32)
+            # Matt (HF) note: We could possibly use F.scaled_dot_product_attention here too, by
+            # adding (alibi * self.inv_norm_factor) to attention_mask_float. I think this would be mathematically
+            # equivalent and more performant, but there might be a numerical difference. If you're reading this
+            # and you'd like to experiment and maybe file a PR, feel free!
+            attention_logits = attention_scores + alibi.view(batch_size, self.num_heads, 1, -1)
+            attention_logits *= self.inv_norm_factor
+            attention_probs = F.softmax(attention_logits + attention_mask_float, dim=-1, dtype=hidden_states.dtype)
+            # [batch_size, num_heads, q_length, kv_length]
+            attention_probs = self.attention_dropout(attention_probs)
+
+            if head_mask is not None:
+                attention_probs = attention_probs * head_mask
+
+            # change view [batch_size, num_heads, q_length, kv_length]
+            attention_probs_reshaped = attention_probs.view(batch_size, self.num_heads, query_length, kv_length)
+
+            # matmul: [batch_size * num_heads, q_length, head_dim]
+            context_layer = (attention_probs_reshaped @ value_layer_).flatten(0, 1)
+
+            # change view [batch_size, q_length, num_heads * head_dim]
+            context_layer = self._merge_heads(context_layer)
+
+            output_tensor = self.dense(context_layer)
+
+            if output_attentions:
+                return output_tensor, present, attention_probs
+            else:
+                return output_tensor, present
+
+
+    def attention_all_reduce(self, attn_output):
+        if hasattr(self.dense, "all_reduce"):
+            self.dense.all_reduce(attn_output)
+
+    def post_attn_forward(self, attn_output):
+        if hasattr(self.dense, "all_reduce"):
+            self.dense.post_all_reduce(attn_output)
+        return attn_output
+
 
 class GaudiFalconMLP(FalconMLP):
     def __init__(self, config: FalconConfig):
@@ -385,72 +548,176 @@ class GaudiFalconMLP(FalconMLP):
         self.dense_h_to_4h = nn.Linear(hidden_size, 4 * hidden_size, bias=config.bias) #FalconLinear
         self.dense_4h_to_h = nn.Linear(4 * hidden_size, hidden_size, bias=config.bias) #FalconLinear
 
+    
+    def pre_mlp_forward(self, x):
+        x = self.act(self.dense_h_to_4h(x))
+        x = self.dense_4h_to_h(x)
+        return x
 
-def gaudi_falcon_decoder_layer_forward(
-    self,
-    hidden_states: torch.Tensor,
-    alibi: Optional[torch.Tensor],
-    attention_mask: torch.Tensor,
-    position_ids: Optional[torch.LongTensor] = None,
-    layer_past: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
-    head_mask: Optional[torch.Tensor] = None,
-    use_cache: bool = False,
-    output_attentions: bool = False,
-    token_idx: Optional[torch.Tensor] = None,
-):
-    """
-    Copied from FalconDecoderLayer.forward: https://github.com/huggingface/transformers/blob/main/src/transformers/models/falcon/modeling_falcon.py
-    The only differences are:
-    - add new args token_idx and position_ids
-    - add token_idx and position_ids into attention inputs
-    """
-    residual = hidden_states
+    def mlp_all_reduce(self, x):
+        if hasattr(self.dense_4h_to_h, "all_reduce"):
+        #print("************", hasattr(self.dense_4h_to_h, "all_reduce"))
+        #if self.dense_4h_to_h.__class__ is ScopedLinearAllReduce:
+            self.dense_4h_to_h.all_reduce(x)
+    
+    def post_mlp_forward(self, x):
+        if hasattr(self.dense_4h_to_h, "all_reduce"):
+        #if self.dense_4h_to_h.__class__ is ScopedLinearAllReduce:
+            self.dense_4h_to_h.post_all_reduce(x)
+        return x
 
-    if self.config.new_decoder_architecture:
-        attention_layernorm_out = self.ln_attn(hidden_states)
-        mlp_layernorm_out = self.ln_mlp(hidden_states)
-    else:
-        attention_layernorm_out = self.input_layernorm(hidden_states)
+class GaudiFalconDecoderLayer(FalconDecoderLayer):
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        alibi: Optional[torch.Tensor],
+        attention_mask: torch.Tensor,
+        position_ids: Optional[torch.LongTensor] = None,
+        layer_past: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+        head_mask: Optional[torch.Tensor] = None,
+        use_cache: bool = False,
+        output_attentions: bool = False,
+        token_idx: Optional[torch.Tensor] = None,
+        **kwargs,
+    ):
+        """
+        Copied from FalconDecoderLayer: https://github.com/huggingface/transformers/blob/main/src/transformers/models/falcon/modeling_falcon.py
+        The only differences are:
+        - add new args token_idx and position_ids
+        - add token_idx and position_ids into attention inputs
+        """       
+        if "padding_mask" in kwargs:
+            warnings.warn(
+                "Passing `padding_mask` is deprecated and will be removed in v4.37. Please make sure use `attention_mask` instead.`"
+            )
+        '''
+        residual = hidden_states
 
-    # Self attention.
-    attn_outputs = self.self_attention(
-        attention_layernorm_out,
-        layer_past=layer_past,
-        attention_mask=attention_mask,
-        position_ids=position_ids,
-        alibi=alibi,
-        head_mask=head_mask,
-        use_cache=use_cache,
-        output_attentions=output_attentions,
-        token_idx=token_idx,
-    )
-
-    attention_output = attn_outputs[0]
-
-    if not self.config.new_decoder_architecture:
-        if self.config.parallel_attn:
-            mlp_layernorm_out = attention_layernorm_out
+        if self.config.new_decoder_architecture:
+            attention_layernorm_out = self.ln_attn(hidden_states)
+            mlp_layernorm_out = self.ln_mlp(hidden_states)
         else:
-            residual = dropout_add(attention_output, residual, self.config.attention_dropout, training=self.training)
-            mlp_layernorm_out = self.post_attention_layernorm(residual)
+            attention_layernorm_out = self.input_layernorm(hidden_states)
 
-    outputs = attn_outputs[1:]
+        # Self attention.
+        attn_outputs = self.self_attention(
+            attention_layernorm_out,
+            layer_past=layer_past,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            alibi=alibi,
+            head_mask=head_mask,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            token_idx=token_idx,
+        )
 
-    # MLP.
-    mlp_output = self.mlp(mlp_layernorm_out)
+        attention_output = attn_outputs[0]
 
-    if self.config.new_decoder_architecture or self.config.parallel_attn:
-        mlp_output += attention_output
+        if not self.config.new_decoder_architecture:
+            if self.config.parallel_attn:
+                mlp_layernorm_out = attention_layernorm_out
+            else:
+                residual = dropout_add(attention_output, residual, self.config.attention_dropout, training=self.training)
+                mlp_layernorm_out = self.post_attention_layernorm(residual)
 
-    output = dropout_add(mlp_output, residual, self.config.hidden_dropout, training=self.training)
+        outputs = attn_outputs[1:]
+        '''
+        residual = hidden_states
+        attn_outputs, present, attn_scores, mlp_layernorm_out = self.pre_attn( #layernorm+attention before AllReduce
+                    hidden_states,
+                    layer_past=layer_past,
+                    attention_mask=attention_mask,
+                    position_ids=position_ids,
+                    alibi=alibi,
+                    head_mask=head_mask,
+                    use_cache=use_cache,
+                    output_attentions=output_attentions,
+                    token_idx=token_idx,
+                )
+        #print("*************", attn_outputs)
+        self.self_attention.attention_all_reduce(attn_outputs) #AllReduce
+        attn_outputs = self.self_attention.post_attn_forward(attn_outputs) #after AllReduce post_attn_forward() has to be call to add bias
 
-    if use_cache:
-        outputs = (output,) + outputs
-    else:
-        outputs = (output,) + outputs[1:]
+        attention_output = attn_outputs#[0]
 
-    return outputs  # hidden_states, present, attentions
+        if not self.config.new_decoder_architecture:
+            if self.config.parallel_attn:
+                mlp_layernorm_out = attention_layernorm_out
+            else:
+                residual = dropout_add(
+                    attention_output, residual, self.config.attention_dropout, training=self.training
+                )
+                mlp_layernorm_out = self.post_attention_layernorm(residual)
 
+        outputs = (present, attn_scores)#attn_outputs[1:]
+
+        # MLP
+        #mlp_output = self.mlp(mlp_layernorm_out)
+        mlp_output = self.mlp.pre_mlp_forward(mlp_layernorm_out)
+        self.mlp.mlp_all_reduce(mlp_output)
+        mlp_output = self.mlp.post_mlp_forward(mlp_output)
+
+        if self.config.new_decoder_architecture or self.config.parallel_attn:            
+            mlp_output += attention_output
+
+        output = dropout_add(mlp_output, residual, self.config.hidden_dropout, training=self.training)
+
+        if use_cache:
+            outputs = (output,) + outputs
+        else:
+            outputs = (output,) + outputs[1:]
+
+        return outputs  # hidden_states, present, attentions
+        
+
+    def pre_attn(
+        self,
+        hidden_states: torch.Tensor,
+        alibi: Optional[torch.Tensor],
+        attention_mask: torch.Tensor,
+        position_ids: Optional[torch.LongTensor] = None,
+        layer_past: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+        head_mask: Optional[torch.Tensor] = None,
+        use_cache: bool = False,
+        output_attentions: bool = False,
+        token_idx: Optional[torch.Tensor] = None,
+    ):
+        if self.config.new_decoder_architecture:
+            attention_layernorm_out = self.ln_attn(hidden_states)
+            mlp_layernorm_out = self.ln_mlp(hidden_states)
+        else:
+            attention_layernorm_out = self.input_layernorm(hidden_states)
+            mlp_layernorm_out = None
+        
+        # Self attention.
+        attn_scores = None
+        if output_attentions:
+            attn_outputs, present, attn_scores = self.self_attention.pre_attn_forward(
+                attention_layernorm_out,
+                layer_past=layer_past,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                alibi=alibi,
+                head_mask=head_mask,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                token_idx=token_idx,
+            )
+        else:
+            attn_outputs, present = self.self_attention.pre_attn_forward(
+                attention_layernorm_out,
+                layer_past=layer_past,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                alibi=alibi,
+                head_mask=head_mask,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                token_idx=token_idx,
+            )
+        
+        return attn_outputs, present, attn_scores, mlp_layernorm_out
 
 class GaudiFalconModel(FalconModel):
     """

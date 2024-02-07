@@ -22,6 +22,7 @@ from .models import (
     GaudiCodeGenAttention,
     GaudiCodeGenForCausalLM,
     GaudiFalconAttention,
+    GaudiFalconDecoderLayer,
     GaudiFalconForCausalLM,
     GaudiFalconMLP,
     GaudiFalconModel,
@@ -65,7 +66,7 @@ from .models import (
     gaudi_esmfolding_trunk_forward,
     #gaudi_falcon_attention_forward,
     gaudi_falcon_attention_split_heads,
-    gaudi_falcon_decoder_layer_forward,
+    #gaudi_falcon_decoder_layer_forward,
     gaudi_falcon_rotary_embedding_forward,
     gaudi_get_extended_attention_mask,
     gaudi_gpt2_block_forward,
@@ -251,7 +252,8 @@ def adapt_transformers_to_gaudi():
     transformers.models.falcon.modeling_falcon.FalconForCausalLM = GaudiFalconForCausalLM
     transformers.models.falcon.modeling_falcon.FalconMLP = GaudiFalconMLP
     transformers.models.falcon.modeling_falcon.FalconModel = GaudiFalconModel
-    transformers.models.falcon.modeling_falcon.FalconDecoderLayer.forward = gaudi_falcon_decoder_layer_forward
+    #transformers.models.falcon.modeling_falcon.FalconDecoderLayer.forward = gaudi_falcon_decoder_layer_forward
+    transformers.models.falcon.modeling_falcon.FalconDecoderLayer = GaudiFalconDecoderLayer
     transformers.models.falcon.modeling_falcon.FalconAttention = GaudiFalconAttention
     #transformers.models.falcon.modeling_falcon.FalconAttention.forward = gaudi_falcon_attention_forward
     transformers.models.falcon.modeling_falcon.FalconRotaryEmbedding.forward = gaudi_falcon_rotary_embedding_forward

@@ -17,6 +17,7 @@
 import copy
 import inspect
 import math
+import time
 import warnings
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -1733,11 +1734,13 @@ class GaudiGenerationMixin(GenerationMixin):
         bucket_internal = model_kwargs.get("bucket_internal", None)
         reduce_recompile = model_kwargs.get("reduce_recompile", False)
 
+        
         if not bucket_internal:
             if bucket_size >= 0:
                 inc = iter(incrementor(bucket_size, cur_len))
             if bucket_size > 0:
                 assert "position_ids" not in model_kwargs, "Untested path"
+        greedy_first = True
         token_idx = model_kwargs.get("token_idx", None)
         if token_idx is not None:
             # Update cur_len in case of static shapes
@@ -1881,6 +1884,12 @@ class GaudiGenerationMixin(GenerationMixin):
 
                     torch_hpu.synchronize()
                 hb_gen_time.step()
+            if greedy_first:
+                import habana_frameworks.torch.hpu as torch_hpu
+
+                torch_hpu.synchronize()
+                print(f"First Token time(greedy):{time.perf_counter()*1000}")
+                greedy_first = False
 
         if (
             model_kwargs.get("use_hpu_graphs", False)
@@ -2155,6 +2164,7 @@ class GaudiGenerationMixin(GenerationMixin):
         )
         hb_profer.start()
 
+        sample_first = True
         if not bucket_internal:
             if bucket_size >= 0:
                 inc = iter(incrementor(bucket_size, cur_len))
@@ -2298,6 +2308,13 @@ class GaudiGenerationMixin(GenerationMixin):
                 if not time_to_first_token_done:
                     time_to_first_token_done = True
                     import habana_frameworks.torch.hpu as torch_hpu
+
+            if sample_first:
+                import habana_frameworks.torch.hpu as torch_hpu
+
+                torch_hpu.synchronize()
+                print(f"First Token time(sample):{time.perf_counter()*1000}")
+                sample_first = False
 
                     torch_hpu.synchronize()
                 hb_gen_time.step()

@@ -380,6 +380,8 @@ def main():
         def generate(size=None, reduce_recompile=False):
             """Generates sequences from the input sentences and returns them."""
             encode_t0 = time.perf_counter()
+            t0 = time.perf_counter()
+            print(f"Step4+ starting time is {t0*1000}", flush=True)
             # Tokenization
             if args.max_input_tokens > 0:
                 input_tokens = tokenizer.batch_encode_plus(
@@ -401,7 +403,7 @@ def main():
                     if torch.is_tensor(input_tokens[t]):
                         input_tokens[t] = input_tokens[t].to(args.device)
             iteration_times = []
-            outputs = model.generate(
+            output_tokens = model.generate(
                 **input_tokens,
                 generation_config=generation_config,
                 assistant_model=assistant_model,
@@ -413,9 +415,12 @@ def main():
                 iteration_times=iteration_times,
                 profiling_record_shapes=args.profiling_record_shapes,
             ).cpu()
+            outputs = tokenizer.batch_decode(output_tokens, skip_special_tokens=True)
+            duration = time.perf_counter() - t0
             first_token_time = iteration_times[0] + encode_duration
             logger.info(f"Time to first token = {first_token_time*1000}ms")
-            return tokenizer.batch_decode(outputs, skip_special_tokens=True)
+            print(f"Total E2E time of this iteration is {duration:.3f}s", flush=True)
+            return outputs
 
         from optimum.habana.utils import HabanaProfile
 

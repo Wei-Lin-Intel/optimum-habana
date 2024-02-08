@@ -17,6 +17,7 @@
 import copy
 import inspect
 import math
+import time
 import warnings
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -1399,11 +1400,13 @@ class GaudiGenerationMixin(GenerationMixin):
         reduce_recompile = model_kwargs.get("reduce_recompile", False)
 
         prompt_len = input_ids.shape[-1]
+        
         if not bucket_internal:
             if bucket_size >= 0:
                 inc = iter(incrementor(bucket_size, prompt_len))
             if bucket_size > 0:
                 assert "position_ids" not in model_kwargs, "Untested path"
+        greedy_first = True
         cur_len = prompt_len
         token_idx = model_kwargs.get("token_idx", None)
         if token_idx is not None:
@@ -1531,6 +1534,13 @@ class GaudiGenerationMixin(GenerationMixin):
                 this_peer_finished = True
 
             hb_profer.step()
+
+            if greedy_first:
+                import habana_frameworks.torch.hpu as torch_hpu
+
+                torch_hpu.synchronize()
+                print(f"First Token time(greedy):{time.perf_counter()*1000}")
+                greedy_first = False
 
             if this_peer_finished and not synced_gpus:
                 break
@@ -1760,6 +1770,7 @@ class GaudiGenerationMixin(GenerationMixin):
         hb_profer = HabanaProfile(warmup=profiling_warmup_steps, active=profiling_steps)
         hb_profer.start()
         this_peer_finished = False  # used by synced_gpus only
+        sample_first = True
         cur_len = input_ids.shape[-1]
         token_idx = model_kwargs.get("token_idx", None)
         if token_idx is not None:
@@ -1867,6 +1878,13 @@ class GaudiGenerationMixin(GenerationMixin):
                 this_peer_finished = True
 
             hb_profer.step()
+
+            if sample_first:
+                import habana_frameworks.torch.hpu as torch_hpu
+
+                torch_hpu.synchronize()
+                print(f"First Token time(sample):{time.perf_counter()*1000}")
+                sample_first = False
 
             if this_peer_finished and not synced_gpus:
                 break

@@ -978,14 +978,7 @@ def main(args):
         model = model._orig_mod if is_compiled_module(model) else model
         return model
 
-    hb_profiler = None
-    if args.profiling_warmup_steps or args.profiling_steps:
-        hb_profiler = HabanaProfile(
-            warmup=args.profiling_warmup_steps,
-            active=args.profiling_steps,
-            record_shapes=False,
-        )
-        hb_profiler.start()
+    hb_profiler = HabanaProfile(warmup=args.profiling_warmup_steps, active=args.profiling_steps)
     # Train!
     total_batch_size = args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
 
@@ -1156,11 +1149,8 @@ def main(args):
                 lr_scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
                 htcore.mark_step()
-                if hb_profiler:
-                  hb_profiler.step()
+                hb_profiler.step()
 
-            if hb_profiler:
-                hb_profiler.stop()
 
             # Checks if the accelerator has performed an optimization step behind the scenes
             if accelerator.sync_gradients:
@@ -1201,6 +1191,7 @@ def main(args):
             if global_step >= args.max_train_steps:
                 break
 
+        hb_profiler.stop()
         if accelerator.is_main_process:
             if args.validation_prompt is not None and (epoch+1) % args.validation_epochs == 0:
                 logger.info(

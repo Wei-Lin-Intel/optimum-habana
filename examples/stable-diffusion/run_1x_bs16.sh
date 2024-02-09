@@ -16,8 +16,8 @@ python train_text_to_image_sdxl.py \
   --gaudi_config_name Habana/stable-diffusion \
   --throughput_warmup_steps 3 \
   --bf16 \
-  --validation_prompt="a horse running on the beach during sunset" \
-  --validation_epochs 48 \
+  --validation_prompt="a cute Sundar Pichai creature" \
+  --validation_epochs 1 \
   --use_hpu_graphs \
   --checkpointing_steps 2500 \
-  --cache_dir /root/software/data/pytorch/huggingface/sdxl 2>&1 | tee log_1x_bs16.txt
+  --cache_dir /root/software/data/pytorch/huggingface/sdxl 2>&1 | tee log_1x_bs16_full_sundar_nohpugraph_validepoch1_noisecpu.txt

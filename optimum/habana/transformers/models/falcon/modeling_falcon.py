@@ -40,6 +40,7 @@ from transformers.models.falcon.modeling_falcon import (
     FalconDecoderLayer,
     FalconForCausalLM,
     FalconMLP,
+    FalconLinear,
     FalconModel,
     build_alibi_tensor,
     dropout_add,
@@ -171,7 +172,7 @@ class Softmax(nn.Module):
         super().__init__()
 
       def forward(self, x, dim = None):
-        return torch.softmax(x, dim)
+        return F.softmax(x, dim)
 
 class Matmul(nn.Module):
     def __init__(self):
@@ -179,11 +180,13 @@ class Matmul(nn.Module):
 
     def forward(self, *args, **kwargs):
         return torch.matmul(*args, **kwargs)
+        
 
 # ScaledDotProductAttention is based on torch.nn.functional.scaled_dot_product_attention
 class ScaledDotProductAttention(nn.Module):
-    def __init__(self):
+    def __init__(self, config: FalconConfig):
         super().__init__()
+        self.head_dim = config.hidden_size // config.num_attention_heads
         self.bmm1 = Matmul()
         self.bmm2 = Matmul()
         self.softmax = Softmax()
@@ -192,10 +195,11 @@ class ScaledDotProductAttention(nn.Module):
     is_causal=False, scale=None) -> torch.Tensor:
         # Efficient implementation equivalent to the following:
         L, S = query.size(-2), key.size(-2)
-        scale_factor = 1 / math.sqrt(query.size(-1)) if scale is None else scale
+        #scale_factor = 1 / math.sqrt(query.size(-1)) if scale is None else scale
+        scale_factor = 1 / math.sqrt(self.head_dim)
         #attn_bias = torch.zeros(1,1,L, S, dtype=query.dtype).to('hpu') #####sc
 
-        if is_causal:
+        if is_causal: ###False
             assert attn_mask is None
             temp_mask = torch.ones(L, S, dtype=torch.bool).tril(diagonal=0)
             attn_bias.masked_fill_(temp_mask.logical_not(), float("-inf"))
@@ -205,16 +209,29 @@ class ScaledDotProductAttention(nn.Module):
             if attn_mask.dtype == torch.bool:
                 attn_mask.masked_fill_(attn_mask.logical_not(), float("-inf"))
             #else:
-            #    print("***************bias", attn_bias.shape)
-            #    print("***************mask", attn_mask.shape)
             #    attn_bias += attn_mask
 
+        htcore.mark_step() ###fixed the acc issue
         attn_weight = self.bmm1(query, key.transpose(-2, -1)) * scale_factor
-        #print("************attn_weight", attn_weight.shape)
+        #htcore.mark_step()
+        #attn_weight_ref = query @ key.transpose(-1, -2)
+        #attn_weight_ref /= math.sqrt(self.head_dim)
+        #print("************221", (attn_weight-attn_weight_ref).abs().max())
+
+
         attn_weight += attn_mask #bias ####sc
         attn_weight = self.softmax(attn_weight, dim=-1)
+        #attn_weight_ref = F.softmax(attn_weight_ref + attn_mask, dim=-1)
+        #print("************226", (attn_weight - attn_weight_ref).abs().max())
         attn_weight = torch.dropout(attn_weight, dropout_p, train=True)
         return self.bmm2(attn_weight, value)
+        
+        #attn_output = self.bmm2(attn_weight, value)
+        #attn_output_ref = attn_weight @ value
+        #print("**************232", (attn_output_ref - attn_output).abs().max())
+        #return attn_output
+        #out, _, _ = torch.ops.hpu.sdpa_fwd(query, key, value, attn_mask, 0.0, scale_factor, is_causal)
+        #return out
 
 
 class GaudiFalconAttention(FalconAttention):
@@ -227,10 +244,10 @@ class GaudiFalconAttention(FalconAttention):
             qkv_out_dim = self.hidden_size + 2 * self.head_dim
         else:
             qkv_out_dim = 3 * self.hidden_size
-        self.query_key_value = nn.Linear(self.hidden_size, qkv_out_dim, bias=config.bias) ##FalonLinear
-        self.dense = nn.Linear(self.hidden_size, self.hidden_size, bias=config.bias) ##FalconLinear
+        self.query_key_value = FalconLinear(self.hidden_size, qkv_out_dim, bias=config.bias) ##FalonLinear ##nn.Linear
+        self.dense = FalconLinear(self.hidden_size, self.hidden_size, bias=config.bias) ##FalconLinear ##nn.Linear
 
-        self.sdpa = ScaledDotProductAttention() ######only when env 
+        self.sdpa = ScaledDotProductAttention(config) ######only when env 
 
     '''
     def forward(
@@ -460,12 +477,24 @@ class GaudiFalconAttention(FalconAttention):
             else:
                 if FusedSDPA:
                     if os.getenv("QUANT_CONFIG", ""):
+
                         attn_output = self.sdpa(query_layer_, key_layer_, value_layer_, attention_mask_float, 0.0, is_causal=False)
+                    
                     else:
                         with sdp_kernel(enable_recompute=False) if SDPContext else contextlib.nullcontext():
-                            attn_output = FusedSDPA.apply(
+                            attn_output_ref = FusedSDPA.apply(
                                 query_layer_, key_layer_, value_layer_, attention_mask_float, 0.0, False
                             )
+                    '''
+                    attention_scores = query_layer_ @ key_layer_.transpose(-1, -2)
+                    attention_scores /= math.sqrt(self.head_dim)
+
+                    attention_scores = F.softmax(attention_scores + attention_mask_float, dim=-1, dtype=hidden_states.dtype)
+                    attn_output_ref2 = attention_scores @ value_layer_
+                    #torch.save(attn_output_ref, 'attn_out_ref.pt')
+                    print("*******attn out diff", (attn_output_ref-attn_output).abs().max())
+                    print("*********attn out diff2", (attn_output_ref-attn_output_ref2).abs().max())
+                    '''
                 else:
                     # Workaround util scaled_dot_product_attention support broadcast.
                     if self.training is True and query_layer_.shape != key_layer_.shape:
@@ -530,7 +559,6 @@ class GaudiFalconAttention(FalconAttention):
             else:
                 return output_tensor, present
 
-
     def attention_all_reduce(self, attn_output):
         if hasattr(self.dense, "all_reduce"):
             self.dense.all_reduce(attn_output)
@@ -545,8 +573,8 @@ class GaudiFalconMLP(FalconMLP):
     def __init__(self, config: FalconConfig):
         super().__init__(config)
         hidden_size = config.hidden_size
-        self.dense_h_to_4h = nn.Linear(hidden_size, 4 * hidden_size, bias=config.bias) #FalconLinear
-        self.dense_4h_to_h = nn.Linear(4 * hidden_size, hidden_size, bias=config.bias) #FalconLinear
+        self.dense_h_to_4h = FalconLinear(hidden_size, 4 * hidden_size, bias=config.bias) #FalconLinear ##nn.Linear
+        self.dense_4h_to_h = FalconLinear(4 * hidden_size, hidden_size, bias=config.bias) #FalconLinear ##nn.Linear
 
     
     def pre_mlp_forward(self, x):

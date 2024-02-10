@@ -211,7 +211,7 @@ class ScaledDotProductAttention(nn.Module):
             #else:
             #    attn_bias += attn_mask
 
-        htcore.mark_step() ###fixed the acc issue
+        #htcore.mark_step() ###fixed the acc issue
         attn_weight = self.bmm1(query, key.transpose(-2, -1)) * scale_factor
         #htcore.mark_step()
         #attn_weight_ref = query @ key.transpose(-1, -2)
@@ -249,7 +249,6 @@ class GaudiFalconAttention(FalconAttention):
 
         self.sdpa = ScaledDotProductAttention(config) ######only when env 
 
-    '''
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -397,7 +396,6 @@ class GaudiFalconAttention(FalconAttention):
                 return output_tensor, present, attention_probs
             else:
                 return output_tensor, present
-    '''
 
     def pre_attn_forward(
         self,
@@ -477,12 +475,11 @@ class GaudiFalconAttention(FalconAttention):
             else:
                 if FusedSDPA:
                     if os.getenv("QUANT_CONFIG", ""):
-
                         attn_output = self.sdpa(query_layer_, key_layer_, value_layer_, attention_mask_float, 0.0, is_causal=False)
                     
                     else:
                         with sdp_kernel(enable_recompute=False) if SDPContext else contextlib.nullcontext():
-                            attn_output_ref = FusedSDPA.apply(
+                            attn_output = FusedSDPA.apply(
                                 query_layer_, key_layer_, value_layer_, attention_mask_float, 0.0, False
                             )
                     '''
@@ -618,73 +615,76 @@ class GaudiFalconDecoderLayer(FalconDecoderLayer):
             warnings.warn(
                 "Passing `padding_mask` is deprecated and will be removed in v4.37. Please make sure use `attention_mask` instead.`"
             )
-        '''
-        residual = hidden_states
+        if not self.config.new_decoder_architecture: ## falcon-7b
+        
+            residual = hidden_states
 
-        if self.config.new_decoder_architecture:
-            attention_layernorm_out = self.ln_attn(hidden_states)
-            mlp_layernorm_out = self.ln_mlp(hidden_states)
-        else:
-            attention_layernorm_out = self.input_layernorm(hidden_states)
-
-        # Self attention.
-        attn_outputs = self.self_attention(
-            attention_layernorm_out,
-            layer_past=layer_past,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            alibi=alibi,
-            head_mask=head_mask,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            token_idx=token_idx,
-        )
-
-        attention_output = attn_outputs[0]
-
-        if not self.config.new_decoder_architecture:
-            if self.config.parallel_attn:
-                mlp_layernorm_out = attention_layernorm_out
+            if self.config.new_decoder_architecture:
+                attention_layernorm_out = self.ln_attn(hidden_states)
+                mlp_layernorm_out = self.ln_mlp(hidden_states)
             else:
-                residual = dropout_add(attention_output, residual, self.config.attention_dropout, training=self.training)
-                mlp_layernorm_out = self.post_attention_layernorm(residual)
+                attention_layernorm_out = self.input_layernorm(hidden_states)
 
-        outputs = attn_outputs[1:]
-        '''
-        residual = hidden_states
-        attn_outputs, present, attn_scores, mlp_layernorm_out = self.pre_attn( #layernorm+attention before AllReduce
-                    hidden_states,
-                    layer_past=layer_past,
-                    attention_mask=attention_mask,
-                    position_ids=position_ids,
-                    alibi=alibi,
-                    head_mask=head_mask,
-                    use_cache=use_cache,
-                    output_attentions=output_attentions,
-                    token_idx=token_idx,
-                )
-        #print("*************", attn_outputs)
-        self.self_attention.attention_all_reduce(attn_outputs) #AllReduce
-        attn_outputs = self.self_attention.post_attn_forward(attn_outputs) #after AllReduce post_attn_forward() has to be call to add bias
+            # Self attention.
+            attn_outputs = self.self_attention(
+                attention_layernorm_out,
+                layer_past=layer_past,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                alibi=alibi,
+                head_mask=head_mask,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                token_idx=token_idx,
+            )
 
-        attention_output = attn_outputs#[0]
+            attention_output = attn_outputs[0]
 
-        if not self.config.new_decoder_architecture:
-            if self.config.parallel_attn:
-                mlp_layernorm_out = attention_layernorm_out
-            else:
-                residual = dropout_add(
-                    attention_output, residual, self.config.attention_dropout, training=self.training
-                )
-                mlp_layernorm_out = self.post_attention_layernorm(residual)
+            if not self.config.new_decoder_architecture:
+                if self.config.parallel_attn:
+                    mlp_layernorm_out = attention_layernorm_out
+                else:
+                    residual = dropout_add(attention_output, residual, self.config.attention_dropout, training=self.training)
+                    mlp_layernorm_out = self.post_attention_layernorm(residual)
 
-        outputs = (present, attn_scores)#attn_outputs[1:]
+            outputs = attn_outputs[1:]
+        else: ### falcon-40b and falcon-180b with DS
+            residual = hidden_states
+            attn_outputs, present, attn_scores, mlp_layernorm_out = self.pre_attn( #layernorm+attention before AllReduce
+                        hidden_states,
+                        layer_past=layer_past,
+                        attention_mask=attention_mask,
+                        position_ids=position_ids,
+                        alibi=alibi,
+                        head_mask=head_mask,
+                        use_cache=use_cache,
+                        output_attentions=output_attentions,
+                        token_idx=token_idx,
+                    )
+            #print("*************", attn_outputs)
+            self.self_attention.attention_all_reduce(attn_outputs) #AllReduce
+            attn_outputs = self.self_attention.post_attn_forward(attn_outputs) #after AllReduce post_attn_forward() has to be call to add bias
+
+            attention_output = attn_outputs#[0]
+
+            if not self.config.new_decoder_architecture:
+                if self.config.parallel_attn:
+                    mlp_layernorm_out = attention_layernorm_out
+                else:
+                    residual = dropout_add(
+                        attention_output, residual, self.config.attention_dropout, training=self.training
+                    )
+                    mlp_layernorm_out = self.post_attention_layernorm(residual)
+
+            outputs = (present, attn_scores)#attn_outputs[1:]
 
         # MLP
-        #mlp_output = self.mlp(mlp_layernorm_out)
-        mlp_output = self.mlp.pre_mlp_forward(mlp_layernorm_out)
-        self.mlp.mlp_all_reduce(mlp_output)
-        mlp_output = self.mlp.post_mlp_forward(mlp_output)
+        if not self.config.new_decoder_architecture: ## falcon-7b
+            mlp_output = self.mlp(mlp_layernorm_out)
+        else: ### falcon-40b and falcon-180b with DS
+            mlp_output = self.mlp.pre_mlp_forward(mlp_layernorm_out)
+            self.mlp.mlp_all_reduce(mlp_output)
+            mlp_output = self.mlp.post_mlp_forward(mlp_output)
 
         if self.config.new_decoder_architecture or self.config.parallel_attn:            
             mlp_output += attention_output

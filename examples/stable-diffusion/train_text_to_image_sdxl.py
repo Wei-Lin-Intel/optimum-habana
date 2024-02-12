@@ -978,7 +978,7 @@ def main(args):
         model = model._orig_mod if is_compiled_module(model) else model
         return model
 
-    hb_profiler = HabanaProfile(warmup=args.profiling_warmup_steps, active=args.profiling_steps)
+    hb_profiler = HabanaProfile(warmup=args.profiling_warmup_steps, active=args.profiling_steps, record_shapes=False)
     # Train!
     total_batch_size = args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
 

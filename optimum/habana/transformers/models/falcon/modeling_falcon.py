@@ -244,8 +244,6 @@ class GaudiFalconAttention(FalconAttention):
             qkv_out_dim = self.hidden_size + 2 * self.head_dim
         else:
             qkv_out_dim = 3 * self.hidden_size
-        self.query_key_value = FalconLinear(self.hidden_size, qkv_out_dim, bias=config.bias) ##FalonLinear ##nn.Linear
-        self.dense = FalconLinear(self.hidden_size, self.hidden_size, bias=config.bias) ##FalconLinear ##nn.Linear
 
         self.sdpa = ScaledDotProductAttention(config) ######only when env 
 
@@ -567,13 +565,6 @@ class GaudiFalconAttention(FalconAttention):
 
 
 class GaudiFalconMLP(FalconMLP):
-    def __init__(self, config: FalconConfig):
-        super().__init__(config)
-        hidden_size = config.hidden_size
-        self.dense_h_to_4h = FalconLinear(hidden_size, 4 * hidden_size, bias=config.bias) #FalconLinear ##nn.Linear
-        self.dense_4h_to_h = FalconLinear(4 * hidden_size, hidden_size, bias=config.bias) #FalconLinear ##nn.Linear
-
-    
     def pre_mlp_forward(self, x):
         x = self.act(self.dense_h_to_4h(x))
         x = self.dense_4h_to_h(x)

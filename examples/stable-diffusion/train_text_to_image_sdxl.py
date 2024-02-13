@@ -40,6 +40,7 @@ from accelerate.utils import ProjectConfiguration
 from datasets import load_dataset
 from diffusers import (
     AutoencoderKL,
+    DDPMScheduler,
     UNet2DConditionModel,
 )
 from diffusers.optimization import get_scheduler
@@ -686,7 +687,7 @@ def main(args):
     )
 
     # Load scheduler and models
-    noise_scheduler = GaudiEulerDiscreteScheduler.from_pretrained(
+    noise_scheduler = DDPMScheduler.from_pretrained(
         args.pretrained_model_name_or_path, subfolder="scheduler"
     )
 

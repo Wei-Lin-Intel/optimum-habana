@@ -469,7 +469,14 @@ def parse_args(input_args=None):
             " lazy mode."
         ),
     )
-    parser.add_argument("--use_hpu_graphs", action="store_true", help="Use HPU graphs on HPU.")
+    parser.add_argument(
+        "--use_hpu_graphs_for_training",
+        action="store_true",
+        help="Use HPU graphs for training on HPU.")
+    parser.add_argument(
+        "--use_hpu_graphs_for_inference",
+        action="store_true",
+        help="Use HPU graphs for inference on HPU.")
 
     parser.add_argument(
         "--image_save_dir",
@@ -965,7 +972,8 @@ def main(args):
     unet, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
         unet, optimizer, train_dataloader, lr_scheduler
     )
-
+    if args.use_hpu_graphs_for_training:
+        unet = htcore.hpu.ModuleCacher(max_graphs=10)(model=unet, inplace=True)
     # We need to recalculate our total training steps as the size of the training dataloader may have changed.
     num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
     if overrode_max_train_steps:
@@ -1226,7 +1234,7 @@ def main(args):
                     revision=args.revision,
                     variant=args.variant,
                     use_habana=True,
-                    use_hpu_graphs=args.use_hpu_graphs,
+                    use_hpu_graphs=args.use_hpu_graphs_for_inference,
                     gaudi_config=args.gaudi_config_name,
                 )
                 if args.prediction_type is not None:
@@ -1297,7 +1305,7 @@ def main(args):
             torch_dtype=weight_dtype,
             scheduler=noise_scheduler,
             use_habana=True,
-            use_hpu_graphs=args.use_hpu_graphs,
+            use_hpu_graphs_for_inference=args.use_hpu_graphs_for_inference,
             gaudi_config=args.gaudi_config_name,
         )
         if args.prediction_type is not None:
@@ -1322,7 +1330,7 @@ def main(args):
                     image_save_dir.mkdir(parents=True, exist_ok=True)
                     logger.info(f"Saving images in {image_save_dir.resolve()}...")
                     for i, image in enumerate(images):
-                        image.save(image_save_dir / f"image_{i+1}.png")
+                        image.save(image_save_dir / f"image_{epoch}_{i+1}.png")
                 else:
                     logger.warning("--output_type should be equal to 'pil' to save images in --image_save_dir.")
 

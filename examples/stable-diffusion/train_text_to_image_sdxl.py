@@ -1054,7 +1054,6 @@ def main(args):
 
             with accelerator.accumulate(unet):
                 # Sample noise that we'll add to the latents
-
                 model_input = batch["model_input"].to(dtype=weight_dtype)
 
                 noise = torch.randn_like(model_input)

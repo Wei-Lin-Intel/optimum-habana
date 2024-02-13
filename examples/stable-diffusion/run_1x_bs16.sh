@@ -21,6 +21,5 @@ python train_text_to_image_sdxl.py \
   --use_hpu_graphs_for_inference \
   --validation_prompt="a robotic cat with wings" \
   --validation_epochs 48\
-  --use_hpu_graphs \
   --checkpointing_steps 2500 \
   --cache_dir /root/software/data/pytorch/huggingface/sdxl 2>&1 | tee log_1x_bs16.txt

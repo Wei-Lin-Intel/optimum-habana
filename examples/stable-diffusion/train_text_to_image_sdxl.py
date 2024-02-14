@@ -1045,6 +1045,7 @@ def main(args):
 
     import habana_frameworks.torch as htorch
     t0 = None
+    t_start = time.perf_counter()
     for epoch in range(first_epoch, args.num_train_epochs):
         train_loss = 0.0
         if hb_profiler:
@@ -1272,12 +1273,14 @@ def main(args):
                 del pipeline
 
     duration = time.perf_counter() - t0
-    throughput = args.max_train_steps * total_batch_size / duration
+    ttt = time.perf_counter() - t_start
+    throughput = (args.max_train_steps - args.warmup_steps) * total_batch_size / duration
 
     accelerator.wait_for_everyone()
     if accelerator.is_main_process:
         logger.info(f"Throughput = {throughput} samples/s")
         logger.info(f"Train runtime = {duration} seconds")
+        logger.info(f"Total Train runtime = {ttt} seconds")
         metrics = {
             "train_samples_per_second": throughput,
             "train_runtime": duration,

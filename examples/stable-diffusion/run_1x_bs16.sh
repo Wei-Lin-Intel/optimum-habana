@@ -15,7 +15,7 @@ python train_text_to_image_sdxl.py \
   --output_dir sdxl-pokemon-model \
   --gaudi_config_name Habana/stable-diffusion \
   --throughput_warmup_steps 3 \
-  --dataloader_num_workers 4 \
+  --dataloader_num_workers 8 \
   --bf16 \
   --use_hpu_graphs_for_inference \
   --validation_prompt="a robotic cat with wings" \

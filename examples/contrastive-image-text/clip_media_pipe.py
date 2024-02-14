@@ -128,7 +128,7 @@ schema.add_operator(
     read_image_text_from_dataset,
     dtype.NDT,
 )
-op_class = fn.operator_add("ClipDataReader")
+op_class = fn.operator_add("ClipDataReader", is_complex=False)
 op_class.__module__ = fn.__name__
 setattr(fn, "ClipDataReader", op_class)
 

@@ -1050,7 +1050,7 @@ def main(args):
         if hb_profiler:
             hb_profiler.start()
         for step, batch in enumerate(train_dataloader):
-            if t0 is None: # and global_step == args.throughput_warmup_steps:
+            if t0 is None and global_step == args.throughput_warmup_steps:
                 t0 = time.perf_counter()
 
             with accelerator.accumulate(unet):
@@ -1306,7 +1306,7 @@ def main(args):
             torch_dtype=weight_dtype,
             scheduler=noise_scheduler,
             use_habana=True,
-            use_hpu_graphs_for_inference=args.use_hpu_graphs_for_inference,
+            use_hpu_graphs=args.use_hpu_graphs_for_inference,
             gaudi_config=args.gaudi_config_name,
         )
         if args.prediction_type is not None:

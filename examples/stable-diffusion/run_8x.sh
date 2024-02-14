@@ -19,6 +19,6 @@ python ../gaudi_spawn.py --world_size 8 --use_mpi train_text_to_image_sdxl.py \
   --bf16 \
   --use_hpu_graphs_for_inference \
   --validation_prompt="a robotic cat with wings" \
-  --validation_epochs 48 \
-  --checkpointing_steps 2500 \
+  --validation_epochs 6 \
+  --checkpointing_steps 313 \
   --cache_dir /root/software/data/pytorch/huggingface/sdxl 2>&1 | tee log_8x_bs16.txt

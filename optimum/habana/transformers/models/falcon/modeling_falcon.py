@@ -167,8 +167,6 @@ def gaudi_falcon_attention_split_heads(
 
 
 ###sc
-
-
 class Softmax(nn.Module):
       def __init__(self):
         super().__init__()
@@ -291,7 +289,8 @@ class GaudiFalconAttention(FalconAttention):
         else:
             qkv_out_dim = 3 * self.hidden_size
 
-        self.sdpa = ScaledDotProductAttention(config) ######only when env 
+        if os.getenv("QUANT_CONFIG", ""):
+            self.sdpa = ScaledDotProductAttention(config)
 
         ###sc reuse_cache
         self.k_cache = KVCache()#self.past_key = None
@@ -365,7 +364,12 @@ class GaudiFalconAttention(FalconAttention):
                 # When token_idx is used,
                 # past_kv_length = 0
                 # static seq len = (input token len + max output token len)
-                seq_len = layer_past[0].shape[1]
+
+                if reuse_cache:
+                    seq_len = layer_past[0][1] # layer_past conveys only shapes without kv tensors
+                else:
+                    seq_len = layer_past[0].shape[1]
+                #seq_len = layer_past[0].shape[1]
             else:
                 past_kv_length = layer_past[0].shape[1]
 
@@ -398,7 +402,7 @@ class GaudiFalconAttention(FalconAttention):
         _, kv_length, _ = key_layer.shape
         if use_cache:
             if reuse_cache:
-                present = (self.k_cache.cache, self.v_cache.cache)#(self.past_key, self.past_value)#(key_layer.shape, value_layer.shape)
+                present = (self.k_cache.get_shape(), self.v_cache.get_shape())#(self.past_key, self.past_value)#(key_layer.shape, value_layer.shape)
             else:
                 present = (key_layer, value_layer)
         else:
@@ -527,7 +531,11 @@ class GaudiFalconAttention(FalconAttention):
                 # When token_idx is used,
                 # past_kv_length = 0
                 # static seq len = (input token len + max output token len)
-                seq_len = layer_past[0].shape[1]
+
+                if reuse_cache:
+                    seq_len = layer_past[0][1]
+                else:
+                    seq_len = layer_past[0].shape[1]
             else:
                 past_kv_length = layer_past[0].shape[1]
 
@@ -566,7 +574,7 @@ class GaudiFalconAttention(FalconAttention):
         _, kv_length, _ = key_layer.shape
         if use_cache:
             if reuse_cache:
-                present = (self.k_cache.cache, self.v_cache.cache)#(self.past_key, self.past_value)#(key_layer.shape, value_layer.shape)
+                present = (self.k_cache.get_shape(), self.v_cache.get_shape())#(self.past_key, self.past_value)#(key_layer.shape, value_layer.shape)
             else:
                 present = (key_layer, value_layer)
         else:
@@ -948,7 +956,8 @@ class GaudiFalconModel(FalconModel):
         if past_key_values is None:
             past_key_values = tuple([None] * len(self.h))
         else:
-            past_key_values = self._convert_to_rw_cache(past_key_values)
+            if not reuse_cache:
+                past_key_values = self._convert_to_rw_cache(past_key_values)
 
         # Prepare head mask if needed
         # 1.0 in head_mask indicate we keep the head
@@ -967,10 +976,9 @@ class GaudiFalconModel(FalconModel):
 
         # Compute alibi tensor: check build_alibi_tensor documentation
         past_key_values_length = 0
-        if past_key_values[0] is not None and token_idx is None:
+        if past_key_values[0] is not None and token_idx is None: ### non static input
             if reuse_cache:
-                import pdb;pdb.set_trace()
-                past_key_values_length = past_key_values[0][0][1] #######???
+                past_key_values_length = past_key_values[0][0][1]
             else:
                 past_key_values_length = past_key_values[0][0].shape[1]  # 1 because RW-cache, not standard format
 
@@ -1061,7 +1069,7 @@ class GaudiFalconModel(FalconModel):
         if output_hidden_states:
             all_hidden_states = all_hidden_states + (hidden_states,)
 
-        if presents is not None:
+        if presents is not None and not reuse_cache:
             presents = self._convert_cache_to_standard_format(presents, batch_size)
 
         if not return_dict:

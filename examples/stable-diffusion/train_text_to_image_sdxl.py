@@ -1163,7 +1163,7 @@ def main(args):
                         fused_clip_norm.clip_norm(params_to_clip)
                     else:
                         accelerator.clip_grad_norm_(params_to_clip, args.max_grad_norm)
-                htcore.mark_step()
+
                 optimizer.step()
                 lr_scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
@@ -1274,7 +1274,7 @@ def main(args):
 
     duration = time.perf_counter() - t0
     ttt = time.perf_counter() - t_start
-    throughput = (args.max_train_steps - args.warmup_steps) * total_batch_size / duration
+    throughput = (args.max_train_steps - args.throughput_warmup_steps) * total_batch_size / duration
 
     accelerator.wait_for_everyone()
     if accelerator.is_main_process:

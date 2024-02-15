@@ -234,9 +234,11 @@ class ScaledDotProductAttention(nn.Module):
 
 def update(prev, cur, dim, idx, inp_seq_len):
     orig_cur = cur
-    if prev.dtype == torch.float8_e4m3fn:
-        from habana_frameworks.torch.hpex.kernels.Fp8Ops import cast_to_fp8_v2
-        cur = cast_to_fp8_v2(cur, None, False, False, prev.dtype)[0]
+    cur = cur.to(dtype=prev.dtype)
+    
+    if prev.shape == cur.shape:
+        prev.copy_(cur)
+        return orig_cur
 
     if cur.shape[1] > 1 and cur.shape[1] <= prev.shape[1]:
         # Initialize
@@ -258,11 +260,9 @@ class KVCache(torch.nn.Module):
         self.cache = None
         self.inp_seq_len = -1
 
-    def allocate(self, inp_seq_len, kv_cache_fp8, dtype, device, shape):
+    def allocate(self, inp_seq_len, dtype, device, shape):
         if self.cache is None or self.cache.shape != shape:
             self.inp_seq_len = inp_seq_len
-            if kv_cache_fp8:
-                dtype = torch.float8_e4m3fn
             self.cache = torch.zeros(shape, dtype=dtype, device=device)
         else:
             assert (
@@ -275,8 +275,13 @@ class KVCache(torch.nn.Module):
             return None
         return self.cache.shape
 
+    
     def forward(self, cur, dim, idx):
-        return update(self.cache, cur, dim, idx, self.inp_seq_len)
+        return self.update(self.cache, cur, dim, idx, self.inp_seq_len)
+
+    def update(self, prev, cur, dim, idx, inp_seq_len):
+        #return update(self.cache, cur, dim, idx, self.inp_seq_len)
+        return update(prev, cur, dim, idx, inp_seq_len)
 
 class GaudiFalconAttention(FalconAttention):
     def __init__(self, config:FalconConfig):
@@ -297,7 +302,7 @@ class GaudiFalconAttention(FalconAttention):
         self.v_cache = KVCache()#self.past_value = None
         self.inp_seq_len = -1
 
-    def allocate_kv_cache(self, batch_size, max_seq_len, inp_seq_len, kv_cache_fp8):
+    def allocate_kv_cache(self, batch_size, max_seq_len, inp_seq_len):
         if self.config.new_decoder_architecture:
             #key_shape = (batch_size*self.num_heads, max_seq_len, self.head_dim)#(batch_size, self.num_key_value_heads, max_seq_len, self.head_dim)
             #value_shape = (batch_size*self.num_heads, max_seq_len, self.head_dim)#(batch_size, self.num_key_value_heads, max_seq_len, self.head_dim)
@@ -308,8 +313,8 @@ class GaudiFalconAttention(FalconAttention):
             cache_shape = (batch_size, max_seq_len, self.head_dim)
         device = self.query_key_value.weight.device
         dtype = self.config.torch_dtype
-        self.k_cache.allocate(inp_seq_len, kv_cache_fp8, dtype, device, cache_shape)
-        self.v_cache.allocate(inp_seq_len, kv_cache_fp8, dtype, device, cache_shape)
+        self.k_cache.allocate(inp_seq_len, dtype, device, cache_shape)
+        self.v_cache.allocate(inp_seq_len, dtype, device, cache_shape)
         '''
         if self.past_key is None or self.past_key.shape != key_shape:
             self.inp_seq_len = inp_seq_len
@@ -541,7 +546,6 @@ class GaudiFalconAttention(FalconAttention):
 
         query_layer, key_layer = self.maybe_rotary(query_layer, key_layer, seq_len, position_ids, past_kv_length)
 
-        #print("*******k_layer", key_layer.shape) #128,256,64
         if layer_past is not None or reuse_cache:
             
             if reuse_cache:
@@ -707,8 +711,8 @@ class GaudiFalconMLP(FalconMLP):
         return x
 
 class GaudiFalconDecoderLayer(FalconDecoderLayer):
-    def allocate_kv_cache(self, batch_size, max_seq_len, inp_seq_len, kv_cache_fp8):
-        self.self_attention.allocate_kv_cache(batch_size, max_seq_len, inp_seq_len, kv_cache_fp8)
+    def allocate_kv_cache(self, batch_size, max_seq_len, inp_seq_len):
+        self.self_attention.allocate_kv_cache(batch_size, max_seq_len, inp_seq_len)
 
     def forward(
         self,
@@ -883,9 +887,9 @@ class GaudiFalconModel(FalconModel):
     - use old version of _make_causal_mask to workaround toch.triu that is not supported in Synapse
     """
 
-    def allocate_kv_cache(self, batch_size, max_seq_len, inp_seq_len, kv_cache_fp8):
+    def allocate_kv_cache(self, batch_size, max_seq_len, inp_seq_len):
         for layer in self.h:
-            layer.allocate_kv_cache(batch_size, max_seq_len, inp_seq_len, kv_cache_fp8)
+            layer.allocate_kv_cache(batch_size, max_seq_len, inp_seq_len)
 
     def _prepare_attn_mask(
         self, attention_mask: torch.Tensor, input_shape: Tuple[int, int], past_key_values_length: int
@@ -1093,8 +1097,8 @@ class GaudiFalconForCausalLM(FalconForCausalLM):
     - from step2 when enable KV cache, slice next_position_ids from position_ids base on the token_idx
     - add new args reuse_cache
     """
-    def allocate_kv_cache(self, batch_size, max_seq_len, inp_seq_len, kv_cache_fp8):
-        self.transformer.allocate_kv_cache(batch_size, max_seq_len, inp_seq_len, kv_cache_fp8)
+    def allocate_kv_cache(self, batch_size, max_seq_len, inp_seq_len, kv_cache_fp8): ###kv_cache_fp8 to be removed after it is removed from generation/utils.py
+        self.transformer.allocate_kv_cache(batch_size, max_seq_len, inp_seq_len)
 
     def prepare_inputs_for_generation(
         self,

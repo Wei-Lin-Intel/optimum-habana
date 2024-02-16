@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import time
 import numpy as np
 from torch.utils.data.sampler import BatchSampler
 
@@ -25,13 +24,12 @@ logger = logging.get_logger(__name__)
 
 try:
     from habana_frameworks.mediapipe import fn
-    from habana_frameworks.mediapipe.backend.nodes import opnode_tensor_info
     from habana_frameworks.mediapipe.media_types import dtype, ftype, imgtype, randomCropType, readerOutType
     from habana_frameworks.mediapipe.mediapipe import MediaPipe
-    from habana_frameworks.mediapipe.operators.media_nodes import MediaReaderNode
+    from habana_frameworks.mediapipe.operators.reader_nodes.reader_nodes import media_ext_reader_op_impl
     from habana_frameworks.mediapipe.operators.reader_nodes.read_image_from_dir import get_max_file
-    from habana_frameworks.torch.hpu import get_device_name
     from habana_frameworks.mediapipe.operators.reader_nodes.reader_nodes import media_ext_reader_op_tensor_info
+    from habana_frameworks.torch.hpu import get_device_name
 except ImportError:
     pass
 
@@ -52,6 +50,7 @@ class read_clip_data(media_ext_reader_op_impl):
         self.meta_dtype = params["label_dtype"]
         self.dataset = params["dataset"]
         self.epoch = 0
+        self.batch_sampler_iter = None
 
         self.num_imgs_slice = len(ClipMediaPipe.batch_sampler.sampler)
         self.num_batches_slice = len(ClipMediaPipe.batch_sampler)

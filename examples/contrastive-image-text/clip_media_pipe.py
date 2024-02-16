@@ -75,6 +75,10 @@ class read_clip_data(media_ext_reader_op_impl):
             self.meta_dtype, np.array([self.dataset.text_max_length, self.batch_size], dtype=np.uint32), ""
         )
         out_info.append(o)
+        o = media_ext_reader_op_tensor_info(
+            self.meta_dtype, np.array([self.dataset.text_max_length, self.batch_size], dtype=np.uint32), ""
+        )
+        out_info.append(o)
         return out_info
 
     def get_largest_file(self):

@@ -26,9 +26,11 @@ try:
     from habana_frameworks.mediapipe import fn
     from habana_frameworks.mediapipe.media_types import dtype, ftype, imgtype, randomCropType, readerOutType
     from habana_frameworks.mediapipe.mediapipe import MediaPipe
-    from habana_frameworks.mediapipe.operators.reader_nodes.reader_nodes import media_ext_reader_op_impl
     from habana_frameworks.mediapipe.operators.reader_nodes.read_image_from_dir import get_max_file
-    from habana_frameworks.mediapipe.operators.reader_nodes.reader_nodes import media_ext_reader_op_tensor_info
+    from habana_frameworks.mediapipe.operators.reader_nodes.reader_nodes import (
+        media_ext_reader_op_impl,
+        media_ext_reader_op_tensor_info,
+    )
     from habana_frameworks.torch.hpu import get_device_name
 except ImportError:
     pass
@@ -38,6 +40,7 @@ read_image_text_from_dataset_params = {
     "dataset": None,
 }
 
+
 class read_image_text_from_dataset(media_ext_reader_op_impl):
     """
     Class defining read image/text from clip dataset.
@@ -46,13 +49,12 @@ class read_image_text_from_dataset(media_ext_reader_op_impl):
 
     def __init__(self, params):
         self.batch_size = 1
-        params = params['priv_params']
+        params = params["priv_params"]
         self.meta_dtype = params["label_dtype"]
         self.dataset = params["dataset"]
         self.epoch = 0
         self.batch_sampler_iter = None
         self.iter_loc = 0
-
         self.num_imgs_slice = len(ClipMediaPipe.batch_sampler.sampler)
         self.num_batches_slice = len(ClipMediaPipe.batch_sampler)
 
@@ -146,11 +148,12 @@ class ClipMediaPipe(MediaPipe):
             device=self.device, batch_size=batch_size, prefetch_depth=queue_depth, pipe_name=pipe_name
         )
         params = read_image_text_from_dataset_params.copy()
-        params['dataset'] = self.dataset
-        self.input = fn.MediaExtReaderOp(impl=read_image_text_from_dataset,
-                                         num_outputs=3,
-                                         priv_params=params,
-                                        )
+        params["dataset"] = self.dataset
+        self.input = fn.MediaExtReaderOp(
+            impl=read_image_text_from_dataset,
+            num_outputs=3,
+            priv_params=params,
+        )
         def_output_image_size = [self.image_size, self.image_size]
         res_pp_filter = ftype.BICUBIC
         self.decode = fn.ImageDecoder(

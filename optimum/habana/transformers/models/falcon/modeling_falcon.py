@@ -171,8 +171,8 @@ class Softmax(nn.Module):
       def __init__(self):
         super().__init__()
 
-      def forward(self, x, dim = None):
-        return F.softmax(x, dim)
+      def forward(self, x, dim=None, invAttnHead=None):
+          return torch.ops.hpu.softmax_fp8(x, dim, None, None, invAttnHead)
 
 class Matmul(nn.Module):
     def __init__(self):
@@ -198,6 +198,7 @@ class ScaledDotProductAttention(nn.Module):
         #scale_factor = 1 / math.sqrt(query.size(-1)) if scale is None else scale
         scale_factor = 1 / math.sqrt(self.head_dim)
         #attn_bias = torch.zeros(1,1,L, S, dtype=query.dtype).to('hpu') #####sc
+        invAttnHead = torch.tensor(scale_factor, dtype=torch.float32).to('hpu')
 
         if is_causal: ###False
             assert attn_mask is None
@@ -212,7 +213,7 @@ class ScaledDotProductAttention(nn.Module):
             #    attn_bias += attn_mask
 
         #htcore.mark_step() ###fixed the acc issue
-        attn_weight = self.bmm1(query, key.transpose(-2, -1)) * scale_factor
+        attn_weight = self.bmm1(query, key.transpose(-2, -1))
         #htcore.mark_step()
         #attn_weight_ref = query @ key.transpose(-1, -2)
         #attn_weight_ref /= math.sqrt(self.head_dim)
@@ -220,7 +221,7 @@ class ScaledDotProductAttention(nn.Module):
 
 
         attn_weight += attn_mask #bias ####sc
-        attn_weight = self.softmax(attn_weight, dim=-1)
+        attn_weight = self.softmax(attn_weight, dim=-1, invAttnHead=invAttnHead)
         #print("************226", (attn_weight - attn_weight_ref).abs().max())
         attn_weight = torch.dropout(attn_weight, dropout_p, train=True)
         return self.bmm2(attn_weight, value)

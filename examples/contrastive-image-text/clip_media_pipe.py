@@ -38,7 +38,7 @@ read_image_text_from_dataset_params = {
     "dataset": None,
 }
 
-class read_clip_data(media_ext_reader_op_impl):
+class read_image_text_from_dataset(media_ext_reader_op_impl):
     """
     Class defining read image/text from clip dataset.
 
@@ -51,6 +51,7 @@ class read_clip_data(media_ext_reader_op_impl):
         self.dataset = params["dataset"]
         self.epoch = 0
         self.batch_sampler_iter = None
+        self.iter_loc = 0
 
         self.num_imgs_slice = len(ClipMediaPipe.batch_sampler.sampler)
         self.num_batches_slice = len(ClipMediaPipe.batch_sampler)
@@ -61,8 +62,6 @@ class read_clip_data(media_ext_reader_op_impl):
         else:
             self.max_file = get_max_file([img["path"] for img in self.dataset["image"]])
         logger.info(f"The largest file is {self.max_file}.")
-
-        self.iter_loc = 0
 
     def set_params(self, params):
         self.batch_size = params.batch_size
@@ -118,6 +117,7 @@ class read_clip_data(media_ext_reader_op_impl):
 
         return img_list, input_id_list, attention_mask_list
 
+
 class ClipMediaPipe(MediaPipe):
     """
     Class defining clip media pipe:
@@ -147,7 +147,7 @@ class ClipMediaPipe(MediaPipe):
         )
         params = read_image_text_from_dataset_params.copy()
         params['dataset'] = self.dataset
-        self.input = fn.MediaExtReaderOp(impl=read_clip_data,
+        self.input = fn.MediaExtReaderOp(impl=read_image_text_from_dataset,
                                          num_outputs=3,
                                          priv_params=params,
                                         )

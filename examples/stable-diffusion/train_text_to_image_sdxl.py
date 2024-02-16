@@ -1052,8 +1052,9 @@ def main(args):
     import habana_frameworks.torch as htorch
     t0 = None
     t_start = time.perf_counter()
+    zero_tensor = torch.tensor(0, device='hpu')
     for epoch in range(first_epoch, args.num_train_epochs):
-        train_loss = 0.0
+        train_loss = zero_tensor
         if hb_profiler:
             hb_profiler.start()
         for step, batch in enumerate(train_dataloader):
@@ -1155,7 +1156,7 @@ def main(args):
 
                 # Gather the losses across all processes for logging (if we use distributed training).
                 avg_loss = accelerator.gather(loss.repeat(args.train_batch_size)).mean()
-                train_loss = avg_loss / args.gradient_accumulation_steps
+                train_loss += avg_loss / args.gradient_accumulation_steps
 
                 # Backpropagate
                 #TODO: check why this cause bufferoverflow issue
@@ -1211,9 +1212,13 @@ def main(args):
             if global_step % args.logging_step == 0:
                 train_loss_scalar = train_loss.item()
                 accelerator.log({"train_loss": train_loss_scalar}, step=global_step)
-
-                logs = {"step_loss": train_loss_scalar, "lr": lr_scheduler.get_last_lr()[0]}
+                if args.accumulation_steps > 1:
+                    logs = {"step_loss": loss.item(), "lr": lr_scheduler.get_last_lr()[0]}
+                else:
+                    logs = {"step_loss": train_loss_scalar, "lr": lr_scheduler.get_last_lr()[0]}
                 progress_bar.set_postfix(**logs)
+
+            train_loss = zero_tensor
 
             if global_step >= args.max_train_steps:
                 break

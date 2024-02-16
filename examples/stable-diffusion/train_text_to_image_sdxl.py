@@ -504,6 +504,12 @@ def parse_args(input_args=None):
         type=int,
         help="Number of steps to capture for profiling.",
     )
+    parser.add_argument(
+        "--logging_step",
+        default=1,
+        type=int,
+        help="Print the loss for every logging_step.",
+    )
 
     if input_args is not None:
         args = parser.parse_args(input_args)
@@ -1149,7 +1155,7 @@ def main(args):
 
                 # Gather the losses across all processes for logging (if we use distributed training).
                 avg_loss = accelerator.gather(loss.repeat(args.train_batch_size)).mean()
-                train_loss += avg_loss / args.gradient_accumulation_steps
+                train_loss = avg_loss / args.gradient_accumulation_steps
 
                 # Backpropagate
                 #TODO: check why this cause bufferoverflow issue
@@ -1175,8 +1181,6 @@ def main(args):
             if accelerator.sync_gradients:
                 progress_bar.update(1)
                 global_step += 1
-                accelerator.log({"train_loss": train_loss}, step=global_step)
-                train_loss = 0.0
 
                 if accelerator.is_main_process:
                     if global_step % args.checkpointing_steps == 0:
@@ -1204,8 +1208,12 @@ def main(args):
                         accelerator.save_state(save_path)
                         logger.info(f"Saved state to {save_path}")
 
-            logs = {"step_loss": loss.detach().item(), "lr": lr_scheduler.get_last_lr()[0]}
-            progress_bar.set_postfix(**logs)
+            if global_step % args.logging_step == 0:
+                train_loss_scalar = train_loss.item()
+                accelerator.log({"train_loss": train_loss_scalar}, step=global_step)
+
+                logs = {"step_loss": train_loss_scalar, "lr": lr_scheduler.get_last_lr()[0]}
+                progress_bar.set_postfix(**logs)
 
             if global_step >= args.max_train_steps:
                 break

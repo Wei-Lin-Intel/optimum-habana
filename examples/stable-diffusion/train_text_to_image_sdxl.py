@@ -1052,7 +1052,7 @@ def main(args):
     import habana_frameworks.torch as htorch
     t0 = None
     t_start = time.perf_counter()
-    zero_tensor = torch.tensor(0, device='hpu')
+    zero_tensor = torch.tensor(0, dtype=torch.float, device='hpu')
     for epoch in range(first_epoch, args.num_train_epochs):
         train_loss = zero_tensor
         if hb_profiler:
@@ -1212,7 +1212,8 @@ def main(args):
             if global_step % args.logging_step == 0:
                 train_loss_scalar = train_loss.item()
                 accelerator.log({"train_loss": train_loss_scalar}, step=global_step)
-                if args.accumulation_steps > 1:
+
+                if args.gradient_accumulation_steps > 1:
                     logs = {"step_loss": loss.item(), "lr": lr_scheduler.get_last_lr()[0]}
                 else:
                     logs = {"step_loss": train_loss_scalar, "lr": lr_scheduler.get_last_lr()[0]}

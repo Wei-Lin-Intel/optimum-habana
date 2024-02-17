@@ -42,6 +42,7 @@ from transformers.models.falcon.modeling_falcon import (
     FalconMLP,
     FalconLinear,
     FalconModel,
+    FalconRotaryEmbedding,
     build_alibi_tensor,
     dropout_add,
     rotate_half,
@@ -302,6 +303,15 @@ class GaudiFalconAttention(FalconAttention):
         self.k_cache = KVCache()#self.past_key = None
         self.v_cache = KVCache()#self.past_value = None
         self.inp_seq_len = -1
+        self.max_position_embeddings = config.max_position_embeddings
+
+    def _init_rope(self):
+        if self.config.rope_scaling is None:
+            self.rotary_emb = FalconRotaryEmbedding(
+                self.head_dim,
+                base=self.config.rope_theta,
+                max_position_embeddings=self.config.max_position_embeddings,
+            )
 
     def allocate_kv_cache(self, batch_size, max_seq_len, inp_seq_len):
         if self.config.new_decoder_architecture:
@@ -332,6 +342,15 @@ class GaudiFalconAttention(FalconAttention):
             self.past_key.fill_(0)
             self.past_value.fill_(0)
         '''
+
+    def update_sincos_cache(self, seq_len):
+        # Call rotary emb forward() to update cos/sin cache when infering more than self.max_position_embeddings
+        # This helps in avoiding creation of these caches during actual model forward pass and
+        # reduce memory consumption and improve performance.
+        if seq_len > self.max_position_embeddings:
+            self.max_position_embeddings = seq_len
+            #_, _ = 
+            self.rotary_emb._set_cos_sin_cache(seq_len, self.query_key_value.weight.device, self.query_key_value.weight.dtype)
 
     def forward(
         self,
@@ -379,7 +398,7 @@ class GaudiFalconAttention(FalconAttention):
             else:
                 past_kv_length = layer_past[0].shape[1]
 
-        query_layer, key_layer = self.maybe_rotary(query_layer, key_layer, seq_len, position_ids, past_kv_length)
+        query_layer, key_layer = self.rotary_emb(query_layer, key_layer, seq_len, position_ids, past_kv_length)#maybe_rotary(query_layer, key_layer, seq_len, position_ids, past_kv_length)
 
         if layer_past is not None or reuse_cache:
             if reuse_cache:
@@ -545,7 +564,7 @@ class GaudiFalconAttention(FalconAttention):
             else:
                 past_kv_length = layer_past[0].shape[1]
 
-        query_layer, key_layer = self.maybe_rotary(query_layer, key_layer, seq_len, position_ids, past_kv_length)
+        query_layer, key_layer = self.rotary_emb(query_layer, key_layer, seq_len, position_ids, past_kv_length)#maybe_rotary(query_layer, key_layer, seq_len, position_ids, past_kv_length)
 
         if layer_past is not None or reuse_cache:
             
@@ -714,6 +733,9 @@ class GaudiFalconMLP(FalconMLP):
 class GaudiFalconDecoderLayer(FalconDecoderLayer):
     def allocate_kv_cache(self, batch_size, max_seq_len, inp_seq_len):
         self.self_attention.allocate_kv_cache(batch_size, max_seq_len, inp_seq_len)
+
+    def update_sincos_cache(self, seq_len):
+        self.self_attention.update_sincos_cache(seq_len)
 
     def forward(
         self,
@@ -927,6 +949,10 @@ class GaudiFalconModel(FalconModel):
 
         return combined_attention_mask
 
+    def update_sincos_cache(self, seq_len):
+        for layer in self.h:
+            layer.update_sincos_cache(seq_len)
+
     def forward(
         self,
         input_ids: Optional[torch.LongTensor] = None,
@@ -1098,8 +1124,12 @@ class GaudiFalconForCausalLM(FalconForCausalLM):
     - from step2 when enable KV cache, slice next_position_ids from position_ids base on the token_idx
     - add new args reuse_cache
     """
+    
     def allocate_kv_cache(self, batch_size, max_seq_len, inp_seq_len, kv_cache_fp8): ###kv_cache_fp8 to be removed after it is removed from generation/utils.py
         self.transformer.allocate_kv_cache(batch_size, max_seq_len, inp_seq_len)
+
+    def update_sincos_cache(self, seq_len):
+        self.transformer.update_sincos_cache(seq_len)
 
     def prepare_inputs_for_generation(
         self,
@@ -1162,6 +1192,7 @@ class GaudiFalconForCausalLM(FalconForCausalLM):
         return_dict: Optional[bool] = None,
         token_idx: Optional[torch.Tensor] = None,
         reuse_cache: Optional[bool] = False,
+        trim_logits: Optional[bool] = False,
     ) -> Union[Tuple[torch.Tensor], CausalLMOutputWithCrossAttentions]:
         r"""
         labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
@@ -1186,6 +1217,13 @@ class GaudiFalconForCausalLM(FalconForCausalLM):
             reuse_cache=reuse_cache,
         )
         hidden_states = transformer_outputs[0]
+
+        _, seq_len, _ = hidden_states.shape
+        if seq_len > 1 and trim_logits and not self.training:
+            if token_idx is not None:
+                hidden_states = hidden_states.index_select(1, token_idx - 1)
+            else:
+                hidden_states = hidden_states[:, -1:, :]
 
         lm_logits = self.lm_head(hidden_states)
 

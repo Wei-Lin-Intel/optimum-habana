@@ -52,7 +52,7 @@ def _gaudi_wav2vec2_compute_mask_indices(
         )
 
     # epsilon is used for probabilistic rounding
-    epsilon = torch.rand([], device="hpu")
+    epsilon = torch.rand(1).item()
 
     def compute_num_masked_span(input_length):
         """Given input length, compute how many spans should be masked"""

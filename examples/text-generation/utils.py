@@ -98,6 +98,7 @@ def setup_distributed(args):
 
 def setup_quantization(args, model):
     import habana_frameworks.torch.core as htcore
+    htcore.hpu_initialize(model)
     from habana_frameworks.torch.core.quantization import _check_params_as_const, _mark_params_as_const
     from habana_frameworks.torch.hpu import hpu
 
@@ -106,7 +107,6 @@ def setup_quantization(args, model):
     _check_params_as_const(model)
     if not args.quant_config:
         hpu.enable_quantization()
-    htcore.hpu_initialize(model)
     return model
 
 

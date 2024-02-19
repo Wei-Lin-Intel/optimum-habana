@@ -74,6 +74,8 @@ MODELS_OPTIMIZED_WITH_STATIC_SHAPES = [
     "mpt",
     "t5",
     "mistral",
+    "chatglm",
+    "baichuan",
 ]
 
 
@@ -358,15 +360,18 @@ class GaudiGenerationMixin(GenerationMixin):
 
                 def create_pad_arg(pad_amount, i, j):
                     if model_kwargs["past_key_values"][0][0].dim() == 3:
-                        assert self.config.model_type == "bloom"
-                        if j == 0:
-                            return (0, pad_amount)
-                        elif j == 1:
+                        assert self.config.model_type == "bloom" or self.config.model_type == "baichuan"
+                        if self.config.model_type == "bloom":
+                            if j == 0:
+                                return (0, pad_amount)
+                            elif j == 1:
+                                return (0, 0, 0, pad_amount)
+                            else:
+                                assert False
+                        else: # baichuan-13b
                             return (0, 0, 0, pad_amount)
-                        else:
-                            assert False
                     elif model_kwargs["past_key_values"][0][0].dim() == 4:
-                        return (0, 0, 0, pad_amount)  # llama, falcon
+                        return (0, 0, 0, pad_amount)  # llama, falcon, chatglm2
                     else:
                         assert False, "Unknown case, please handle, or dont use bucketing"
 
@@ -1372,8 +1377,8 @@ class GaudiGenerationMixin(GenerationMixin):
         prompt_len = input_ids.shape[-1]
         if bucket_size >= 0:
             inc = iter(incrementor(bucket_size, prompt_len))
-        if bucket_size > 0:
-            assert "position_ids" not in model_kwargs, "Untested path"
+        #if bucket_size > 0:
+        #    assert "position_ids" not in model_kwargs, "Untested path"
 
         while True:
             if lazy_mode:
@@ -2128,8 +2133,8 @@ class GaudiGenerationMixin(GenerationMixin):
         prompt_len = input_ids.shape[-1]
         if bucket_size >= 0:
             inc = iter(incrementor(bucket_size, prompt_len))
-        if bucket_size > 0:
-            assert "position_ids" not in model_kwargs, "Untested path"
+        #if bucket_size > 0:
+        #    assert "position_ids" not in model_kwargs, "Untested path"
         while True:
             if lazy_mode:
                 self.htcore_generation.mark_step()

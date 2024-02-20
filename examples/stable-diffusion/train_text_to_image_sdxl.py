@@ -817,7 +817,6 @@ def main(args):
     train_transforms = transforms.Compose([transforms.ToTensor(), transforms.Normalize([0.5], [0.5])])
 
     def preprocess_train(examples):
-        print("libin debug preprocess data")
         images = [image.convert("RGB") for image in examples[image_column]]
         # image aug
         original_sizes = []

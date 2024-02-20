@@ -26,7 +26,7 @@ import random
 import shutil
 import time
 from pathlib import Path
-
+from typing import Optional
 import datasets
 import diffusers
 import habana_frameworks.torch.core as htcore
@@ -59,6 +59,14 @@ from optimum.habana.accelerate import GaudiAccelerator
 from optimum.habana.diffusers import GaudiEulerDiscreteScheduler, GaudiStableDiffusionXLPipeline
 from optimum.habana.utils import set_seed, HabanaProfile
 from optimum.habana.accelerate.utils.dataclasses import GaudiDistributedType
+from clip_mediapipe_dataloader import MediaApiDataLoader
+from transformers.trainer_pt_utils import (
+    DistributedLengthGroupedSampler,
+    DistributedSampler,
+    DistributedSamplerWithLoop,
+    LengthGroupedSampler,
+    ShardSampler,
+)
 
 if is_wandb_available():
     import wandb
@@ -791,6 +799,7 @@ def main(args):
     # We need to tokenize inputs and targets.
     column_names = dataset["train"].column_names
 
+
     # 6. Get the column names for input/target.
     dataset_columns = DATASET_NAME_MAPPING.get(args.dataset_name, None)
     if args.image_column is None:
@@ -809,15 +818,36 @@ def main(args):
             raise ValueError(
                 f"--caption_column' value '{args.caption_column}' needs to be one of: {', '.join(column_names)}"
             )
-
-    # Preprocessing the datasets.
+            
+            
+    # Let's first compute all the embeddings so that we can free up the text encoders
+    # from memory. We will pre-compute the VAE encodings too.
+    text_encoders = [text_encoder_one, text_encoder_two]
+    tokenizers = [tokenizer_one, tokenizer_two]
+    compute_embeddings_fn = functools.partial(
+        encode_prompt,
+        text_encoders=text_encoders,
+        tokenizers=tokenizers,
+        proportion_empty_prompts=args.proportion_empty_prompts,
+        caption_column=args.caption_column,
+    )
     train_resize = transforms.Resize(args.resolution, interpolation=transforms.InterpolationMode.BILINEAR)
     train_crop = transforms.CenterCrop(args.resolution) if args.center_crop else transforms.RandomCrop(args.resolution)
     train_flip = transforms.RandomHorizontalFlip(p=1.0)
     train_transforms = transforms.Compose([transforms.ToTensor(), transforms.Normalize([0.5], [0.5])])
 
+
+    with accelerator.main_process_first():
+        from datasets.fingerprint import Hasher
+
+        # fingerprint used by the cache for the other processes to load the result
+        # details: https://github.com/huggingface/diffusers/pull/4038#discussion_r1266078401
+        new_fingerprint = Hasher.hash(args)
+        new_fingerprint_for_vae = Hasher.hash("vae")
+
+
     def preprocess_train(examples):
-        print("libin debug preprocess data")
+        print("libin debug start to preprocess_Training")
         images = [image.convert("RGB") for image in examples[image_column]]
         # image aug
         original_sizes = []
@@ -845,65 +875,86 @@ def main(args):
         examples["crop_top_lefts"] = crop_top_lefts
         examples["pixel_values"] = all_images
         return examples
-
-    with accelerator.main_process_first():
-        if args.max_train_samples is not None:
-            dataset["train"] = dataset["train"].shuffle(seed=args.seed).select(range(args.max_train_samples))
-        # Set the training transforms
-        train_dataset = dataset["train"].with_transform(preprocess_train)
-
-    # Let's first compute all the embeddings so that we can free up the text encoders
-    # from memory. We will pre-compute the VAE encodings too.
-    text_encoders = [text_encoder_one, text_encoder_two]
-    tokenizers = [tokenizer_one, tokenizer_two]
-    compute_embeddings_fn = functools.partial(
-        encode_prompt,
-        text_encoders=text_encoders,
-        tokenizers=tokenizers,
-        proportion_empty_prompts=args.proportion_empty_prompts,
-        caption_column=args.caption_column,
-    )
-    compute_vae_encodings_fn = functools.partial(compute_vae_encodings, vae=vae)
-    with accelerator.main_process_first():
-        from datasets.fingerprint import Hasher
-
-        # fingerprint used by the cache for the other processes to load the result
-        # details: https://github.com/huggingface/diffusers/pull/4038#discussion_r1266078401
-        new_fingerprint = Hasher.hash(args)
-        new_fingerprint_for_vae = Hasher.hash("vae")
-
-        train_dataset = train_dataset.map(compute_embeddings_fn, batched=True, new_fingerprint=new_fingerprint)
-        train_dataset = train_dataset.map(
-            compute_vae_encodings_fn,
-            batched=True,
-            batch_size=args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps,
-            new_fingerprint=new_fingerprint_for_vae,
-        )
-
     def collate_fn(examples):
-        model_input = torch.stack([torch.tensor(example["model_input"]) for example in examples])
-        original_sizes = [example["original_sizes"] for example in examples]
-        crop_top_lefts = [example["crop_top_lefts"] for example in examples]
-        prompt_embeds = torch.stack([torch.tensor(example["prompt_embeds"]) for example in examples])
-        pooled_prompt_embeds = torch.stack([torch.tensor(example["pooled_prompt_embeds"]) for example in examples])
+            model_input = torch.stack([torch.tensor(example["model_input"]) for example in examples])
+            original_sizes = [example["original_sizes"] for example in examples]
+            crop_top_lefts = [example["crop_top_lefts"] for example in examples]
+            prompt_embeds = torch.stack([torch.tensor(example["prompt_embeds"]) for example in examples])
+            pooled_prompt_embeds = torch.stack([torch.tensor(example["pooled_prompt_embeds"]) for example in examples])
 
-        return {
-            "model_input": model_input,
-            "prompt_embeds": prompt_embeds,
-            "pooled_prompt_embeds": pooled_prompt_embeds,
-            "original_sizes": original_sizes,
-            "crop_top_lefts": crop_top_lefts,
-        }
+            return {
+                "model_input": model_input,
+                "prompt_embeds": prompt_embeds,
+                "pooled_prompt_embeds": pooled_prompt_embeds,
+                "original_sizes": original_sizes,
+                "crop_top_lefts": crop_top_lefts,
+            }
+    HD = True
+    if True: #HD:
 
-    # DataLoaders creation:
+        if dataset is None:
+            raise ValueError("Trainer: training requires a train_dataset.")        
+        train_dataset = dataset['train'].map(compute_embeddings_fn, 
+            batched=True, new_fingerprint=new_fingerprint)
+        train_dataset.image_mean = 0.5
+        train_dataset.image_std = 0.5
+        
+        #train_dataset.text_max_length = data_args.max_seq_length
+        train_dataset.image_resize = args.resolution
+        train_dataset.transform_func = preprocess_train
+        args.train_dataset = train_dataset
+        args.data_collator = collate_fn
+        args.accelerator = accelerator
+        args.data_seed = 123
+        args.group_by_length = False
+        args.world_size = 1
+        args.process_index = 0
+        args.dataloader_drop_last = True
+        
+        from habana_dataloader_utils import get_train_dataloader
+        train_dataloader =  get_train_dataloader(args)
+        
+    else:
+        # Preprocessing the datasets.
+        train_resize = transforms.Resize(args.resolution, interpolation=transforms.InterpolationMode.BILINEAR)
+        train_crop = transforms.CenterCrop(args.resolution) if args.center_crop else transforms.RandomCrop(args.resolution)
+        train_flip = transforms.RandomHorizontalFlip(p=1.0)
+        train_transforms = transforms.Compose([transforms.ToTensor(), transforms.Normalize([0.5], [0.5])])
 
-    train_dataloader = torch.utils.data.DataLoader(
-        train_dataset,
-        shuffle=True,
-        collate_fn=collate_fn,
-        batch_size=args.train_batch_size,
-        num_workers=args.dataloader_num_workers,
-    )
+
+        with accelerator.main_process_first():
+            if args.max_train_samples is not None:
+                dataset["train"] = dataset["train"].shuffle(seed=args.seed).select(range(args.max_train_samples))
+            # Set the training transforms
+            train_dataset = dataset["train"].with_transform(preprocess_train)
+
+        compute_vae_encodings_fn = functools.partial(compute_vae_encodings, vae=vae)
+        with accelerator.main_process_first():
+            from datasets.fingerprint import Hasher
+
+            # fingerprint used by the cache for the other processes to load the result
+            # details: https://github.com/huggingface/diffusers/pull/4038#discussion_r1266078401
+            new_fingerprint = Hasher.hash(args)
+            new_fingerprint_for_vae = Hasher.hash("vae")
+
+            train_dataset = train_dataset.map(compute_embeddings_fn, 
+                batched=True, new_fingerprint=new_fingerprint)
+            train_dataset = train_dataset.map(
+                compute_vae_encodings_fn,
+                batched=True,
+                batch_size=args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps,
+                new_fingerprint=new_fingerprint_for_vae,
+            )
+
+        # DataLoaders creation:
+
+        train_dataloader = torch.utils.data.DataLoader(
+            train_dataset,
+            shuffle=True,
+            collate_fn=collate_fn,
+            batch_size=args.train_batch_size,
+            num_workers=args.dataloader_num_workers,
+        )
 
     # Set unet as trainable.
     unet.train()
@@ -987,8 +1038,8 @@ def main(args):
     args.num_train_epochs = math.ceil(args.max_train_steps / num_update_steps_per_epoch)
     # We need to initialize the trackers we use, and also store our configuration.
     # The trackers initializes automatically on the main process.
-    if accelerator.is_main_process:
-        accelerator.init_trackers("text2image-fine-tune-sdxl", config=vars(args))
+    #if accelerator.is_main_process:
+    #    accelerator.init_trackers("text2image-fine-tune-sdxl", config=vars(args))
 
     def unwrap_model(model, training=False):
         model = accelerator.unwrap_model(model)

@@ -38,7 +38,8 @@ def _gaudi_wav2vec2_compute_mask_indices(
 ) -> torch.Tensor:
     """
     Copied from Transformers: https://github.com/huggingface/transformers/blob/bd469c40659ce76c81f69c7726759d249b4aef49/src/transformers/models/wav2vec2/modeling_wav2vec2.py#L135
-    The only difference is that the processing is performed with PyTorch on HPUs (Numpy is used in Transformers).
+    The only differences are (1) that the processing is performed with PyTorch on HPUs (Numpy is used in Transformers), (2) epsilon is generated on HPU instead of CPU, (3) check
+    to ensure indices are not larger than sequence length is re-written to avoid host sync.
     """
     batch_size, sequence_length = shape
 
@@ -388,6 +389,11 @@ def gaudi_wav2vec2forctc_forward(
         All labels set to `-100` are ignored (masked), the loss is only computed for labels in `[0, ...,
         config.vocab_size - 1]`.
     """
+    """
+    copied from Transformers https://github.com/huggingface/transformers/blob/e770f0316d2a9b787c9d1440f204fcb65e176682/src/transformers/models/wav2vec2/modeling_wav2vec2.py#L1950
+    only differences are (1) attention_mask tensor generation using ones_like is done on HPU, (2) masked_select is not applied on labels to compute flattened_targets to avoid
+    changing flattened_targets tensor shapes across training iterations.
+    """
     return_dict = return_dict if return_dict is not None else self.config.use_return_dict
     outputs = self.wav2vec2(
         input_values,
@@ -414,7 +420,7 @@ def gaudi_wav2vec2forctc_forward(
         # when not being attended to
         labels_mask = labels >= 0
         target_lengths = labels_mask.sum(-1)
-        flattened_targets = labels  # labels.masked_select(labels_mask)
+        flattened_targets = labels
         # ctc_loss doesn't support fp16
         log_probs = torch.nn.functional.log_softmax(logits, dim=-1, dtype=torch.float32).transpose(0, 1)
         with torch.backends.cudnn.flags(enabled=False):

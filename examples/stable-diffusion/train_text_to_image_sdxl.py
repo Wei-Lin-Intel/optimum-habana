@@ -568,10 +568,10 @@ def encode_prompt(batch, text_encoders, tokenizers, proportion_empty_prompts, ca
             bs_embed, seq_len, _ = prompt_embeds.shape
             prompt_embeds = prompt_embeds.view(bs_embed, seq_len, -1)
             prompt_embeds_list.append(prompt_embeds)
-
     prompt_embeds = torch.concat(prompt_embeds_list, dim=-1)
     pooled_prompt_embeds = pooled_prompt_embeds.view(bs_embed, -1)
-    return {"prompt_embeds": prompt_embeds.cpu(), "pooled_prompt_embeds": pooled_prompt_embeds.cpu()}
+    #map creates cache in cpu so need to change tensor to float32
+    return {"prompt_embeds": prompt_embeds.to(torch.float32), "pooled_prompt_embeds": pooled_prompt_embeds.to(torch.float32)}
 
 
 def compute_vae_encodings(batch, vae):
@@ -579,11 +579,10 @@ def compute_vae_encodings(batch, vae):
     pixel_values = torch.stack(list(images))
     pixel_values = pixel_values.to(memory_format=torch.contiguous_format).float()
     pixel_values = pixel_values.to(vae.device, dtype=vae.dtype)
-
     with torch.no_grad():
         model_input = vae.encode(pixel_values).latent_dist.sample()
     model_input = model_input * vae.config.scaling_factor
-    return {"model_input": model_input.cpu()}
+    return {"model_input": model_input.to(torch.float32)}
 
 
 def generate_timestep_weights(args, num_timesteps):
@@ -857,6 +856,10 @@ def main(args):
         # Set the training transforms
         train_dataset = dataset["train"].with_transform(preprocess_train)
 
+    vae = vae.to(accelerator.device, dtype=weight_dtype)
+    text_encoder_one = text_encoder_one.to(accelerator.device, dtype=weight_dtype)
+    text_encoder_two = text_encoder_two.to(accelerator.device, dtype=weight_dtype)
+
     # Let's first compute all the embeddings so that we can free up the text encoders
     # from memory. We will pre-compute the VAE encodings too.
     text_encoders = [text_encoder_one, text_encoder_two]
@@ -877,13 +880,13 @@ def main(args):
         new_fingerprint = Hasher.hash(args)
         new_fingerprint_for_vae = Hasher.hash("vae")
 
-        train_dataset = train_dataset.map(compute_embeddings_fn, batched=True, new_fingerprint=new_fingerprint)
+        train_dataset = train_dataset.map(compute_embeddings_fn, batched=True,
+                                          new_fingerprint=new_fingerprint)
         train_dataset = train_dataset.map(
             compute_vae_encodings_fn,
             batched=True,
             batch_size=args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps,
-            new_fingerprint=new_fingerprint_for_vae,
-        )
+            new_fingerprint=new_fingerprint_for_vae)
 
     def collate_fn(examples):
         model_input = torch.stack([torch.tensor(example["model_input"]) for example in examples])
@@ -893,7 +896,7 @@ def main(args):
         pooled_prompt_embeds = torch.stack([torch.tensor(example["pooled_prompt_embeds"]) for example in examples])
 
         return {
-            "model_input": model_input,
+            "model_input": model_input.to(torch.bfloat16),
             "prompt_embeds": prompt_embeds,
             "pooled_prompt_embeds": pooled_prompt_embeds,
             "original_sizes": original_sizes,
@@ -901,7 +904,6 @@ def main(args):
         }
 
     # DataLoaders creation:
-
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
         shuffle=True,
@@ -913,12 +915,7 @@ def main(args):
     # Set unet as trainable.
     unet.train()
 
-    # Move unet, vae and text_encoder to device and cast to weight_dtype
-    # The VAE is in float32 to avoid NaN losses.
-    vae.to(accelerator.device, dtype=weight_dtype)
-    text_encoder_one.to(accelerator.device, dtype=weight_dtype)
-    text_encoder_two.to(accelerator.device, dtype=weight_dtype)
-    del text_encoders, tokenizers
+    del text_encoders, tokenizers, vae
     gc.collect()
     # Create EMA for the unet.
     if args.use_ema:
@@ -1070,11 +1067,9 @@ def main(args):
         for step, batch in enumerate(train_dataloader):
             if t0 is None and global_step == args.throughput_warmup_steps:
                 t0 = time.perf_counter()
-
             with accelerator.accumulate(unet):
                 # Sample noise that we'll add to the latents
                 model_input = batch["model_input"].to(dtype=weight_dtype)
-
                 noise = torch.randn_like(model_input)
                 if args.noise_offset:
                     # https://www.crosslabs.org//blog/diffusion-with-offset-noise

@@ -1050,7 +1050,7 @@ def main(args):
     import habana_frameworks.torch as htorch
     t0 = None
     t_start = time.perf_counter()
-    zero_tensor = torch.tensor(0, dtype=torch.float, device='hpu')
+    train_loss = torch.tensor(0, dtype=torch.float, device='hpu')
     for epoch in range(first_epoch, args.num_train_epochs):
         train_loss.zero_()
         if hb_profiler:

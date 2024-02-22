@@ -25,6 +25,7 @@ import torch
 import torch.distributed as dist
 from transformers.generation.beam_constraints import DisjunctiveConstraint, PhrasalConstraint
 from transformers.generation.beam_search import BeamScorer, BeamSearchScorer, ConstrainedBeamSearchScorer
+from transformers.generation.candidate_generator import CandidateGenerator
 from transformers.generation.logits_process import LogitsProcessorList
 from transformers.generation.stopping_criteria import (
     MaxLengthCriteria,
@@ -34,20 +35,15 @@ from transformers.generation.stopping_criteria import (
     validate_stopping_criteria,
 )
 from transformers.generation.utils import (
-    BeamSampleOutput,
-    BeamSearchDecoderOnlyOutput,
-    BeamSearchEncoderDecoderOutput,
-    BeamSearchOutput,
-    ContrastiveSearchOutput,
+    GenerateBeamDecoderOnlyOutput,
+    GenerateBeamEncoderDecoderOutput,
+    GenerateBeamOutput,
+    GenerateDecoderOnlyOutput,
+    GenerateEncoderDecoderOutput,
+    GenerateNonBeamOutput,
     GenerateOutput,
     GenerationMixin,
     GenerationMode,
-    GreedySearchDecoderOnlyOutput,
-    GreedySearchEncoderDecoderOutput,
-    GreedySearchOutput,
-    SampleDecoderOnlyOutput,
-    SampleEncoderDecoderOutput,
-    SampleOutput,
 )
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 from transformers.utils import ModelOutput
@@ -215,15 +211,6 @@ class GaudiGenerationMixin(GenerationMixin):
                 model_kwargs["attention_mask"] = attention_mask
         else:
             # update decoder attention mask
-            if "attention_mask" in model_kwargs:
-                attention_mask = model_kwargs["attention_mask"]
-                if token_idx is not None:
-                    attention_mask.index_fill_(1, token_idx, 1)
-                else:
-                    attention_mask = torch.cat(
-                        [attention_mask, attention_mask.new_ones((attention_mask.shape[0], 1))], dim=-1
-                    )
-                model_kwargs["attention_mask"] = attention_mask
             if "decoder_attention_mask" in model_kwargs:
                 decoder_attention_mask = model_kwargs["decoder_attention_mask"]
                 if token_idx is not None:
@@ -298,6 +285,8 @@ class GaudiGenerationMixin(GenerationMixin):
             decoder_input_ids = decoder_input_ids_start
         # exception: Donut checkpoints have task-specific decoder starts and don't expect a BOS token
         elif self.config.model_type == "vision-encoder-decoder" and "donut" in self.name_or_path.lower():
+            pass
+        elif self.config.model_type in ["whisper"]:
             pass
         # user input but doesn't start with decoder_start_token_id -> prepend decoder_start_token_id (and adjust
         # decoder_attention_mask if provided)
@@ -450,7 +439,9 @@ class GaudiGenerationMixin(GenerationMixin):
             stopping_criteria (`StoppingCriteriaList`, *optional*):
                 Custom stopping criteria that complement the default stopping criteria built from arguments and a
                 generation config. If a stopping criteria is passed that is already created with the arguments or a
-                generation config an error is thrown. This feature is intended for advanced users.
+                generation config an error is thrown. If your stopping criteria depends on the `scores` input, make
+                sure you pass `return_dict_in_generate=True, output_scores=True` to `generate`. This feature is
+                intended for advanced users.
             prefix_allowed_tokens_fn (`Callable[[int, torch.Tensor], List[int]]`, *optional*):
                 If provided, this function constraints the beam search to allowed tokens only at each step. If not
                 provided no constraint is applied. This function takes 2 arguments: the batch ID `batch_id` and
@@ -493,16 +484,12 @@ class GaudiGenerationMixin(GenerationMixin):
             or when `config.return_dict_in_generate=True`) or a `torch.FloatTensor`.
                 If the model is *not* an encoder-decoder model (`model.config.is_encoder_decoder=False`), the possible
                 [`transformers.generationutils.ModelOutput`] types are:
-                    - [`transformers.generation.GreedySearchDecoderOnlyOutput`],
-                    - [`transformers.generation.SampleDecoderOnlyOutput`],
-                    - [`transformers.generation.BeamSearchDecoderOnlyOutput`],
-                    - [`transformers.generation.BeamSampleDecoderOnlyOutput`]
+                    - [`transformers.generation.GenerateDecoderOnlyOutput`],
+                    - [`transformers.generation.GenerateBeamDecoderOnlyOutput`]
                 If the model is an encoder-decoder model (`model.config.is_encoder_decoder=True`), the possible
                 [`transformers.generationutils.ModelOutput`] types are:
-                    - [`transformers.generation.GreedySearchEncoderDecoderOutput`],
-                    - [`transformers.generation.SampleEncoderDecoderOutput`],
-                    - [`transformers.generation.BeamSearchEncoderDecoderOutput`],
-                    - [`transformers.generation.BeamSampleEncoderDecoderOutput`]
+                    - [`transformers.generation.GenerateEncoderDecoderOutput`],
+                    - [`transformers.generation.GenerateBeamEncoderDecoderOutput`]
         """
         if synced_gpus is None:
             if is_deepspeed_zero3_enabled() and dist.get_world_size() > 1:
@@ -520,11 +507,14 @@ class GaudiGenerationMixin(GenerationMixin):
         # priority: `generation_config` argument > `model.generation_config` (the default generation config)
         if generation_config is None:
             # legacy: users may modify the model configuration to control generation. To trigger this legacy behavior,
-            # two conditions must be met
+            # three conditions must be met
             # 1) the generation config must have been created from the model config (`_from_model_config` field);
-            # 2) the generation config must have seen no modification since its creation (the hash is the same).
-            if self.generation_config._from_model_config and self.generation_config._original_object_hash == hash(
-                self.generation_config
+            # 2) the generation config must have seen no modification since its creation (the hash is the same);
+            # 3) the user must have set generation parameters in the model config.
+            if (
+                self.generation_config._from_model_config
+                and self.generation_config._original_object_hash == hash(self.generation_config)
+                and self.config._has_non_default_generation_parameters()
             ):
                 new_generation_config = GaudiGenerationConfig.from_model_config(self.config)
                 if new_generation_config != self.generation_config:
@@ -768,7 +758,7 @@ class GaudiGenerationMixin(GenerationMixin):
             )
 
         # 8. prepare distribution pre_processing samplers
-        logits_processor = self._get_logits_processor(
+        prepared_logits_processor = self._get_logits_processor(
             generation_config=generation_config,
             input_ids_seq_length=input_ids_length,
             encoder_input_ids=inputs_tensor,
@@ -781,24 +771,24 @@ class GaudiGenerationMixin(GenerationMixin):
 
         # 9. prepare stopping criteria
         self.generation_config.generation_mode = generation_mode
-        stopping_criteria = self._get_stopping_criteria(
+        prepared_stopping_criteria = self._get_stopping_criteria(
             generation_config=generation_config, stopping_criteria=stopping_criteria
         )
         if "token_idx" in model_kwargs and not self.config.is_encoder_decoder:
             if generation_config.max_new_tokens is not None:
-                stopping_criteria.append(StaticMaxLengthCriteria(generation_config.max_new_tokens))
+                prepared_stopping_criteria.append(StaticMaxLengthCriteria(generation_config.max_new_tokens))
             else:
                 raise ValueError(
                     "You need to set `max_new_tokens` in your generation configuration to use static shapes."
                 )
 
         if generation_config.static_shapes and generation_config.bucket_size > 0:
-            stopping_criteria = StoppingCriteriaList(
+            prepared_stopping_criteria = StoppingCriteriaList(
                 [
                     StaticMaxLengthCriteria(generation_config.max_new_tokens)
                     if type(crit) == MaxLengthCriteria
                     else crit
-                    for crit in stopping_criteria
+                    for crit in prepared_stopping_criteria
                 ]
             )
 
@@ -820,25 +810,24 @@ class GaudiGenerationMixin(GenerationMixin):
             if not model_kwargs["use_cache"]:
                 raise ValueError("assisted generate requires `use_cache=True`")
 
-            # 11. If the assistant model is an encoder-decoder, prepare its encoder outputs
-            if assistant_model.config.is_encoder_decoder:
-                assistant_model_kwargs = copy.deepcopy(model_kwargs)
-                inputs_tensor, model_input_name, assistant_model_kwargs = assistant_model._prepare_model_inputs(
-                    inputs_tensor, assistant_model.generation_config.bos_token_id, assistant_model_kwargs
-                )
-                assistant_model_kwargs = assistant_model._prepare_encoder_decoder_kwargs_for_generation(
-                    inputs_tensor, assistant_model_kwargs, model_input_name
-                )
-                model_kwargs["assistant_encoder_outputs"] = assistant_model_kwargs["encoder_outputs"]
+            # 11. Get the candidate generator, given the parameterization
+            candidate_generator = self._get_candidate_generator(
+                generation_config=generation_config,
+                input_ids=input_ids,
+                inputs_tensor=inputs_tensor,
+                assistant_model=assistant_model,
+                logits_processor=logits_processor,
+                model_kwargs=model_kwargs,
+            )
 
             # 12. run assisted generate
             return self.assisted_decoding(
                 input_ids,
-                assistant_model=assistant_model,
+                candidate_generator=candidate_generator,
                 do_sample=generation_config.do_sample,
-                logits_processor=logits_processor,
+                logits_processor=prepared_logits_processor,
                 logits_warper=self._get_logits_warper(generation_config) if generation_config.do_sample else None,
-                stopping_criteria=stopping_criteria,
+                stopping_criteria=prepared_stopping_criteria,
                 pad_token_id=generation_config.pad_token_id,
                 eos_token_id=generation_config.eos_token_id,
                 output_scores=generation_config.output_scores,
@@ -851,8 +840,8 @@ class GaudiGenerationMixin(GenerationMixin):
             # 11. run greedy search
             return self.greedy_search(
                 input_ids,
-                logits_processor=logits_processor,
-                stopping_criteria=stopping_criteria,
+                logits_processor=prepared_logits_processor,
+                stopping_criteria=prepared_stopping_criteria,
                 pad_token_id=generation_config.pad_token_id,
                 eos_token_id=generation_config.eos_token_id,
                 output_scores=generation_config.output_scores,
@@ -874,8 +863,8 @@ class GaudiGenerationMixin(GenerationMixin):
                 input_ids,
                 top_k=generation_config.top_k,
                 penalty_alpha=generation_config.penalty_alpha,
-                logits_processor=logits_processor,
-                stopping_criteria=stopping_criteria,
+                logits_processor=prepared_logits_processor,
+                stopping_criteria=prepared_stopping_criteria,
                 pad_token_id=generation_config.pad_token_id,
                 eos_token_id=generation_config.eos_token_id,
                 output_scores=generation_config.output_scores,
@@ -903,9 +892,9 @@ class GaudiGenerationMixin(GenerationMixin):
             # 13. run sample
             return self.sample(
                 input_ids,
-                logits_processor=logits_processor,
+                logits_processor=prepared_logits_processor,
                 logits_warper=logits_warper,
-                stopping_criteria=stopping_criteria,
+                stopping_criteria=prepared_stopping_criteria,
                 pad_token_id=generation_config.pad_token_id,
                 eos_token_id=generation_config.eos_token_id,
                 output_scores=generation_config.output_scores,
@@ -941,8 +930,8 @@ class GaudiGenerationMixin(GenerationMixin):
             return self.beam_search(
                 input_ids,
                 beam_scorer,
-                logits_processor=logits_processor,
-                stopping_criteria=stopping_criteria,
+                logits_processor=prepared_logits_processor,
+                stopping_criteria=prepared_stopping_criteria,
                 pad_token_id=generation_config.pad_token_id,
                 eos_token_id=generation_config.eos_token_id,
                 output_scores=generation_config.output_scores,
@@ -981,9 +970,9 @@ class GaudiGenerationMixin(GenerationMixin):
             return self.beam_sample(
                 input_ids,
                 beam_scorer,
-                logits_processor=logits_processor,
+                logits_processor=prepared_logits_processor,
                 logits_warper=logits_warper,
-                stopping_criteria=stopping_criteria,
+                stopping_criteria=prepared_stopping_criteria,
                 pad_token_id=generation_config.pad_token_id,
                 eos_token_id=generation_config.eos_token_id,
                 output_scores=generation_config.output_scores,
@@ -1018,8 +1007,8 @@ class GaudiGenerationMixin(GenerationMixin):
             return self.group_beam_search(
                 input_ids,
                 beam_scorer,
-                logits_processor=logits_processor,
-                stopping_criteria=stopping_criteria,
+                logits_processor=prepared_logits_processor,
+                stopping_criteria=prepared_stopping_criteria,
                 pad_token_id=generation_config.pad_token_id,
                 eos_token_id=generation_config.eos_token_id,
                 output_scores=generation_config.output_scores,
@@ -1040,7 +1029,7 @@ class GaudiGenerationMixin(GenerationMixin):
 
                 def typeerror():
                     raise ValueError(
-                        "`force_words_ids` has to either be a `List[List[List[int]]]` or `List[List[int]]`"
+                        "`force_words_ids` has to either be a `List[List[List[int]]]` or `List[List[int]]` "
                         f"of positive integers, but is {generation_config.force_words_ids}."
                     )
 
@@ -1094,8 +1083,8 @@ class GaudiGenerationMixin(GenerationMixin):
             return self.constrained_beam_search(
                 input_ids,
                 constrained_beam_scorer=constrained_beam_scorer,
-                logits_processor=logits_processor,
-                stopping_criteria=stopping_criteria,
+                logits_processor=prepared_logits_processor,
+                stopping_criteria=prepared_stopping_criteria,
                 pad_token_id=generation_config.pad_token_id,
                 eos_token_id=generation_config.eos_token_id,
                 output_scores=generation_config.output_scores,
@@ -1129,7 +1118,7 @@ class GaudiGenerationMixin(GenerationMixin):
         profiling_warmup_steps: Optional[int] = 0,
         profiling_steps: Optional[int] = 0,
         **model_kwargs,
-    ) -> Union[ContrastiveSearchOutput, torch.LongTensor]:
+    ) -> Union[GenerateNonBeamOutput, torch.LongTensor]:
         r"""
         Generates sequences of token ids for models with a language modeling head using **contrastive search** and can
         be used for text-decoder, text-to-text, speech-to-text, and vision-to-text models.
@@ -1189,11 +1178,11 @@ class GaudiGenerationMixin(GenerationMixin):
                 If model is an encoder-decoder model the kwargs should include `encoder_outputs`.
 
         Return:
-            [`transformers.generation.ContrastiveSearchDecoderOnlyOutput`],
-            [`transformers.generation.ContrastiveSearchEncoderDecoderOutput`] or `torch.LongTensor`: A `torch.LongTensor`
+            [`transformers.generation.GenerateDecoderOnlyOutput`],
+            [`transformers.generation.GenerateEncoderDecoderOutput`] or `torch.LongTensor`: A `torch.LongTensor`
             containing the generated tokens (default behaviour) or a
-            [`transformers.generation.ContrastiveSearchDecoderOnlyOutput`] if `model.config.is_encoder_decoder=False` and
-            `return_dict_in_generate=True` or a [`transformers.generation.ContrastiveSearchEncoderDecoderOutput`] if
+            [`transformers.generation.GenerateDecoderOnlyOutput`] if `model.config.is_encoder_decoder=False` and
+            `return_dict_in_generate=True` or a [`transformers.generation.GenerateEncoderDecoderOutput`] if
             `model.config.is_encoder_decoder=True`.
 
         Examples:
@@ -1240,7 +1229,7 @@ class GaudiGenerationMixin(GenerationMixin):
         profiling_warmup_steps: Optional[int] = 0,
         profiling_steps: Optional[int] = 0,
         **model_kwargs,
-    ) -> Union[GreedySearchOutput, torch.LongTensor]:
+    ) -> Union[GenerateNonBeamOutput, torch.LongTensor]:
         r"""
         Generates sequences of token ids for models with a language modeling head using **greedy decoding** and can be
         used for text-decoder, text-to-text, speech-to-text, and vision-to-text models.
@@ -1298,10 +1287,10 @@ class GaudiGenerationMixin(GenerationMixin):
                 If model is an encoder-decoder model the kwargs should include `encoder_outputs`.
 
         Return:
-            [`transformers.generation.GreedySearchDecoderOnlyOutput`], [`transformers.generation.GreedySearchEncoderDecoderOutput`]
+            [`transformers.generation.GenerateDecoderOnlyOutput`], [`transformers.generation.GenerateEncoderDecoderOutput`]
             or `torch.LongTensor`: A `torch.LongTensor` containing the generated tokens (default behaviour) or a
-            [`transformers.generation.GreedySearchDecoderOnlyOutput`] if `model.config.is_encoder_decoder=False` and
-            `return_dict_in_generate=True` or a [`transformers.generation.GreedySearchEncoderDecoderOutput`] if
+            [`transformers.generation.GenerateDecoderOnlyOutput`] if `model.config.is_encoder_decoder=False` and
+            `return_dict_in_generate=True` or a [`transformers.generation.GenerateEncoderDecoderOutput`] if
             `model.config.is_encoder_decoder=True`.
 
         Examples:
@@ -1393,10 +1382,11 @@ class GaudiGenerationMixin(GenerationMixin):
 
         bucket_size = model_kwargs.get("bucket_size", -1)
         prev_idx = -1  # avoiding calculate cache_idx when its value is not changing
-        bucket_internal = model_kwargs["bucket_internal"]
+        bucket_internal = model_kwargs.get("bucket_internal", False)
         reduce_recompile = model_kwargs.get("reduce_recompile", False)
 
         prompt_len = input_ids.shape[-1]
+
         if not bucket_internal:
             if bucket_size >= 0:
                 inc = iter(incrementor(bucket_size, prompt_len))
@@ -1543,7 +1533,7 @@ class GaudiGenerationMixin(GenerationMixin):
 
         if return_dict_in_generate:
             if self.config.is_encoder_decoder:
-                return GreedySearchEncoderDecoderOutput(
+                return GenerateEncoderDecoderOutput(
                     sequences=input_ids,
                     scores=scores,
                     encoder_attentions=encoder_attentions,
@@ -1551,13 +1541,15 @@ class GaudiGenerationMixin(GenerationMixin):
                     decoder_attentions=decoder_attentions,
                     cross_attentions=cross_attentions,
                     decoder_hidden_states=decoder_hidden_states,
+                    past_key_values=model_kwargs.get("past_key_values"),
                 )
             else:
-                return GreedySearchDecoderOnlyOutput(
+                return GenerateDecoderOnlyOutput(
                     sequences=input_ids,
                     scores=scores,
                     attentions=decoder_attentions,
                     hidden_states=decoder_hidden_states,
+                    past_key_values=model_kwargs.get("past_key_values"),
                 )
         else:
             return input_ids
@@ -1582,7 +1574,7 @@ class GaudiGenerationMixin(GenerationMixin):
         profiling_warmup_steps: Optional[int] = 0,
         profiling_steps: Optional[int] = 0,
         **model_kwargs,
-    ) -> Union[SampleOutput, torch.LongTensor]:
+    ) -> Union[GenerateNonBeamOutput, torch.LongTensor]:
         r"""
         Generates sequences of token ids for models with a language modeling head using **multinomial sampling** and
         can be used for text-decoder, text-to-text, speech-to-text, and vision-to-text models.
@@ -1643,10 +1635,10 @@ class GaudiGenerationMixin(GenerationMixin):
                 an encoder-decoder model the kwargs should include `encoder_outputs`.
 
         Return:
-            [`transformers.generation.SampleDecoderOnlyOutput`], [`transformers.generation.SampleEncoderDecoderOutput`] or
+            [`transformers.generation.GenerateDecoderOnlyOutput`], [`transformers.generation.GenerateEncoderDecoderOutput`] or
             `torch.LongTensor`: A `torch.LongTensor` containing the generated tokens (default behaviour) or a
-            [`transformers.generation.SampleDecoderOnlyOutput`] if `model.config.is_encoder_decoder=False` and
-            `return_dict_in_generate=True` or a [`transformers.generation.SampleEncoderDecoderOutput`] if
+            [`transformers.generation.GenerateDecoderOnlyOutput`] if `model.config.is_encoder_decoder=False` and
+            `return_dict_in_generate=True` or a [`transformers.generation.GenerateEncoderDecoderOutput`] if
             `model.config.is_encoder_decoder=True`.
 
         Examples:
@@ -1709,7 +1701,7 @@ class GaudiGenerationMixin(GenerationMixin):
             warnings.warn(
                 (
                     "`max_length` is deprecated in this function, use"
-                    " `stopping_criteria=StoppingCriteriaList(MaxLengthCriteria(max_length=max_length))` instead."
+                    " `stopping_criteria=StoppingCriteriaList([MaxLengthCriteria(max_length=max_length)])` instead.",
                 ),
                 UserWarning,
             )
@@ -1869,7 +1861,7 @@ class GaudiGenerationMixin(GenerationMixin):
 
         if return_dict_in_generate:
             if self.config.is_encoder_decoder:
-                return SampleEncoderDecoderOutput(
+                return GenerateEncoderDecoderOutput(
                     sequences=input_ids,
                     scores=scores,
                     encoder_attentions=encoder_attentions,
@@ -1877,13 +1869,15 @@ class GaudiGenerationMixin(GenerationMixin):
                     decoder_attentions=decoder_attentions,
                     cross_attentions=cross_attentions,
                     decoder_hidden_states=decoder_hidden_states,
+                    past_key_values=model_kwargs.get("past_key_values"),
                 )
             else:
-                return SampleDecoderOnlyOutput(
+                return GenerateDecoderOnlyOutput(
                     sequences=input_ids,
                     scores=scores,
                     attentions=decoder_attentions,
                     hidden_states=decoder_hidden_states,
+                    past_key_values=model_kwargs.get("past_key_values"),
                 )
         else:
             return input_ids
@@ -1906,7 +1900,7 @@ class GaudiGenerationMixin(GenerationMixin):
         profiling_warmup_steps: Optional[int] = 0,
         profiling_steps: Optional[int] = 0,
         **model_kwargs,
-    ) -> Union[BeamSearchOutput, torch.LongTensor]:
+    ) -> Union[GenerateBeamOutput, torch.LongTensor]:
         r"""
         Generates sequences of token ids for models with a language modeling head using **beam search decoding** and
         can be used for text-decoder, text-to-text, speech-to-text, and vision-to-text models.
@@ -1961,10 +1955,10 @@ class GaudiGenerationMixin(GenerationMixin):
                 an encoder-decoder model the kwargs should include `encoder_outputs`.
 
         Return:
-            [`transformers.generation.utils.BeamSearchDecoderOnlyOutput`], [`transformers.generation.BeamSearchEncoderDecoderOutput`] or
+            [`transformers.generation.utils.GenerateBeamDecoderOnlyOutput`], [`transformers.generation.GenerateBeamEncoderDecoderOutput`] or
             `torch.LongTensor`: A `torch.LongTensor` containing the generated tokens (default behaviour) or a
-            [`transformers.generation.BeamSearchDecoderOnlyOutput`] if `model.config.is_encoder_decoder=False` and
-            `return_dict_in_generate=True` or a [`transformers.generation.BeamSearchEncoderDecoderOutput`] if
+            [`transformers.generation.GenerateBeamDecoderOnlyOutput`] if `model.config.is_encoder_decoder=False` and
+            `return_dict_in_generate=True` or a [`transformers.generation.GenerateBeamEncoderDecoderOutput`] if
             `model.config.is_encoder_decoder=True`.
 
         Examples:
@@ -2024,7 +2018,7 @@ class GaudiGenerationMixin(GenerationMixin):
             warnings.warn(
                 (
                     "`max_length` is deprecated in this function, use"
-                    " `stopping_criteria=StoppingCriteriaList(MaxLengthCriteria(max_length=max_length))` instead."
+                    " `stopping_criteria=StoppingCriteriaList([MaxLengthCriteria(max_length=max_length)])` instead.",
                 ),
                 UserWarning,
             )
@@ -2309,6 +2303,7 @@ class GaudiGenerationMixin(GenerationMixin):
                     pad_token_id=pad_token_id,
                     eos_token_id=eos_token_id,
                     beam_indices=beam_indices,
+                    decoder_prompt_len=prompt_len,
                 )
                 beam_scores = beam_outputs["next_beam_scores"]
                 beam_next_tokens = beam_outputs["next_beam_tokens"]
@@ -2329,7 +2324,9 @@ class GaudiGenerationMixin(GenerationMixin):
                 if model_kwargs["reuse_cache"]:
                     model_kwargs["past_key_values"] = unwrap_deepspeed_model(self).reorder_kv_cache(beam_idx)
                 else:
-                    model_kwargs["past_key_values"] = self._reorder_cache(model_kwargs["past_key_values"], beam_idx)
+                    model_kwargs["past_key_values"] = self._temporary_reorder_cache(
+                        model_kwargs["past_key_values"], beam_idx
+                    )
 
             if return_dict_in_generate and output_scores:
                 beam_indices = tuple((beam_indices[beam_idx[i]] + (beam_idx[i],) for i in range(len(beam_indices))))
@@ -2392,6 +2389,7 @@ class GaudiGenerationMixin(GenerationMixin):
                 eos_token_id=eos_token_id,
                 max_length=stopping_criteria.max_length,
                 beam_indices=beam_indices,
+                decoder_prompt_len=prompt_len,
             )
 
         if return_dict_in_generate:
@@ -2399,7 +2397,7 @@ class GaudiGenerationMixin(GenerationMixin):
                 sequence_outputs["sequence_scores"] = None
 
             if self.config.is_encoder_decoder:
-                return BeamSearchEncoderDecoderOutput(
+                return GenerateBeamEncoderDecoderOutput(
                     sequences=sequence_outputs["sequences"],
                     sequences_scores=sequence_outputs["sequence_scores"],
                     scores=scores,
@@ -2409,15 +2407,17 @@ class GaudiGenerationMixin(GenerationMixin):
                     decoder_attentions=decoder_attentions,
                     cross_attentions=cross_attentions,
                     decoder_hidden_states=decoder_hidden_states,
+                    past_key_values=model_kwargs.get("past_key_values"),
                 )
             else:
-                return BeamSearchDecoderOnlyOutput(
+                return GenerateBeamDecoderOnlyOutput(
                     sequences=sequence_outputs["sequences"],
                     sequences_scores=sequence_outputs["sequence_scores"],
                     scores=scores,
                     beam_indices=sequence_outputs["beam_indices"],
                     attentions=decoder_attentions,
                     hidden_states=decoder_hidden_states,
+                    past_key_values=model_kwargs.get("past_key_values"),
                 )
         else:
             return sequence_outputs["sequences"]
@@ -2441,7 +2441,7 @@ class GaudiGenerationMixin(GenerationMixin):
         profiling_warmup_steps: Optional[int] = 0,
         profiling_steps: Optional[int] = 0,
         **model_kwargs,
-    ) -> Union[BeamSampleOutput, torch.LongTensor]:
+    ) -> Union[GenerateBeamOutput, torch.LongTensor]:
         r"""
         Generates sequences of token ids for models with a language modeling head using **beam search multinomial
         sampling** and can be used for text-decoder, text-to-text, speech-to-text, and vision-to-text models.
@@ -2500,10 +2500,10 @@ class GaudiGenerationMixin(GenerationMixin):
                 an encoder-decoder model the kwargs should include `encoder_outputs`.
 
         Return:
-            [`transformers.generation.BeamSampleDecoderOnlyOutput`], [`transformers.generation.BeamSampleEncoderDecoderOutput`] or
+            [`transformers.generation.GenerateBeamDecoderOnlyOutput`], [`transformers.generation.GenerateBeamEncoderDecoderOutput`] or
             `torch.LongTensor`: A `torch.LongTensor` containing the generated tokens (default behaviour) or a
-            [`transformers.generation.BeamSampleDecoderOnlyOutput`] if `model.config.is_encoder_decoder=False` and
-            `return_dict_in_generate=True` or a [`transformers.generation.BeamSampleEncoderDecoderOutput`] if
+            [`transformers.generation.GenerateBeamDecoderOnlyOutput`] if `model.config.is_encoder_decoder=False` and
+            `return_dict_in_generate=True` or a [`transformers.generation.GenerateBeamEncoderDecoderOutput`] if
             `model.config.is_encoder_decoder=True`.
 
         Examples:
@@ -2642,11 +2642,11 @@ class GaudiGenerationMixin(GenerationMixin):
                 model is an encoder-decoder model the kwargs should include `encoder_outputs`.
 
         Return:
-            [`transformers.generation.BeamSearchDecoderOnlyOutput`], [`transformers.generation.BeamSearchEncoderDecoderOutput`] or
+            [`transformers.generation.GenerateBeamDecoderOnlyOutput`], [`transformers.generation.GenerateBeamEncoderDecoderOutput`] or
             `torch.LongTensor`: A `torch.LongTensor` containing the generated tokens (default behaviour) or a
-            [`transformers.generation.BeamSearchDecoderOnlyOutput`] if [`transformers.generation.BeamSearchDecoderOnlyOutput`] if
+            [`transformers.generation.GenerateBeamDecoderOnlyOutput`] if [`transformers.generation.BeamSearchDecoderOnlyOutput`] if
             `model.config.is_encoder_decoder=False` and `return_dict_in_generate=True` or a
-            [`transformers.generation.BeamSearchEncoderDecoderOutput`] if `model.config.is_encoder_decoder=True`.
+            [`transformers.generation.GenerateBeamEncoderDecoderOutput`] if `model.config.is_encoder_decoder=True`.
 
         Examples:
 
@@ -2725,7 +2725,7 @@ class GaudiGenerationMixin(GenerationMixin):
         profiling_warmup_steps: Optional[int] = 0,
         profiling_steps: Optional[int] = 0,
         **model_kwargs,
-    ) -> Union[BeamSearchOutput, torch.LongTensor]:
+    ) -> Union[GenerateBeamOutput, torch.LongTensor]:
         r"""
         Generates sequences of token ids for models with a language modeling head using **constrained beam search
         decoding** and can be used for text-decoder, text-to-text, speech-to-text, and vision-to-text models.
@@ -2785,10 +2785,10 @@ class GaudiGenerationMixin(GenerationMixin):
                 an encoder-decoder model the kwargs should include `encoder_outputs`.
 
         Return:
-            [`transformers.generation.utils.BeamSearchDecoderOnlyOutput`], [`transformers.generation.BeamSearchEncoderDecoderOutput`] or
+            [`transformers.generation.utils.GenerateBeamDecoderOnlyOutput`], [`transformers.generation.GenerateBeamEncoderDecoderOutput`] or
             `torch.LongTensor`: A `torch.LongTensor` containing the generated tokens (default behaviour) or a
-            [`transformers.generation.BeamSearchDecoderOnlyOutput`] if `model.config.is_encoder_decoder=False` and
-            `return_dict_in_generate=True` or a [`transformers.generation.BeamSearchEncoderDecoderOutput`] if
+            [`transformers.generation.GenerateBeamDecoderOnlyOutput`] if `model.config.is_encoder_decoder=False` and
+            `return_dict_in_generate=True` or a [`transformers.generation.GenerateBeamEncoderDecoderOutput`] if
             `model.config.is_encoder_decoder=True`.
 
         Examples:
@@ -2853,7 +2853,7 @@ class GaudiGenerationMixin(GenerationMixin):
         if max_length is not None:
             warnings.warn(
                 "`max_length` is deprecated in this function, use"
-                " `stopping_criteria=StoppingCriteriaList(MaxLengthCriteria(max_length=max_length))` instead.",
+                " `stopping_criteria=StoppingCriteriaList([MaxLengthCriteria(max_length=max_length)])` instead.",
                 UserWarning,
             )
             stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
@@ -2913,6 +2913,7 @@ class GaudiGenerationMixin(GenerationMixin):
         beam_scores = beam_scores.view((batch_size * num_beams,))
 
         this_peer_finished = False  # used by synced_gpus only
+        decoder_prompt_len = input_ids.shape[-1]  # record the prompt length of decoder
 
         hb_profer = HabanaProfile(warmup=profiling_warmup_steps, active=profiling_steps)
         hb_profer.start()
@@ -3000,6 +3001,7 @@ class GaudiGenerationMixin(GenerationMixin):
                 pad_token_id=pad_token_id,
                 eos_token_id=eos_token_id,
                 beam_indices=beam_indices,
+                decoder_prompt_len=decoder_prompt_len,
             )
             beam_scores = beam_outputs["next_beam_scores"]
             beam_next_tokens = beam_outputs["next_beam_tokens"]
@@ -3016,7 +3018,9 @@ class GaudiGenerationMixin(GenerationMixin):
                 outputs, model_kwargs, is_encoder_decoder=self.config.is_encoder_decoder
             )
             if model_kwargs["past_key_values"] is not None:
-                model_kwargs["past_key_values"] = self._reorder_cache(model_kwargs["past_key_values"], beam_idx)
+                model_kwargs["past_key_values"] = self._temporary_reorder_cache(
+                    model_kwargs["past_key_values"], beam_idx
+                )
 
             if return_dict_in_generate and output_scores:
                 beam_indices = tuple((beam_indices[beam_idx[i]] + (beam_idx[i],) for i in range(len(beam_indices))))
@@ -3041,13 +3045,14 @@ class GaudiGenerationMixin(GenerationMixin):
             eos_token_id=eos_token_id,
             max_length=stopping_criteria.max_length,
             beam_indices=beam_indices,
+            decoder_prompt_len=decoder_prompt_len,
         )
 
         if return_dict_in_generate:
             if not output_scores:
                 sequence_outputs["sequence_scores"] = None
             if self.config.is_encoder_decoder:
-                return BeamSearchEncoderDecoderOutput(
+                return GenerateBeamEncoderDecoderOutput(
                     sequences=sequence_outputs["sequences"],
                     sequences_scores=sequence_outputs["sequence_scores"],
                     scores=scores,
@@ -3057,15 +3062,17 @@ class GaudiGenerationMixin(GenerationMixin):
                     decoder_attentions=decoder_attentions,
                     cross_attentions=cross_attentions,
                     decoder_hidden_states=decoder_hidden_states,
+                    past_key_values=model_kwargs.get("past_key_values"),
                 )
             else:
-                return BeamSearchDecoderOnlyOutput(
+                return GenerateBeamDecoderOnlyOutput(
                     sequences=sequence_outputs["sequences"],
                     sequences_scores=sequence_outputs["sequence_scores"],
                     scores=scores,
                     beam_indices=sequence_outputs["beam_indices"],
                     attentions=decoder_attentions,
                     hidden_states=decoder_hidden_states,
+                    past_key_values=model_kwargs.get("past_key_values"),
                 )
         else:
             return sequence_outputs["sequences"]
@@ -3073,7 +3080,8 @@ class GaudiGenerationMixin(GenerationMixin):
     def assisted_decoding(
         self,
         input_ids: torch.LongTensor,
-        assistant_model: "PreTrainedModel",
+        assistant_model: Optional["PreTrainedModel"] = None,
+        candidate_generator: Optional["CandidateGenerator"] = None,
         do_sample: bool = False,
         logits_processor: Optional[LogitsProcessorList] = None,
         logits_warper: Optional[LogitsProcessorList] = None,
@@ -3090,15 +3098,16 @@ class GaudiGenerationMixin(GenerationMixin):
         profiling_steps: Optional[int] = 0,
         streamer: Optional["BaseStreamer"] = None,
         **model_kwargs,
-    ):
+    ) -> Union[GenerateNonBeamOutput, torch.LongTensor]:
         r"""
         Generates sequences of token ids for models with a language modeling head using **greedy decoding** or
-        **sample** (depending on `do_sample`), assisted by a smaller model. Can be used for text-decoder, text-to-text,
-        speech-to-text, and vision-to-text models.
+        **sample** (depending on `do_sample`), assisted by candidate sequences. Assisted generation is an example of a
+        candidate decoding strategy. Can be used for text-decoder, text-to-text, speech-to-text, and vision-to-text
+        models.
 
         <Tip warning={true}>
 
-        In most cases, you do not need to call [`~generation.GenerationMixin.assisted_decoding`] directly. Use
+        In most cases, you do not need to call [`transformers.generation.GenerationMixin.candidate_decoding`] directly. Use
         generate() instead. For an overview of generation strategies and code examples, check the [following
         guide](../generation_strategies).
 
@@ -3107,6 +3116,9 @@ class GaudiGenerationMixin(GenerationMixin):
         Parameters:
             input_ids (`torch.LongTensor` of shape `(batch_size, sequence_length)`):
                 The sequence used as a prompt for the generation.
+            candidate_generator (`CandidateGenerator`, *optional*):
+                A derived instance of [`CandidateGenerator`] that defines how candidate sequences are generated. For
+                more information, the documentation of [`CandidateGenerator`] should be read. Only one of `assistant_model` or `candidate_generator` should be passed as input to this function.
             assistant_model (`PreTrainedModel`, *optional*):
                 An assistant model that can be used to accelerate generation. The assistant model must have the exact
                 same tokenizer. The acceleration is achieved when forecasting candidate tokens with the assistent model
@@ -3154,10 +3166,10 @@ class GaudiGenerationMixin(GenerationMixin):
                 If model is an encoder-decoder model the kwargs should include `encoder_outputs`.
 
         Return:
-            [`~generation.GreedySearchDecoderOnlyOutput`], [`~generation.GreedySearchEncoderDecoderOutput`] or
+            [`transformers.generation.GenerateDecoderOnlyOutput`], [`transformers.generation.GenerateEncoderDecoderOutput`] or
             `torch.LongTensor`: A `torch.LongTensor` containing the generated tokens (default behaviour) or a
-            [`~generation.GreedySearchDecoderOnlyOutput`] if `model.config.is_encoder_decoder=False` and
-            `return_dict_in_generate=True` or a [`~generation.GreedySearchEncoderDecoderOutput`] if
+            [`transformers.generation.GenerateDecoderOnlyOutput`] if `model.config.is_encoder_decoder=False` and
+            `return_dict_in_generate=True` or a [`transformers.generation.GenerateEncoderDecoderOutput`] if
             `model.config.is_encoder_decoder=True`.
 
         Examples:

@@ -574,15 +574,12 @@ def encode_prompt(batch, text_encoders, tokenizers, proportion_empty_prompts, ca
     return {"prompt_embeds": prompt_embeds.to(torch.float32), "pooled_prompt_embeds": pooled_prompt_embeds.to(torch.float32)}
 
 
-def compute_vae_encodings(batch, vae):
-    images = batch.pop("pixel_values")
-    pixel_values = torch.stack(list(images))
+def compute_vae_encodings(pixel_values, vae):
     pixel_values = pixel_values.to(memory_format=torch.contiguous_format).float()
     pixel_values = pixel_values.to(vae.device, dtype=vae.dtype)
     with torch.no_grad():
         model_input = vae.encode(pixel_values).latent_dist.sample()
-    model_input = model_input * vae.config.scaling_factor
-    return {"model_input": model_input.to(torch.float32)}
+    return model_input
 
 
 def generate_timestep_weights(args, num_timesteps):
@@ -815,13 +812,22 @@ def main(args):
                 f"--caption_column' value '{args.caption_column}' needs to be one of: {', '.join(column_names)}"
             )
 
+    text_encoder_one = text_encoder_one.to(accelerator.device, dtype=weight_dtype)
+    text_encoder_two = text_encoder_two.to(accelerator.device, dtype=weight_dtype)
     # Preprocessing the datasets.
     train_resize = transforms.Resize(args.resolution, interpolation=transforms.InterpolationMode.BILINEAR)
     train_crop = transforms.CenterCrop(args.resolution) if args.center_crop else transforms.RandomCrop(args.resolution)
     train_flip = transforms.RandomHorizontalFlip(p=1.0)
     train_transforms = transforms.Compose([transforms.ToTensor(), transforms.Normalize([0.5], [0.5])])
+    
+    vae = vae.to(accelerator.device, dtype=weight_dtype)
+    # Let's first compute all the embeddings so that we can free up the text encoders
+    # from memory. We will pre-compute the VAE encodings too.
+    text_encoders = [text_encoder_one, text_encoder_two]
+    tokenizers = [tokenizer_one, tokenizer_two]
 
     def preprocess_train(examples):
+        print("libin debug preprocess_train")
         images = [image.convert("RGB") for image in examples[image_column]]
         # image aug
         original_sizes = []
@@ -856,14 +862,6 @@ def main(args):
         # Set the training transforms
         train_dataset = dataset["train"].with_transform(preprocess_train)
 
-    vae = vae.to(accelerator.device, dtype=weight_dtype)
-    text_encoder_one = text_encoder_one.to(accelerator.device, dtype=weight_dtype)
-    text_encoder_two = text_encoder_two.to(accelerator.device, dtype=weight_dtype)
-
-    # Let's first compute all the embeddings so that we can free up the text encoders
-    # from memory. We will pre-compute the VAE encodings too.
-    text_encoders = [text_encoder_one, text_encoder_two]
-    tokenizers = [tokenizer_one, tokenizer_two]
     compute_embeddings_fn = functools.partial(
         encode_prompt,
         text_encoders=text_encoders,
@@ -871,32 +869,25 @@ def main(args):
         proportion_empty_prompts=args.proportion_empty_prompts,
         caption_column=args.caption_column,
     )
-    compute_vae_encodings_fn = functools.partial(compute_vae_encodings, vae=vae)
+
     with accelerator.main_process_first():
         from datasets.fingerprint import Hasher
 
         # fingerprint used by the cache for the other processes to load the result
         # details: https://github.com/huggingface/diffusers/pull/4038#discussion_r1266078401
         new_fingerprint = Hasher.hash(args)
-        new_fingerprint_for_vae = Hasher.hash("vae")
-
         train_dataset = train_dataset.map(compute_embeddings_fn, batched=True,
                                           new_fingerprint=new_fingerprint)
-        train_dataset = train_dataset.map(
-            compute_vae_encodings_fn,
-            batched=True,
-            batch_size=args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps,
-            new_fingerprint=new_fingerprint_for_vae)
 
     def collate_fn(examples):
-        model_input = torch.stack([torch.tensor(example["model_input"]) for example in examples])
+        pixel_values = torch.stack([torch.tensor(example["pixel_values"]) for example in examples])
         original_sizes = [example["original_sizes"] for example in examples]
         crop_top_lefts = [example["crop_top_lefts"] for example in examples]
         prompt_embeds = torch.stack([torch.tensor(example["prompt_embeds"]) for example in examples])
         pooled_prompt_embeds = torch.stack([torch.tensor(example["pooled_prompt_embeds"]) for example in examples])
 
         return {
-            "model_input": model_input.to(torch.bfloat16),
+            "pixel_values": pixel_values,
             "prompt_embeds": prompt_embeds,
             "pooled_prompt_embeds": pooled_prompt_embeds,
             "original_sizes": original_sizes,
@@ -915,7 +906,7 @@ def main(args):
     # Set unet as trainable.
     unet.train()
 
-    del text_encoders, tokenizers, vae
+    del text_encoders, tokenizers
     gc.collect()
     # Create EMA for the unet.
     if args.use_ema:
@@ -1068,8 +1059,9 @@ def main(args):
             if t0 is None and global_step == args.throughput_warmup_steps:
                 t0 = time.perf_counter()
             with accelerator.accumulate(unet):
+                # Move compute_vae_encoding here to reflect the transformed image input
+                model_input = compute_vae_encodings(batch['pixel_values'], vae)
                 # Sample noise that we'll add to the latents
-                model_input = batch["model_input"].to(dtype=weight_dtype)
                 noise = torch.randn_like(model_input)
                 if args.noise_offset:
                     # https://www.crosslabs.org//blog/diffusion-with-offset-noise
@@ -1115,7 +1107,7 @@ def main(args):
                 prompt_embeds = batch["prompt_embeds"].to(accelerator.device)
                 pooled_prompt_embeds = batch["pooled_prompt_embeds"].to(accelerator.device)
                 unet_added_conditions.update({"text_embeds": pooled_prompt_embeds})
-
+                htcore.mark_step()
                 model_pred = unet(
                     noisy_model_input,
                     timesteps,
@@ -1162,7 +1154,7 @@ def main(args):
                 # Gather the losses across all processes for logging (if we use distributed training).
                 avg_loss = accelerator.gather(loss.repeat(args.train_batch_size)).mean()
                 train_loss += avg_loss / args.gradient_accumulation_steps
-
+                print("libin debug loss for step loss /avg loss/tranin loss ", step, loss, avg_loss, train_loss)
                 # Backpropagate
                 #TODO: check why this cause bufferoverflow issue
                 #with torch.autocast(device_type="hpu", dtype=weight_dtype, enabled=True):
@@ -1214,7 +1206,7 @@ def main(args):
                         accelerator.save_state(save_path)
                         logger.info(f"Saved state to {save_path}")
 
-            if global_step % args.logging_step == 0:
+            if (global_step - 1) % args.logging_step == 0 or global_step == args.max_train_steps:
                 train_loss_scalar = train_loss.item()
                 accelerator.log({"train_loss": train_loss_scalar}, step=global_step)
 

@@ -786,6 +786,7 @@ def main(args):
         # See more about loading custom images at
         # https://huggingface.co/docs/datasets/v2.4.0/en/image_load#imagefolder
 
+
     # Preprocessing the datasets.
     # We need to tokenize inputs and targets.
     column_names = dataset["train"].column_names
@@ -810,13 +811,19 @@ def main(args):
             )
 
     # Preprocessing the datasets.
+    resize_size = args.resolution
+    crop_size = args.resolution
+    no_crop = resize_size == crop_size
     train_resize = transforms.Resize(args.resolution, interpolation=transforms.InterpolationMode.BILINEAR)
-    train_crop = transforms.CenterCrop(args.resolution) if args.center_crop else transforms.RandomCrop(args.resolution)
-    train_flip = transforms.RandomHorizontalFlip(p=1.0)
+    if not no_crop :
+        train_crop = transforms.CenterCrop(args.resolution) if args.center_crop else transforms.RandomCrop(args.resolution)
+    train_flip = transforms.RandomHorizontalFlip(p=0.5)
     train_transforms = transforms.Compose([transforms.ToTensor(), transforms.Normalize([0.5], [0.5])])
 
+    import time
     def preprocess_train(examples):
         images = [image.convert("RGB") for image in examples[image_column]]
+
         # image aug
         original_sizes = []
         all_images = []
@@ -824,14 +831,18 @@ def main(args):
         for image in images:
             original_sizes.append((image.height, image.width))
             image = train_resize(image)
-            if args.center_crop:
-                y1 = max(0, int(round((image.height - args.resolution) / 2.0)))
-                x1 = max(0, int(round((image.width - args.resolution) / 2.0)))
-                image = train_crop(image)
+            if no_crop:
+                y1 = 0
+                x1 = 0
             else:
-                y1, x1, h, w = train_crop.get_params(image, (args.resolution, args.resolution))
-                image = crop(image, y1, x1, h, w)
-            if args.random_flip and random.random() < 0.5:
+                if args.center_crop:
+                    y1 = max(0, int(round((image.height - args.resolution) / 2.0)))
+                    x1 = max(0, int(round((image.width - args.resolution) / 2.0)))
+                    image = train_crop(image)
+                else:
+                    y1, x1, h, w = train_crop.get_params(image, (args.resolution, args.resolution))
+                    image = crop(image, y1, x1, h, w)
+            if args.random_flip:
                 # flip
                 image = train_flip(image)
             crop_top_left = (y1, x1)
@@ -850,8 +861,16 @@ def main(args):
         # Set the training transforms
         train_dataset = dataset["train"].with_transform(preprocess_train)
 
+
     # Let's first compute all the embeddings so that we can free up the text encoders
     # from memory. We will pre-compute the VAE encodings too.
+
+    # Move unet, vae and text_encoder to device and cast to weight_dtype
+    # The VAE is in float32 to avoid NaN losses.
+    vae.to(accelerator.device) # dtype=weight_dtype
+    text_encoder_one.to(accelerator.device, dtype=weight_dtype)
+    text_encoder_two.to(accelerator.device, dtype=weight_dtype)
+
     text_encoders = [text_encoder_one, text_encoder_two]
     tokenizers = [tokenizer_one, tokenizer_two]
     compute_embeddings_fn = functools.partial(
@@ -876,7 +895,12 @@ def main(args):
             batched=True,
             batch_size=args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps,
             new_fingerprint=new_fingerprint_for_vae,
+            load_from_cache_file=False,
         )
+        print('MAPS DONE', flush=True)
+
+    del text_encoders, tokenizers
+    gc.collect()
 
     def collate_fn(examples):
         model_input = torch.stack([torch.tensor(example["model_input"]) for example in examples])
@@ -905,13 +929,6 @@ def main(args):
     # Set unet as trainable.
     unet.train()
 
-    # Move unet, vae and text_encoder to device and cast to weight_dtype
-    # The VAE is in float32 to avoid NaN losses.
-    vae.to(accelerator.device, dtype=weight_dtype)
-    text_encoder_one.to(accelerator.device, dtype=weight_dtype)
-    text_encoder_two.to(accelerator.device, dtype=weight_dtype)
-    del text_encoders, tokenizers
-    gc.collect()
     # Create EMA for the unet.
     if args.use_ema:
         ema_unet = UNet2DConditionModel.from_pretrained(

@@ -227,6 +227,7 @@ def setup_parser(parser):
         help="Store kv-cache in float8 when kv-cache is used. Can't use this argument together with QUANT_CONFIG env var",
     )
     parser.add_argument("--fp8", action="store_true", help="Enable Quantization to fp8")
+    parser.add_argument("--int4", action="store_true", help="Enable Quantization to int4")
     parser.add_argument(
         "--use_flash_attention",
         action="store_true",

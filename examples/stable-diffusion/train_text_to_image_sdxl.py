@@ -36,7 +36,8 @@ import torch.nn.functional as F
 import torch.utils.checkpoint
 import transformers
 from accelerate.logging import get_logger
-from accelerate.utils import ProjectConfiguration
+from accelerate.utils import ProjectConfiguration, DistributedDataParallelKwargs
+
 from datasets import load_dataset
 from diffusers import (
     AutoencoderKL,
@@ -57,7 +58,7 @@ from optimum.habana import GaudiConfig
 from optimum.habana.accelerate import GaudiAccelerator
 from optimum.habana.diffusers import GaudiEulerDiscreteScheduler, GaudiStableDiffusionXLPipeline
 from optimum.habana.utils import set_seed, HabanaProfile
-
+from optimum.habana.accelerate.utils.dataclasses import GaudiDistributedType
 
 if is_wandb_available():
     import wandb
@@ -504,6 +505,12 @@ def parse_args(input_args=None):
         type=int,
         help="Number of steps to capture for profiling.",
     )
+    parser.add_argument(
+        "--logging_step",
+        default=1,
+        type=int,
+        help="Print the loss for every logging_step.",
+    )
 
     if input_args is not None:
         args = parser.parse_args(input_args)
@@ -918,6 +925,7 @@ def main(args):
         }
 
     # DataLoaders creation:
+
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
         shuffle=True,
@@ -986,30 +994,38 @@ def main(args):
         num_training_steps=args.max_train_steps * args.gradient_accumulation_steps,
     )
 
-    unet.to("hpu")
+    unet = unet.to("hpu")
     # Prepare everything with our `accelerator`.
     unet, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
         unet, optimizer, train_dataloader, lr_scheduler
     )
-    if args.use_hpu_graphs_for_training:
-        unet = htcore.hpu.ModuleCacher(max_graphs=10)(model=unet, inplace=True)
+
+
     # We need to recalculate our total training steps as the size of the training dataloader may have changed.
     num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
     if overrode_max_train_steps:
         args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
     # Afterwards we recalculate our number of training epochs
     args.num_train_epochs = math.ceil(args.max_train_steps / num_update_steps_per_epoch)
-
     # We need to initialize the trackers we use, and also store our configuration.
     # The trackers initializes automatically on the main process.
     if accelerator.is_main_process:
         accelerator.init_trackers("text2image-fine-tune-sdxl", config=vars(args))
 
-    def unwrap_model(model):
+    def unwrap_model(model, training=False):
         model = accelerator.unwrap_model(model)
         model = model._orig_mod if is_compiled_module(model) else model
-        return model
+        if not training:
+            return model
+        else:
+            if accelerator.distributed_type == GaudiDistributedType.MULTI_HPU:
+                kwargs = {}
+                kwargs["gradient_as_bucket_view"] = True
+                accelerator.ddp_handler = DistributedDataParallelKwargs(**kwargs)
+            if args.use_hpu_graphs_for_training:
+                htcore.hpu.ModuleCacher()(model=model, inplace=True)
 
+    unwrap_model(model=unet, training=True)
     hb_profiler = HabanaProfile(warmup=args.profiling_warmup_steps, active=args.profiling_steps, record_shapes=False)
     # Train!
     total_batch_size = args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
@@ -1063,8 +1079,9 @@ def main(args):
     import habana_frameworks.torch as htorch
     t0 = None
     t_start = time.perf_counter()
+    zero_tensor = torch.tensor(0, dtype=torch.float, device='hpu')
     for epoch in range(first_epoch, args.num_train_epochs):
-        train_loss = 0.0
+        train_loss = zero_tensor
         if hb_profiler:
             hb_profiler.start()
         for step, batch in enumerate(train_dataloader):
@@ -1192,8 +1209,6 @@ def main(args):
             if accelerator.sync_gradients:
                 progress_bar.update(1)
                 global_step += 1
-                accelerator.log({"train_loss": train_loss}, step=global_step)
-                train_loss = 0.0
 
                 if accelerator.is_main_process:
                     if global_step % args.checkpointing_steps == 0:
@@ -1221,8 +1236,17 @@ def main(args):
                         accelerator.save_state(save_path)
                         logger.info(f"Saved state to {save_path}")
 
-            logs = {"step_loss": loss.detach().item(), "lr": lr_scheduler.get_last_lr()[0]}
-            progress_bar.set_postfix(**logs)
+            if global_step % args.logging_step == 0:
+                train_loss_scalar = train_loss.item()
+                accelerator.log({"train_loss": train_loss_scalar}, step=global_step)
+
+                if args.gradient_accumulation_steps > 1:
+                    logs = {"step_loss": loss.item(), "lr": lr_scheduler.get_last_lr()[0]}
+                else:
+                    logs = {"step_loss": train_loss_scalar, "lr": lr_scheduler.get_last_lr()[0]}
+                progress_bar.set_postfix(**logs)
+
+            train_loss = zero_tensor
 
             if global_step >= args.max_train_steps:
                 break

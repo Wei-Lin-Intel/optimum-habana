@@ -579,6 +579,7 @@ def compute_vae_encodings(pixel_values, vae):
     pixel_values = pixel_values.to(vae.device, dtype=vae.dtype)
     with torch.no_grad():
         model_input = vae.encode(pixel_values).latent_dist.sample()
+    model_input = model_input * vae.config.scaling_factor
     return model_input
 
 
@@ -827,7 +828,6 @@ def main(args):
     tokenizers = [tokenizer_one, tokenizer_two]
 
     def preprocess_train(examples):
-        print("libin debug preprocess_train")
         images = [image.convert("RGB") for image in examples[image_column]]
         # image aug
         original_sizes = []
@@ -880,7 +880,7 @@ def main(args):
                                           new_fingerprint=new_fingerprint)
 
     def collate_fn(examples):
-        pixel_values = torch.stack([torch.tensor(example["pixel_values"]) for example in examples])
+        pixel_values = torch.stack([example["pixel_values"].clone().detach() for example in examples])
         original_sizes = [example["original_sizes"] for example in examples]
         crop_top_lefts = [example["crop_top_lefts"] for example in examples]
         prompt_embeds = torch.stack([torch.tensor(example["prompt_embeds"]) for example in examples])
@@ -1052,7 +1052,7 @@ def main(args):
     t_start = time.perf_counter()
     zero_tensor = torch.tensor(0, dtype=torch.float, device='hpu')
     for epoch in range(first_epoch, args.num_train_epochs):
-        train_loss = zero_tensor
+        train_loss.zero_()
         if hb_profiler:
             hb_profiler.start()
         for step, batch in enumerate(train_dataloader):
@@ -1154,7 +1154,6 @@ def main(args):
                 # Gather the losses across all processes for logging (if we use distributed training).
                 avg_loss = accelerator.gather(loss.repeat(args.train_batch_size)).mean()
                 train_loss += avg_loss / args.gradient_accumulation_steps
-                print("libin debug loss for step loss /avg loss/tranin loss ", step, loss, avg_loss, train_loss)
                 # Backpropagate
                 #TODO: check why this cause bufferoverflow issue
                 #with torch.autocast(device_type="hpu", dtype=weight_dtype, enabled=True):
@@ -1206,17 +1205,16 @@ def main(args):
                         accelerator.save_state(save_path)
                         logger.info(f"Saved state to {save_path}")
 
-            if (global_step - 1) % args.logging_step == 0 or global_step == args.max_train_steps:
-                train_loss_scalar = train_loss.item()
-                accelerator.log({"train_loss": train_loss_scalar}, step=global_step)
+                if (global_step - 1) % args.logging_step == 0 or global_step == args.max_train_steps:
+                    train_loss_scalar = train_loss.item()
+                    accelerator.log({"train_loss": train_loss_scalar}, step=global_step)
 
-                if args.gradient_accumulation_steps > 1:
-                    logs = {"step_loss": loss.item(), "lr": lr_scheduler.get_last_lr()[0]}
-                else:
-                    logs = {"step_loss": train_loss_scalar, "lr": lr_scheduler.get_last_lr()[0]}
-                progress_bar.set_postfix(**logs)
-
-            train_loss = zero_tensor
+                    if args.gradient_accumulation_steps > 1:
+                        logs = {"step_loss": loss.item(), "lr": lr_scheduler.get_last_lr()[0]}
+                    else:
+                        logs = {"step_loss": train_loss_scalar, "lr": lr_scheduler.get_last_lr()[0]}
+                    progress_bar.set_postfix(**logs)
+                train_loss.zero_()
 
             if global_step >= args.max_train_steps:
                 break

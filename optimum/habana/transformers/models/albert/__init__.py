@@ -1,1 +1,1 @@
-from .modeling_albert import gaudi_albert_forward
+from .modeling_albert import gaudi_albert_attention_forward, gaudi_albert_forward

@@ -1,4 +1,7 @@
-from .albert import gaudi_albert_forward
+from .albert import (
+    gaudi_albert_attention_forward,
+    gaudi_albert_forward,
+)
 from .bart import (
     gaudi_BartAttention_forward,
     gaudi_BartDecoder_forward,

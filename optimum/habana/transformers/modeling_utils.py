@@ -41,6 +41,7 @@ from .models import (
     GaudiOPTLearnedPositionalEmbedding,
     _gaudi_wav2vec2_compute_mask_indices,
     _gaudi_wav2vec2_mask_hidden_states,
+    gaudi_albert_attention_forward,
     gaudi_albert_forward,
     gaudi_BartAttention_forward,
     gaudi_BartDecoder_forward,
@@ -195,6 +196,7 @@ def adapt_transformers_to_gaudi():
     transformers.modeling_utils.ModuleUtilsMixin.get_extended_attention_mask = gaudi_get_extended_attention_mask
     # AlbertModel.forward does not rely on get_extended_attention_mask so it also needs to be replaced
     transformers.models.albert.modeling_albert.AlbertModel.forward = gaudi_albert_forward
+    transformers.models.albert.modeling_albert.AlbertAttention.forward = gaudi_albert_attention_forward
 
     # Optimization for GPT2 on Gaudi
     transformers.models.gpt2.modeling_gpt2.GPT2Attention = GaudiGPT2Attention

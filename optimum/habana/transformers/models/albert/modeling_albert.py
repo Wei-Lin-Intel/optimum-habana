@@ -14,12 +14,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
+import os
 from typing import Optional, Tuple, Union
 
 import torch
+from torch import nn
+
+#from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 from transformers.modeling_outputs import BaseModelOutputWithPooling
+from transformers.utils import logging
 
 
+logger = logging.get_logger(__name__)
 def gaudi_albert_forward(
     self,
     input_ids: Optional[torch.LongTensor] = None,
@@ -99,3 +106,90 @@ def gaudi_albert_forward(
         hidden_states=encoder_outputs.hidden_states,
         attentions=encoder_outputs.attentions,
     )
+
+def gaudi_albert_attention_forward(
+    self,
+    hidden_states: torch.Tensor,
+    attention_mask: Optional[torch.FloatTensor] = None,
+    head_mask: Optional[torch.FloatTensor] = None,
+    output_attentions: bool = False,
+) -> Union[Tuple[torch.Tensor], Tuple[torch.Tensor, torch.Tensor]]:
+    """
+    Same as https://github.com/huggingface/transformers/blob/v4.34.1/src/transformers/models/albert/modeling_albert.py#359
+    except that dropout layer is not called if value is 0, otherwise move to CPU when it's not LAZY mode
+    to avoid outofmemory issue.
+    """
+
+    mixed_query_layer = self.query(hidden_states)
+    mixed_key_layer = self.key(hidden_states)
+    mixed_value_layer = self.value(hidden_states)
+
+    query_layer = self.transpose_for_scores(mixed_query_layer)
+    key_layer = self.transpose_for_scores(mixed_key_layer)
+    value_layer = self.transpose_for_scores(mixed_value_layer)
+
+    # Take the dot product between "query" and "key" to get the raw attention scores.
+    attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
+    attention_scores = attention_scores / math.sqrt(self.attention_head_size)
+
+    if attention_mask is not None:
+        # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
+        attention_scores = attention_scores + attention_mask
+
+    if self.position_embedding_type == "relative_key" or self.position_embedding_type == "relative_key_query":
+        seq_length = hidden_states.size()[1]
+        position_ids_l = torch.arange(seq_length, dtype=torch.long, device=hidden_states.device).view(-1, 1)
+        position_ids_r = torch.arange(seq_length, dtype=torch.long, device=hidden_states.device).view(1, -1)
+        distance = position_ids_l - position_ids_r
+        positional_embedding = self.distance_embedding(distance + self.max_position_embeddings - 1)
+        positional_embedding = positional_embedding.to(dtype=query_layer.dtype)  # fp16 compatibility
+
+        if self.position_embedding_type == "relative_key":
+            relative_position_scores = torch.einsum("bhld,lrd->bhlr", query_layer, positional_embedding)
+            attention_scores = attention_scores + relative_position_scores
+        elif self.position_embedding_type == "relative_key_query":
+            relative_position_scores_query = torch.einsum("bhld,lrd->bhlr", query_layer, positional_embedding)
+            relative_position_scores_key = torch.einsum("bhrd,lrd->bhlr", key_layer, positional_embedding)
+            attention_scores = attention_scores + relative_position_scores_query + relative_position_scores_key
+
+    # Normalize the attention scores to probabilities.
+    attention_probs = nn.functional.softmax(attention_scores, dim=-1)
+
+    from optimum.habana.utils import get_hpu_memory_stats
+    mem = get_hpu_memory_stats()
+    for k, v in mem.items():
+        logger.info("{:35} = {} GB".format(k[:-5].replace("_", " ").capitalize(), v))
+        break
+
+    # This is actually dropping out entire tokens to attend to, which might
+    # seem a bit unusual, but is taken from the original Transformer paper.
+    if os.environ.get("PT_HPU_LAZY_MODE", "1") == "0":
+        if self.attention_dropout.p != 0:
+            attention_probs = attention_probs.to("cpu") #THIS SEEMS STILL CRASH AT THIS POINT.
+            attention_probs = self.attention_dropout(attention_probs)
+            attention_probs = attention_probs.to("hpu")
+    else:
+        attention_probs = self.attention_dropout(attention_probs)
+
+
+    # Mask heads if we want to
+    if head_mask is not None:
+        attention_probs = attention_probs * head_mask
+
+    context_layer = torch.matmul(attention_probs, value_layer)
+    context_layer = context_layer.transpose(2, 1).flatten(2)
+
+    projected_context_layer = self.dense(context_layer)
+    if os.environ.get("PT_HPU_LAZY_MODE", "1") == "0":
+        if self.output_dropout.p != 0:
+            projected_context_layer = projected_context_layer.to("cpu")
+            projected_context_layer_dropout = self.output_dropout(projected_context_layer)
+            projected_context_layer_dropout = projected_context_layer_dropout.to("hpu")
+        else:
+            projected_context_layer_dropout = projected_context_layer
+    else:
+        projected_context_layer_dropout = self.output_dropout(projected_context_layer)
+
+    layernormed_context_layer = self.LayerNorm(hidden_states + projected_context_layer_dropout)
+    return (layernormed_context_layer, attention_probs) if output_attentions else (layernormed_context_layer,)
+

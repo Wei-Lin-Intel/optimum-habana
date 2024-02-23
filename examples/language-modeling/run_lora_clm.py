@@ -693,6 +693,7 @@ def main():
             model.enable_input_require_grads()
         if training_args.torch_compile:
             from optimum.habana.peft.layer import GaudiLoraLayerLinearForward
+
             tuners.lora.layer.Linear.forward = GaudiLoraLayerLinearForward
         lora_model = get_peft_model(model, peft_config)
         if training_args.bf16:

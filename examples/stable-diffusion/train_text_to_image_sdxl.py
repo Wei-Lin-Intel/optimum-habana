@@ -243,7 +243,7 @@ def parse_args(input_args=None):
         default=None,
         help="The directory where the downloaded models and datasets will be stored.",
     )
-    parser.add_argument("--seed", type=int, default=None, help="A seed for reproducible training.")
+    parser.add_argument("--seed", type=int, default=42, help="A seed for reproducible training.")
     parser.add_argument(
         "--resolution",
         type=int,
@@ -666,6 +666,7 @@ def main(args):
     # If passed along, set the training seed now.
     if args.seed is not None:
         set_seed(args.seed)
+        torch.use_deterministic_algorithms(True)
 
     # Handle the repository creation
     if accelerator.is_main_process:
@@ -858,6 +859,7 @@ def main(args):
                 y1 = 0
             if args.random_flip and random.random() < 0.5:
                 # flip
+                x1 = image.width - x1
                 image = train_flip(image)
             crop_top_left = (y1, x1)
             crop_top_lefts.append(crop_top_left)

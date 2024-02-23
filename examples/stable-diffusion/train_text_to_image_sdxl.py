@@ -254,6 +254,15 @@ def parse_args(input_args=None):
         ),
     )
     parser.add_argument(
+        "--crop_resolution",
+        type=int,
+        default=1024,
+        help=(
+            "The resolution for crop input images, all the images in the train/validation dataset will be resized to this"
+            " resolution"
+        ),
+    )
+    parser.add_argument(
         "--center_crop",
         default=False,
         action="store_true",
@@ -836,13 +845,17 @@ def main(args):
         for image in images:
             original_sizes.append((image.height, image.width))
             image = train_resize(image)
-            if args.center_crop:
-                y1 = max(0, int(round((image.height - args.resolution) / 2.0)))
-                x1 = max(0, int(round((image.width - args.resolution) / 2.0)))
-                image = train_crop(image)
+            if args.crop_resolution < args.resolution:
+                if args.center_crop:
+                    y1 = max(0, int(round((image.height - args.resolution) / 2.0)))
+                    x1 = max(0, int(round((image.width - args.resolution) / 2.0)))
+                    image = train_crop(image)
+                else:
+                    y1, x1, h, w = train_crop.get_params(image, (args.resolution, args.resolution))
+                    image = crop(image, y1, x1, h, w)
             else:
-                y1, x1, h, w = train_crop.get_params(image, (args.resolution, args.resolution))
-                image = crop(image, y1, x1, h, w)
+                x1 = 0
+                y1 = 0
             if args.random_flip and random.random() < 0.5:
                 # flip
                 image = train_flip(image)

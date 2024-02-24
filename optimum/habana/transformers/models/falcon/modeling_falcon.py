@@ -47,7 +47,7 @@ from transformers.models.falcon.modeling_falcon import (
     FalconRotaryEmbedding,
     apply_rotary_pos_emb,
     build_alibi_tensor,
-    dropout_add,
+    #dropout_add,
 )
 from ..modeling_all_models import ScopedLinearAllReduce
 from transformers.utils import logging
@@ -59,6 +59,26 @@ from ...modeling_attn_mask_utils import (
 
 
 logger = logging.get_logger(__name__)
+
+
+def dropout_add(x: torch.Tensor, residual: torch.Tensor, prob: float, training: bool) -> torch.Tensor:
+    """
+    Dropout add function
+
+    Args:
+        x (`torch.tensor`, *required*):
+            input tensor
+        residual (`torch.tensor`, *required*):
+            residual tensor
+        prob (`float`, *required*):
+            dropout probability
+        training (`bool`, *required*):
+            training mode
+    """
+    out = F.dropout(x, p=prob, training=training)
+    #out = residual + out
+    out.add_(residual)
+    return out
 
 def apply_customized_rope(q, k, cos, sin, position_ids):
     if q.device.type == "hpu" and FusedRoPE:
@@ -307,6 +327,7 @@ class GaudiFalconAttention(FalconAttention):
         output_attentions: bool = False,
         token_idx: Optional[torch.Tensor] = None,
         reuse_cache: Optional[bool] = False,
+        cache_idx: int = None,
         **kwargs,
     ):
         """
@@ -362,6 +383,11 @@ class GaudiFalconAttention(FalconAttention):
                 key_layer = update(layer_past[0], key_layer, -2, token_idx, self.inp_seq_len) # k_layer bs*1, q_len, head_dim
                 value_layer = update(layer_past[1], value_layer, -2, token_idx, self.inp_seq_len)
 
+            if cache_idx is not None and query_length == 1:
+                key_layer = key_layer[:, :, :cache_idx, :]
+                value_layer = value_layer[:, :, :cache_idx, :]
+                attention_mask = attention_mask[:, :, :, :cache_idx]
+                kv_seq_len = key_layer.shape[-2]
             ###not needed after update() implemented
             #if token_idx is not None:
             #    past_key.index_copy_(1, token_idx - 1, key_layer)
@@ -510,6 +536,7 @@ class GaudiFalconAttention(FalconAttention):
         output_attentions: bool = False,
         token_idx: Optional[torch.Tensor] = None,
         reuse_cache: Optional[bool] = False,
+        cache_idx: int = None,
         **kwargs,
     ):
         """
@@ -564,6 +591,11 @@ class GaudiFalconAttention(FalconAttention):
                 key_layer = update(layer_past[0], key_layer, -2, token_idx, self.inp_seq_len) # k_layer bs*1, q_len, head_dim
                 value_layer = update(layer_past[1], value_layer, -2, token_idx, self.inp_seq_len)
 
+            if cache_idx is not None and query_length == 1:
+                key_layer = key_layer[:, :, :cache_idx, :]
+                value_layer = value_layer[:, :, :cache_idx, :]
+                attention_mask = attention_mask[:, :, :, :cache_idx]
+                kv_seq_len = key_layer.shape[-2]
             '''
             past_key, past_value = layer_past
             if token_idx is not None:
@@ -768,6 +800,7 @@ class GaudiFalconDecoderLayer(FalconDecoderLayer):
         output_attentions: bool = False,
         token_idx: Optional[torch.Tensor] = None,
         reuse_cache: Optional[bool] = False,
+        cache_idx: int = None,
         **kwargs,
     ):
         """
@@ -818,7 +851,7 @@ class GaudiFalconDecoderLayer(FalconDecoderLayer):
             outputs = attn_outputs[1:]
         else: ### falcon-40b and falcon-180b with DS
             residual = hidden_states
-            attn_outputs, present, attn_scores, mlp_layernorm_out = self.pre_attn( #layernorm+attention before AllReduce
+            hidden_states, present, attn_scores, mlp_layernorm_out = self.pre_attn( #layernorm+attention before AllReduce
                         hidden_states,
                         layer_past=layer_past,
                         attention_mask=attention_mask,
@@ -829,12 +862,14 @@ class GaudiFalconDecoderLayer(FalconDecoderLayer):
                         output_attentions=output_attentions,
                         token_idx=token_idx,
                         reuse_cache=reuse_cache,
+                        cache_idx=cache_idx,
+                        **kwargs,
                     )
-            #print("*************", attn_outputs)
-            self.self_attention.attention_all_reduce(attn_outputs) #AllReduce
-            attn_outputs = self.self_attention.post_attn_forward(attn_outputs) #after AllReduce post_attn_forward() has to be call to add bias
 
-            attention_output = attn_outputs#[0]
+            self.self_attention.attention_all_reduce(hidden_states) #AllReduce
+            hidden_states = self.self_attention.post_attn_forward(hidden_states) #after AllReduce post_attn_forward() has to be call to add bias
+
+            attention_output = hidden_states#[0]
 
             if not self.config.new_decoder_architecture:
                 if self.config.parallel_attn:
@@ -849,16 +884,16 @@ class GaudiFalconDecoderLayer(FalconDecoderLayer):
 
         # MLP
         if not self.config.new_decoder_architecture: ## falcon-7b
-            mlp_output = self.mlp(mlp_layernorm_out)
+           hidden_states  = self.mlp(mlp_layernorm_out)
         else: ### falcon-40b and falcon-180b with DS
-            mlp_output = self.mlp.pre_mlp_forward(mlp_layernorm_out)
-            self.mlp.mlp_all_reduce(mlp_output)
-            mlp_output = self.mlp.post_mlp_forward(mlp_output)
+            hidden_states = self.mlp.pre_mlp_forward(mlp_layernorm_out)
+            self.mlp.mlp_all_reduce(hidden_states)
+            hidden_states = self.mlp.post_mlp_forward(hidden_states)
 
         if self.config.new_decoder_architecture or self.config.parallel_attn:            
-            mlp_output += attention_output
+            hidden_states += attention_output
 
-        output = dropout_add(mlp_output, residual, self.config.hidden_dropout, training=self.training)
+        output = dropout_add(hidden_states, residual, self.config.hidden_dropout, training=self.training)
 
         if use_cache:
             outputs = (output,) + outputs
@@ -880,6 +915,7 @@ class GaudiFalconDecoderLayer(FalconDecoderLayer):
         output_attentions: bool = False,
         token_idx: Optional[torch.Tensor] = None,
         reuse_cache: Optional[bool] = False,
+        cache_idx: int = None,
     ):
         if self.config.new_decoder_architecture:
             attention_layernorm_out = self.ln_attn(hidden_states)
@@ -902,6 +938,7 @@ class GaudiFalconDecoderLayer(FalconDecoderLayer):
                 output_attentions=output_attentions,
                 token_idx=token_idx,
                 reuse_cache=reuse_cache,
+                cache_idx=cache_idx,
             )
         else:
             attn_outputs, present = self.self_attention.pre_attn_forward(
@@ -915,6 +952,7 @@ class GaudiFalconDecoderLayer(FalconDecoderLayer):
                 output_attentions=output_attentions,
                 token_idx=token_idx,
                 reuse_cache=reuse_cache,
+                cache_idx=cache_idx,
             )
         
         return attn_outputs, present, attn_scores, mlp_layernorm_out
@@ -952,6 +990,7 @@ class GaudiFalconModel(FalconModel):
         return_dict: Optional[bool] = None,
         token_idx: Optional[torch.Tensor] = None,
         reuse_cache: Optional[bool] = False,
+        cache_idx: int = None,
     ) -> Union[Tuple[torch.Tensor, ...], BaseModelOutputWithPastAndCrossAttentions]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -1069,6 +1108,7 @@ class GaudiFalconModel(FalconModel):
         # head_mask has shape n_layer x batch x num_heads x N x N
         head_mask = self.get_head_mask(head_mask, self.config.num_hidden_layers)
 
+        htcore.mark_step()
         for i, (block, layer_past) in enumerate(zip(self.h, past_key_values)):
             if output_hidden_states:
                 all_hidden_states = all_hidden_states + (hidden_states,)
@@ -1098,6 +1138,7 @@ class GaudiFalconModel(FalconModel):
                     alibi=alibi,
                     token_idx=token_idx,
                     reuse_cache=reuse_cache,
+                    cache_idx=cache_idx,
                 )
 
             hidden_states = outputs[0]
@@ -1137,6 +1178,7 @@ class GaudiFalconForCausalLM(FalconForCausalLM):
     
     def allocate_kv_cache(self, batch_size, max_seq_len, inp_seq_len, kv_cache_fp8): ###kv_cache_fp8 to be removed after it is removed from generation/utils.py
         self.transformer.allocate_kv_cache(batch_size, max_seq_len, inp_seq_len)
+        self.kv_cache_len = max_seq_len
 
     def update_sincos_cache(self, seq_len):
         self.transformer.update_sincos_cache(seq_len)
@@ -1194,6 +1236,7 @@ class GaudiFalconForCausalLM(FalconForCausalLM):
             "attention_mask": attention_mask,
             "token_idx": token_idx,
             "reuse_cache": reuse_cache,
+            "cache_idx": kwargs.get("cache_idx"),
         }
 
     def forward(
@@ -1212,6 +1255,7 @@ class GaudiFalconForCausalLM(FalconForCausalLM):
         token_idx: Optional[torch.Tensor] = None,
         reuse_cache: Optional[bool] = False,
         trim_logits: Optional[bool] = False,
+        cache_idx: int = None,
     ) -> Union[Tuple[torch.Tensor], CausalLMOutputWithCrossAttentions]:
         r"""
         labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
@@ -1234,6 +1278,7 @@ class GaudiFalconForCausalLM(FalconForCausalLM):
             return_dict=return_dict,
             token_idx=token_idx,
             reuse_cache=reuse_cache,
+            cache_idx=cache_idx,
         )
         hidden_states = transformer_outputs[0]
 

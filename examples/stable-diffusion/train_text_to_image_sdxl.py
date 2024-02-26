@@ -1272,7 +1272,7 @@ def main(args):
                 pipeline.set_progress_bar_config(disable=True)
 
                 # run inference
-                generator = torch.Generator(device=accelerator.device).manual_seed(args.seed) if args.seed else None
+                generator = torch.Generator(device='cpu').manual_seed(args.seed) if args.seed else None
                 pipeline_args = {"prompt": args.validation_prompt}
 
                 with torch.autocast(device_type="hpu", dtype=torch.bfloat16, enabled=gaudi_config.use_torch_autocast):

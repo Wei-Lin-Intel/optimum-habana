@@ -1071,7 +1071,7 @@ def main(args):
         if hb_profiler:
             hb_profiler.start()
         for step, batch in enumerate(train_dataloader):
-            if t0 is None and global_step == args.throughput_warmup_steps:
+            if t0 is None or global_step == args.throughput_warmup_steps:
                 t0 = time.perf_counter()
             with accelerator.accumulate(unet):
                 # Move compute_vae_encoding here to reflect the transformed image input

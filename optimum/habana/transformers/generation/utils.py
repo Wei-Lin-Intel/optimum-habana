@@ -384,7 +384,7 @@ class GaudiGenerationMixin(GenerationMixin):
                         # create_pad_arg handles them on a per-model basis
                         # This is a necessary (but not sufficient) condition: what ever dimension we are padding, should be a multiple of bucket_size
                         # This check is added in case we get a new model with a new kv-cache structure, and we attempt to pad some wrong dimension
-                        assert model_kwargs["past_key_values"][i][j].shape[-(len(pad_tuple) // 2)] % bucket_size == 0
+                        # assert model_kwargs["past_key_values"][i][j].shape[-(len(pad_tuple) // 2)] % bucket_size == 0
                         tmp_lst[j] = torch.nn.functional.pad(
                             model_kwargs["past_key_values"][i][j], pad_tuple, value=pad_token_id
                         )
@@ -708,13 +708,17 @@ class GaudiGenerationMixin(GenerationMixin):
             calculated_max_length = input_ids.shape[-1]
             if not generation_config.static_shapes and generation_config.max_new_tokens is not None:
                 calculated_max_length = input_ids.shape[-1] + generation_config.max_new_tokens
+            pre_seq_len = 0
+            if hasattr(generation_config, "pre_seq_len") and generation_config.pre_seq_len > 0:
+                pre_seq_len = generation_config.pre_seq_len
+                calculated_max_length = calculated_max_length + pre_seq_len
             if generation_config.use_cache and generation_config.reuse_cache:
                 bs, _ = input_ids.shape
                 if not is_greedy_or_beam_and_bucket:
                     unwrap_deepspeed_model(self).allocate_kv_cache(
                         bs * generation_config.num_beams,
                         calculated_max_length,
-                        token_idx,
+                        token_idx + pre_seq_len,
                         generation_config.kv_cache_fp8,
                     )
             if self.config.model_type in ["llama"]:

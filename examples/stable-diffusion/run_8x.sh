@@ -22,4 +22,5 @@ python ../gaudi_spawn.py --world_size 8 --use_mpi train_text_to_image_sdxl.py \
   --use_hpu_graphs_for_training \
   --use_hpu_graphs_for_inference \
   --validation_prompt="a robotic cat with wings" \
-  --validation_epochs 48  2>&1 | tee log_8x_r512.txt
+  --validation_epochs 48  \
+  --checkpointing_steps 336 2>&1 | tee log_8x_r512.txt

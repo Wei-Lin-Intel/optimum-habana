@@ -8,7 +8,7 @@ python train_text_to_image_sdxl.py \
   --random_flip \
   --proportion_empty_prompts=0.2 \
   --train_batch_size 16 \
-  --max_train_steps 2500 \cd 
+  --max_train_steps 2500 \
   --learning_rate 1e-05 \
   --max_grad_norm 1 \
   --lr_scheduler constant \
@@ -18,7 +18,7 @@ python train_text_to_image_sdxl.py \
   --throughput_warmup_steps 3 \
   --dataloader_num_workers 8 \
   --bf16 \
-  --use_hpu_graphs_for_train \
+  --use_hpu_graphs_for_training \
   --use_hpu_graphs_for_inference \
   --validation_prompt="a robotic cat with wings" \
   --validation_epochs 48 \

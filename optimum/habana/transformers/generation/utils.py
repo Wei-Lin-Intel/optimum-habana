@@ -360,18 +360,15 @@ class GaudiGenerationMixin(GenerationMixin):
 
                 def create_pad_arg(pad_amount, i, j):
                     if model_kwargs["past_key_values"][0][0].dim() == 3:
-                        assert self.config.model_type == "bloom" or self.config.model_type == "baichuan"
-                        if self.config.model_type == "bloom":
-                            if j == 0:
-                                return (0, pad_amount)
-                            elif j == 1:
-                                return (0, 0, 0, pad_amount)
-                            else:
-                                assert False
-                        else: # baichuan-13b
+                        assert self.config.model_type == "bloom"
+                        if j == 0:
+                            return (0, pad_amount)
+                        elif j == 1:
                             return (0, 0, 0, pad_amount)
+                        else:
+                            assert False
                     elif model_kwargs["past_key_values"][0][0].dim() == 4:
-                        return (0, 0, 0, pad_amount)  # llama, falcon, chatglm2
+                        return (0, 0, 0, pad_amount)  # llama, falcon, baichuan2-13b, chatglm2
                     else:
                         assert False, "Unknown case, please handle, or dont use bucketing"
 

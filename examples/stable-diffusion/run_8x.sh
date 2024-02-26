@@ -3,12 +3,13 @@ python ../gaudi_spawn.py --world_size 8 --use_mpi train_text_to_image_sdxl.py \
   --pretrained_model_name_or_path stabilityai/stable-diffusion-xl-base-1.0 \
   --pretrained_vae_model_name_or_path stabilityai/sdxl-vae \
   --dataset_name lambdalabs/pokemon-blip-captions \
-  --resolution 1024 \
+  --resolution 512 \
+  --crop_resolution 512 \
   --center_crop \
   --random_flip \
   --proportion_empty_prompts=0.2 \
-  --train_batch_size 2 \
-  --max_train_steps 624 \
+  --train_batch_size 16 \
+  --max_train_steps 336 \
   --learning_rate 1e-06 \
   --max_grad_norm 1 \
   --lr_scheduler constant \
@@ -21,5 +22,5 @@ python ../gaudi_spawn.py --world_size 8 --use_mpi train_text_to_image_sdxl.py \
   --use_hpu_graphs_for_training \
   --use_hpu_graphs_for_inference \
   --validation_prompt="a robotic cat with wings" \
-  --validation_epochs 12 \
-  --checkpointing_steps 624 2>&1 | tee log_8x_bs16.txt
+  --validation_epochs 48 \
+  --checkpointing_steps 624 2>&1 | tee log_8x_r512.txt

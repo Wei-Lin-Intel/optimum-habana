@@ -667,7 +667,6 @@ def main(args):
     # If passed along, set the training seed now.
     if args.seed is not None:
         set_seed(args.seed)
-        torch.use_deterministic_algorithms(True)
 
     # Handle the repository creation
     if accelerator.is_main_process:
@@ -1123,7 +1122,7 @@ def main(args):
                 prompt_embeds = batch["prompt_embeds"].to(accelerator.device)
                 pooled_prompt_embeds = batch["pooled_prompt_embeds"].to(accelerator.device)
                 unet_added_conditions.update({"text_embeds": pooled_prompt_embeds})
-                htcore.mark_step()
+
                 model_pred = unet(
                     noisy_model_input,
                     timesteps,
@@ -1346,7 +1345,7 @@ def main(args):
         images = []
         if args.validation_prompt and args.num_validation_images > 0:
             pipeline = pipeline.to(accelerator.device)
-            generator = torch.Generator(device=accelerator.device).manual_seed(args.seed) if args.seed else None
+            generator = torch.Generator(device='cpu').manual_seed(args.seed) if args.seed else None
             with torch.autocast(device_type="hpu", dtype=weight_dtype, enabled=gaudi_config.use_torch_autocast):
                 images = [
                     pipeline(args.validation_prompt, num_inference_steps=25, generator=generator).images[0]

@@ -59,6 +59,7 @@ from optimum.habana.accelerate import GaudiAccelerator
 from optimum.habana.diffusers import GaudiEulerDiscreteScheduler, GaudiStableDiffusionXLPipeline
 from optimum.habana.utils import set_seed, HabanaProfile
 from optimum.habana.accelerate.utils.dataclasses import GaudiDistributedType
+from optimum.habana.utils import to_gb_rounded
 
 if is_wandb_available():
     import wandb
@@ -1225,9 +1226,9 @@ def main(args):
                     accelerator.log({"train_loss": train_loss_scalar}, step=global_step)
 
                     if args.gradient_accumulation_steps > 1:
-                        logs = {"step_loss": loss.item(), "lr": lr_scheduler.get_last_lr()[0]}
+                        logs = {"step_loss": loss.item(), "lr": lr_scheduler.get_last_lr()[0], "mem_used": to_gb_rounded(htorch.hpu.memory_allocated())}
                     else:
-                        logs = {"step_loss": train_loss_scalar, "lr": lr_scheduler.get_last_lr()[0]}
+                        logs = {"step_loss": train_loss_scalar, "lr": lr_scheduler.get_last_lr()[0], "mem_used": to_gb_rounded(htorch.hpu.memory_allocated())}
                     progress_bar.set_postfix(**logs)
                 train_loss.zero_()
 

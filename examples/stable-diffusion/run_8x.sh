@@ -7,8 +7,8 @@ python ../gaudi_spawn.py --world_size 8 --use_mpi train_text_to_image_sdxl.py \
   --center_crop \
   --random_flip \
   --proportion_empty_prompts=0.2 \
-  --train_batch_size 4 \
-  --max_train_steps 2500 \
+  --train_batch_size 2 \
+  --max_train_steps 624 \
   --learning_rate 1e-06 \
   --max_grad_norm 1 \
   --lr_scheduler constant \
@@ -18,7 +18,8 @@ python ../gaudi_spawn.py --world_size 8 --use_mpi train_text_to_image_sdxl.py \
   --throughput_warmup_steps 3 \
   --dataloader_num_workers 8 \
   --bf16 \
+  --use_hpu_graphs_for_training \
   --use_hpu_graphs_for_inference \
   --validation_prompt="a robotic cat with wings" \
-  --validation_epochs 48 \
-  --checkpointing_steps 2500  2>&1 | tee log_8x_bs16.txt
+  --validation_epochs 12 \
+  --checkpointing_steps 624 2>&1 | tee log_8x_bs16.txt

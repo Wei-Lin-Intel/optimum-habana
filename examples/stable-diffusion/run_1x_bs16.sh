@@ -7,7 +7,7 @@ python train_text_to_image_sdxl.py \
   --random_flip \
   --proportion_empty_prompts=0.2 \
   --train_batch_size 4 \
-  --max_train_steps 10000 \
+  --max_train_steps 2500 \
   --learning_rate 1e-06 \
   --max_grad_norm 1 \
   --lr_scheduler constant \
@@ -19,6 +19,6 @@ python train_text_to_image_sdxl.py \
   --bf16 \
   --use_hpu_graphs_for_inference \
   --validation_prompt="a robotic cat with wings" \
-  --validation_epochs 48 \
+  --validation_epochs 12 \
   --checkpointing_steps 2500 \
   --logging_step 10 2>&1 | tee log_1x_bs16.txt

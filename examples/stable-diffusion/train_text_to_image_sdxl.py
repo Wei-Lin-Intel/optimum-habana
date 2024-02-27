@@ -520,6 +520,12 @@ def parse_args(input_args=None):
         type=int,
         help="Print the loss for every logging_step.",
     )
+    parser.add_argument(
+        "--mediapipe",
+        action="store_true",
+        help="Use gaudi2 HW mediapipe over regular dataloader.",
+    )
+
 
     if input_args is not None:
         args = parser.parse_args(input_args)
@@ -782,12 +788,17 @@ def main(args):
     # In distributed training, the load_dataset function guarantees that only one local process can concurrently
     # download the dataset.
     if args.dataset_name is not None:
-        # Downloading and loading a dataset from the hub.
-        dataset = load_dataset(
-            args.dataset_name,
-            args.dataset_config_name,
-            cache_dir=args.cache_dir,
-        )
+        if args.mediapipe:
+            from media_pipe_imgdir import get_dataset_for_pipeline
+            dt = get_dataset_for_pipeline('dataset_pokemon')  # TODO this img path is hardcoded for now
+            dataset = {'train': dt}
+        else:
+            # Downloading and loading a dataset from the hub.
+            dataset = load_dataset(
+                args.dataset_name,
+                args.dataset_config_name,
+                cache_dir=args.cache_dir,
+            )
     else:
         data_files = {}
         if args.train_data_dir is not None:
@@ -837,6 +848,9 @@ def main(args):
     text_encoders = [text_encoder_one, text_encoder_two]
     tokenizers = [tokenizer_one, tokenizer_two]
 
+    #train_transforms1 = transforms.Compose([transforms.ToTensor(),
+    #train_transforms1(train_crop(train_resize(images[1])))
+    #train_transforms(train_crop(train_resize(images[1])))
     def preprocess_train(examples):
         images = [image.convert("RGB") for image in examples[image_column]]
         # image aug
@@ -844,6 +858,7 @@ def main(args):
         all_images = []
         crop_top_lefts = []
         for image in images:
+            #import pdb; pdb.set_trace()
             original_sizes.append((image.height, image.width))
             image = train_resize(image)
             if args.crop_resolution < args.resolution:
@@ -874,8 +889,10 @@ def main(args):
     with accelerator.main_process_first():
         if args.max_train_samples is not None:
             dataset["train"] = dataset["train"].shuffle(seed=args.seed).select(range(args.max_train_samples))
+        train_dataset = dataset["train"]
         # Set the training transforms
-        train_dataset = dataset["train"].with_transform(preprocess_train)
+        if not args.mediapipe:
+            train_dataset = train_dataset.with_transform(preprocess_train)
 
     compute_embeddings_fn = functools.partial(
         encode_prompt,
@@ -885,6 +902,12 @@ def main(args):
         caption_column=args.caption_column,
     )
 
+    # TODO : adding crop = (0,0) for now.
+    # If we do random crop, we have to do this in mediapipe
+    def attach_metadata(batch):
+        import imagesize
+        return {"original_sizes" : imagesize.get(batch['image']), "crop_top_lefts" : (0,0)}
+
     with accelerator.main_process_first():
         from datasets.fingerprint import Hasher
 
@@ -892,7 +915,10 @@ def main(args):
         # details: https://github.com/huggingface/diffusers/pull/4038#discussion_r1266078401
         new_fingerprint = Hasher.hash(args)
         train_dataset = train_dataset.map(compute_embeddings_fn, batched=True,
-                                          new_fingerprint=new_fingerprint)
+                                          new_fingerprint=new_fingerprint, load_from_cache_file=False)
+        if args.mediapipe:
+            train_dataset = train_dataset.map(attach_metadata)
+
 
     def collate_fn(examples):
         pixel_values = torch.stack([example["pixel_values"].clone().detach() for example in examples])
@@ -909,14 +935,71 @@ def main(args):
             "crop_top_lefts": crop_top_lefts,
         }
 
-    # DataLoaders creation:
-    train_dataloader = torch.utils.data.DataLoader(
-        train_dataset,
-        shuffle=True,
-        collate_fn=collate_fn,
-        batch_size=args.train_batch_size,
-        num_workers=args.dataloader_num_workers,
-    )
+    if args.mediapipe:
+        from torch.utils.data.sampler import BatchSampler, RandomSampler
+        dataloader_params = {
+            "batch_size": args.train_batch_size,
+            #"collate_fn": data_collator,
+            "num_workers": 0,
+            "pin_memory": True,
+            "sampler": RandomSampler(train_dataset)
+        }
+        from media_pipe_imgdir import MediaApiDataLoader
+        import pdb; pdb.set_trace()
+        train_dataloader = MediaApiDataLoader(train_dataset, **dataloader_params)
+    else:
+        # DataLoaders creation:
+        train_dataloader = torch.utils.data.DataLoader(
+            train_dataset,
+            shuffle=True,
+            collate_fn=collate_fn,
+            batch_size=args.train_batch_size,
+            num_workers=args.dataloader_num_workers,
+        )
+
+    '''
+    dump1 = 'dump4_mediapipe'
+    os.mkdir(dump1)
+    cnt = 0
+    for idx, dt in enumerate(train_dataloader):
+        print(idx, flush=True)
+        import pdb; pdb.set_trace()
+        bs = dt['pixel_values'].shape[0]
+        embeds_per_img = dt['prompt_embeds'].sum((1,2))
+        pooled_per_img = dt['pooled_prompt_embeds'].sum((1))
+        for i in range(bs):
+            cnt += 1
+            pxl = dt['pixel_values'][i]
+            sum = pxl.sum()
+            vals = dt['pixel_values'][i].flatten().to('cpu').numpy()
+            vals = ((vals + 1) / 2)*255
+            vals = vals.astype(np.uint8)
+            assert len(np.unique(vals)) <= 256
+            hist = {ii:0 for ii in range(256)}
+            for j in vals:
+                hist[j] += 1
+            #import pdb; pdb.set_trace()
+            signature = [hist[j] for j in range(256)]
+            with open(f'{dump1}/{cnt}.txt', 'w') as f:
+                for iii in signature:
+                    f.write(f'{iii},')
+                f.write('\n')
+                f.write(f'{embeds_per_img[i]}\n')
+                f.write(f'{pooled_per_img[i]}\n')
+
+    import pdb; pdb.set_trace()'''
+    dump1 = 'dump7_tensor_mediapipe'
+    os.mkdir(dump1)
+    cnt = 0
+    for idx, dt in enumerate(train_dataloader):
+        print(idx, flush=True)
+        bs = dt['pixel_values'].shape[0]
+        for i in range(bs):
+            cnt += 1
+            torch.save([dt['pixel_values'][i].to('cpu'), dt['prompt_embeds'][i].to('cpu'), dt['pooled_prompt_embeds'][i].to('cpu')], f'{dump1}/{cnt}.pt')
+    import pdb; pdb.set_trace()
+
+
 
     # Set unet as trainable.
     unet.train()
@@ -982,9 +1065,14 @@ def main(args):
 
     unet = unet.to("hpu")
     # Prepare everything with our `accelerator`.
-    unet, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
-        unet, optimizer, train_dataloader, lr_scheduler
-    )
+    if args.mediapipe:
+        unet, optimizer, lr_scheduler = accelerator.prepare(
+            unet, optimizer, lr_scheduler
+        )
+    else:
+        unet, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
+            unet, optimizer, train_dataloader, lr_scheduler
+        )
 
 
     # We need to recalculate our total training steps as the size of the training dataloader may have changed.
@@ -1109,8 +1197,12 @@ def main(args):
                 def compute_time_ids(original_size, crops_coords_top_left):
                     # Adapted from pipeline.StableDiffusionXLPipeline._get_add_time_ids
                     target_size = (args.resolution, args.resolution)
-                    add_time_ids = list(original_size + crops_coords_top_left + target_size)
-                    add_time_ids = torch.tensor([add_time_ids])
+                    if 'torch.Tensor' in str(type(original_size)):
+                        add_time_ids = torch.cat([original_size, crops_coords_top_left, torch.tensor(target_size, device=crops_coords_top_left.device)])
+                    else:
+                        pass
+                        add_time_ids = list(original_size + crops_coords_top_left + target_size)
+                        add_time_ids = torch.tensor([add_time_ids])
                     add_time_ids = add_time_ids.to(accelerator.device, dtype=weight_dtype)
                     return add_time_ids
 
@@ -1271,7 +1363,7 @@ def main(args):
                 pipeline.set_progress_bar_config(disable=True)
 
                 # run inference
-                generator = torch.Generator(device=accelerator.device).manual_seed(args.seed) if args.seed else None
+                generator = torch.Generator(device='cpu').manual_seed(args.seed) if args.seed else None
                 pipeline_args = {"prompt": args.validation_prompt}
 
                 with torch.autocast(device_type="hpu", dtype=torch.bfloat16, enabled=gaudi_config.use_torch_autocast):

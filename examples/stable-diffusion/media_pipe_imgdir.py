@@ -47,9 +47,7 @@ class PokemonDataset(Dataset):
     def load_dt(self):
         labels = open(f'{self.dataset_dir}/label.txt').readlines()
         dct = {'image': [], 'text': []}
-        for item in os.listdir(self.dataset_dir):
-            if 'txt' in item:
-                continue
+        for item in sorted([i for i in os.listdir(self.dataset_dir) if 'txt' not in i], key=lambda x : int(x.split('.')[0])):
             key = int(item.split('.')[0])
             dct['image'] += [f'{self.dataset_dir}/{item}']
             dct['text'] += [labels[key]]
@@ -94,6 +92,8 @@ class read_image_text_from_dataset(MediaReaderNode):
         self.max_file = max(self.dataset['image'], key= lambda x : len(x))
         #self.max_file_length = max([len(i) for i in self.dataset['image']])
 
+        self.max_label_len = len(max(self.dataset['text'], key= lambda x : len(x)))
+
         #logger.info(f"The largest file is {self.max_file_length}.")
 
 
@@ -124,6 +124,11 @@ class read_image_text_from_dataset(MediaReaderNode):
             'uint32', np.array([2, self.batch_size], dtype=np.uint32), ""
         )
         out_info.append(o)
+
+        o = opnode_tensor_info(
+            'uint32', np.array([self.max_label_len, self.batch_size], dtype=np.uint32), ""
+        )
+        out_info.append(o) # TODO can remove this later. this is text label
         return out_info
 
     def get_largest_file(self):
@@ -159,9 +164,13 @@ class read_image_text_from_dataset(MediaReaderNode):
 
         self.iter_loc = self.iter_loc + self.batch_size
 
-        import pdb; pdb.set_trace()
+        #import pdb; pdb.set_trace()
 
-        return img_list, prompt_embeds_np, pooled_prompt_embeds_np, original_sizes, crop_top_lefts
+        text_label = np.zeros([self.batch_size, self.max_label_len], dtype=np.uint32)
+        for idxx, d in enumerate(data):
+            text_label[idxx,:len(d['text'])] = np.array([ord(kk) for kk in d['text']], dtype=np.uint32)
+
+        return img_list, prompt_embeds_np, pooled_prompt_embeds_np, original_sizes, crop_top_lefts, text_label
 
 
 read_image_text_from_dataset_params = {
@@ -174,7 +183,7 @@ schema.add_operator(
     0,
     0,
     [],
-    5,
+    6,
     read_image_text_from_dataset_params,
     None,
     read_image_text_from_dataset,
@@ -274,12 +283,12 @@ class SDXLMediaPipe(MediaPipe):
         SDXLMediaPipe.instance_count += 1
 
     def definegraph(self):
-        jpegs, prompt_embeds, pooled_prompt_embeds, original_sizes, crop_top_lefts = self.input()
+        jpegs, prompt_embeds, pooled_prompt_embeds, original_sizes, crop_top_lefts, text_label = self.input()
         images = self.decode(jpegs)
         flip = self.random_flip_input()
         images = self.random_flip(images, flip)
         images = self.cmn(images, self.mean, self.std)
-        return images, prompt_embeds, pooled_prompt_embeds, original_sizes, crop_top_lefts
+        return images, prompt_embeds, pooled_prompt_embeds, original_sizes, crop_top_lefts, text_label
 
 
 class MediaApiDataLoader(torch.utils.data.DataLoader):
@@ -328,12 +337,15 @@ class MediaApiDataLoader(torch.utils.data.DataLoader):
             return super().__next__()
 
         data = next(self.iterator)
+        #import pdb; pdb.set_trace()
+        txtenc = data[5].to('cpu').numpy()
         return {
             "pixel_values": data[0],
             "prompt_embeds": data[1],
             "pooled_prompt_embeds": data[2],
             "original_sizes": data[3],  ## 2nd num is ZERO here
-            "crop_top_lefts": data[4]
+            "crop_top_lefts": data[4],
+            'text': [''.join([chr(i) for i in k]).strip('\x00') for k in txtenc]
         }
 
 

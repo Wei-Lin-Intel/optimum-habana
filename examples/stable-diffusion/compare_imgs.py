@@ -87,7 +87,37 @@ def compare_tensor(d0, d1):
         #if idx1 == 9 or idx1 == 8:
         #    import pdb; pdb.set_trace() 
         #    print()
-          
+
+
+def compare_tensor1(d0, d1):
+    try:
+        os.mkdir('compare')
+    except:
+        pass
+    for flnm in os.listdir(d0):
+        x0,y0,z0 = torch.load(f'{d0}/{flnm}')
+        x1,y1,z1 = torch.load(f'{d1}/{flnm}')
+        x1_flip = torch.flip(x1, [2])
+        diff1 = torch.abs(x0 - x1).sum()
+        diff2 = torch.abs(x1_flip - x0).sum()
+        i0 = (x0.permute(1,2,0).numpy() + 1) / 2
+        i1 = ((x1 if diff1 < diff2 else x1_flip).permute(1,2,0).numpy() + 1)/2
+        #import pdb; pdb.set_trace()
+        concatted = (np.concatenate((i0,i1)) * 255).astype(np.uint8)
+        pilimg = im.fromarray(concatted)
+        pilimg.save(f'compare/{flnm.split(".")[0]}.png')
+        #import pdb; pdb.set_trace()
+        #if diff1 < diff2:
+        #    print('orig')
+        #else:
+        #    print('flip')
+        print(min(diff1, diff2)/x0.numel(), (torch.abs(y0 - y1).sum())/y0.numel(), (torch.abs(z0 - z1).sum())/z0.numel())
+        #print(y0.sum(), y1.sum())
+        #import pdb; pdb.set_trace()
+        #ssprint()
+
+
+
 
 #compare('dump1_mediapipe', 'dump2_nomediapipe')
 #compare('dump1_mediapipe', 'dump1_mediapipe')
@@ -95,4 +125,6 @@ def compare_tensor(d0, d1):
 
 #compare_tensor('dump7_tensor_mediapipe', 'dump8_tensor_nomediapipe')
 
-compare_tensor('dump8_tensor_nomediapipe', 'dump8_tensor_nomediapipe')
+#compare_tensor('dump8_tensor_nomediapipe', 'dump8_tensor_nomediapipe')
+
+compare_tensor1('dump7_tensor_mediapipe', 'dump8_tensor_nomediapipe')

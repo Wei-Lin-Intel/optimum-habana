@@ -790,7 +790,7 @@ def main(args):
     if args.dataset_name is not None:
         if args.mediapipe:
             from media_pipe_imgdir import get_dataset_for_pipeline
-            dt = get_dataset_for_pipeline('dataset_pokemon')  # TODO this img path is hardcoded for now
+            dt = get_dataset_for_pipeline('dataset_pokemon1')  # TODO this img path is hardcoded for now
             dataset = {'train': dt}
         else:
             # Downloading and loading a dataset from the hub.
@@ -888,7 +888,8 @@ def main(args):
 
     with accelerator.main_process_first():
         if args.max_train_samples is not None:
-            dataset["train"] = dataset["train"].shuffle(seed=args.seed).select(range(args.max_train_samples))
+            #dataset["train"] = dataset["train"].shuffle(seed=args.seed).select(range(args.max_train_samples))
+            dataset["train"] = dataset["train"].select(range(args.max_train_samples)) # TODO sarkar bring back shuffle later
         train_dataset = dataset["train"]
         # Set the training transforms
         if not args.mediapipe:
@@ -933,6 +934,7 @@ def main(args):
             "pooled_prompt_embeds": pooled_prompt_embeds,
             "original_sizes": original_sizes,
             "crop_top_lefts": crop_top_lefts,
+            'text': [example["text"] for example in examples] # TODO sasarkar.. remove later
         }
 
     if args.mediapipe:
@@ -945,7 +947,7 @@ def main(args):
             "sampler": RandomSampler(train_dataset)
         }
         from media_pipe_imgdir import MediaApiDataLoader
-        import pdb; pdb.set_trace()
+        #import pdb; pdb.set_trace()
         train_dataloader = MediaApiDataLoader(train_dataset, **dataloader_params)
     else:
         # DataLoaders creation:
@@ -988,15 +990,18 @@ def main(args):
                 f.write(f'{pooled_per_img[i]}\n')
 
     import pdb; pdb.set_trace()'''
-    dump1 = 'dump7_tensor_mediapipe'
+    dump1 = 'dump8_tensor_nomediapipe'
     os.mkdir(dump1)
     cnt = 0
     for idx, dt in enumerate(train_dataloader):
+        #import pdb; pdb.set_trace()
         print(idx, flush=True)
         bs = dt['pixel_values'].shape[0]
         for i in range(bs):
             cnt += 1
-            torch.save([dt['pixel_values'][i].to('cpu'), dt['prompt_embeds'][i].to('cpu'), dt['pooled_prompt_embeds'][i].to('cpu')], f'{dump1}/{cnt}.pt')
+            #torch.save([dt['pixel_values'][i].to('cpu'), dt['prompt_embeds'][i].to('cpu'), dt['pooled_prompt_embeds'][i].to('cpu')], f'{dump1}/{cnt}.pt')
+            flnm = '_'.join(dt['text'][i].strip().split(' '))
+            torch.save([dt['pixel_values'][i].to('cpu'), dt['prompt_embeds'][i].to('cpu'), dt['pooled_prompt_embeds'][i].to('cpu')], f'{dump1}/{flnm}.pt')
     import pdb; pdb.set_trace()
 
 

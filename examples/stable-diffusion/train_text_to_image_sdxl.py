@@ -888,8 +888,8 @@ def main(args):
 
     with accelerator.main_process_first():
         if args.max_train_samples is not None:
-            #dataset["train"] = dataset["train"].shuffle(seed=args.seed).select(range(args.max_train_samples))
-            dataset["train"] = dataset["train"].select(range(args.max_train_samples)) # TODO sarkar bring back shuffle later
+            dataset["train"] = dataset["train"].shuffle(seed=args.seed).select(range(args.max_train_samples))
+            #dataset["train"] = dataset["train"].select(range(args.max_train_samples)) # TODO sarkar bring back shuffle later
         train_dataset = dataset["train"]
         # Set the training transforms
         if not args.mediapipe:
@@ -934,7 +934,7 @@ def main(args):
             "pooled_prompt_embeds": pooled_prompt_embeds,
             "original_sizes": original_sizes,
             "crop_top_lefts": crop_top_lefts,
-            'text': [example["text"] for example in examples] # TODO sasarkar.. remove later
+            #'text': [example["text"] for example in examples] # TODO sasarkar.. remove later
         }
 
     if args.mediapipe:
@@ -990,6 +990,8 @@ def main(args):
                 f.write(f'{pooled_per_img[i]}\n')
 
     import pdb; pdb.set_trace()'''
+
+    '''
     dump1 = 'dump8_tensor_nomediapipe'
     os.mkdir(dump1)
     cnt = 0
@@ -1003,6 +1005,7 @@ def main(args):
             flnm = '_'.join(dt['text'][i].strip().split(' '))
             torch.save([dt['pixel_values'][i].to('cpu'), dt['prompt_embeds'][i].to('cpu'), dt['pooled_prompt_embeds'][i].to('cpu')], f'{dump1}/{flnm}.pt')
     import pdb; pdb.set_trace()
+    '''
 
 
 

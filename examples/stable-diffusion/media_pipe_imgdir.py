@@ -14,9 +14,11 @@ from torch.utils.data.sampler import BatchSampler, RandomSampler
 from torch.utils.data import Dataset
 from datasets import Dataset as DatasetHF
 
+from transformers.trainer_pt_utils import DistributedSampler
+
 import torch
 from optimum.utils import logging
-
+from torch.distributed import get_rank, get_world_size
 
 logger = logging.get_logger(__name__)
 
@@ -84,15 +86,22 @@ class read_image_text_from_dataset(MediaReaderNode):
         self.meta_dtype = params["label_dtype"]  # TODO sasarkar.. clean up unnecesary args, add args that are hardcoded etc
         self.dataset = params["dataset"]
         self.epoch = 0
+        self.batch_sampler = params["batch_sampler"]
 
-        self.num_imgs_slice = len(SDXLMediaPipe.batch_sampler.sampler)
-        self.num_batches_slice = len(SDXLMediaPipe.batch_sampler)
+        #self.num_imgs_slice = len(SDXLMediaPipe.batch_sampler.sampler)
+        #self.num_batches_slice = len(SDXLMediaPipe.batch_sampler)
+        self.num_imgs_slice = len(self.batch_sampler.sampler)
+        self.num_batches_slice = len(self.batch_sampler)
+
+        #print(self.num_imgs_slice)
+        #print(self.num_batches_slice)
+        #print('XXXXX here....')
 
         logger.info("Finding largest file ...")
         self.max_file = max(self.dataset['image'], key= lambda x : len(x))
         #self.max_file_length = max([len(i) for i in self.dataset['image']])
 
-        #self.max_label_len = len(max(self.dataset['text'], key= lambda x : len(x)))
+        self.max_label_len = len(max(self.dataset['text'], key= lambda x : len(x))) # TODO remove
 
         #logger.info(f"The largest file is {self.max_file_length}.")
 
@@ -106,7 +115,7 @@ class read_image_text_from_dataset(MediaReaderNode):
         out_info.append(o)
         o = opnode_tensor_info(
             self.meta_dtype, np.array([2048, 77, self.batch_size], dtype=np.uint32), ""
-        )
+        ) # TODO sarkar: whats 77? max tokenized len of labels ? remove hardcode
         out_info.append(o)
 
         o = opnode_tensor_info(
@@ -125,10 +134,10 @@ class read_image_text_from_dataset(MediaReaderNode):
         )
         out_info.append(o)
 
-        #o = opnode_tensor_info(
-        #    'uint32', np.array([self.max_label_len, self.batch_size], dtype=np.uint32), ""
-        #)
-        #out_info.append(o) # TODO can remove this later. this is text label
+        o = opnode_tensor_info(
+            'uint32', np.array([self.max_label_len, self.batch_size], dtype=np.uint32), ""
+        )
+        out_info.append(o) # TODO can remove this later. this is text label
         return out_info
 
     def get_largest_file(self):
@@ -144,8 +153,9 @@ class read_image_text_from_dataset(MediaReaderNode):
 
     def __iter__(self):
         self.iter_loc = 0
-        self.batch_sampler_iter = iter(SDXLMediaPipe.batch_sampler)
         self.epoch += 1
+        self.batch_sampler.sampler.set_epoch(self.epoch) # Without this dist sampler will create same batches every epoch
+        self.batch_sampler_iter = iter(self.batch_sampler)
         return self
 
     def __next__(self):
@@ -153,6 +163,10 @@ class read_image_text_from_dataset(MediaReaderNode):
             raise StopIteration
 
         data_idx = next(self.batch_sampler_iter)
+        #try:
+        #    print(f'{data_idx} , {get_rank()}. ,,,,,,,,, idx')
+        #except:
+        #    print(f'{data_idx} , {0}. ,,,,,,,,, idx')
         data = [self.dataset[i] for i in data_idx]
         # each item of data has keys: dict_keys(['image', 'text', 'prompt_embeds', 'pooled_prompt_embeds'])
 
@@ -166,25 +180,41 @@ class read_image_text_from_dataset(MediaReaderNode):
 
         #import pdb; pdb.set_trace()
 
-        #text_label = np.zeros([self.batch_size, self.max_label_len], dtype=np.uint32)
-        #for idxx, d in enumerate(data):
-        #    text_label[idxx,:len(d['text'])] = np.array([ord(kk) for kk in d['text']], dtype=np.uint32)
+        text_label = np.zeros([self.batch_size, self.max_label_len], dtype=np.uint32)
+        for idxx, d in enumerate(data):
+            text_label[idxx,:len(d['text'])] = np.array([ord(kk) for kk in d['text']], dtype=np.uint32)
 
-        #return img_list, prompt_embeds_np, pooled_prompt_embeds_np, original_sizes, crop_top_lefts, text_label
-        return img_list, prompt_embeds_np, pooled_prompt_embeds_np, original_sizes, crop_top_lefts
+        return img_list, prompt_embeds_np, pooled_prompt_embeds_np, original_sizes, crop_top_lefts, text_label
+        #return img_list, prompt_embeds_np, pooled_prompt_embeds_np, original_sizes, crop_top_lefts
 
 
 read_image_text_from_dataset_params = {
     "label_dtype": dtype.FLOAT32,
     "dataset": None,
+    'batch_sampler': []
 }
+#name, guid, device, inputs, params, cparams, node_attr
+'''
+ def add_operator(self,
+                     name,
+                     guid,
+                     min_inputs,
+                     max_inputs,
+                     input_keys,
+                     num_outputs,
+                     params,
+                     cparams,
+                     op_class,
+                     dtype):
+        """
+'''
 schema.add_operator(
     "SDXLDataReader",
     None,
     0,
     0,
     [],
-    5, #6
+    6, #5, #6
     read_image_text_from_dataset_params,
     None,
     read_image_text_from_dataset,
@@ -231,15 +261,18 @@ class SDXLMediaPipe(MediaPipe):
 
     """
 
-    batch_sampler = None
+    #batch_sampler = None
     instance_count = 0
 
     def __init__(self, dataset=None, sampler=None, batch_size=512, drop_last=False, queue_depth=1):
         self.device = get_device_name()
         self.dataset = dataset
+
+        
         self.drop_last = drop_last
         self.sampler = sampler
-        SDXLMediaPipe.batch_sampler = BatchSampler(sampler, batch_size, drop_last)
+        self.batch_sampler = BatchSampler(self.sampler, batch_size, drop_last)
+
         self.image_size = 1024
 
         pipe_name = "{}:{}".format(self.__class__.__name__, SDXLMediaPipe.instance_count)
@@ -249,7 +282,7 @@ class SDXLMediaPipe(MediaPipe):
             device=self.device, batch_size=batch_size, prefetch_depth=queue_depth, pipe_name=pipe_name
         )
 
-        self.input = fn.SDXLDataReader(label_dtype=dtype.FLOAT32, dataset=self.dataset)
+        self.input = fn.SDXLDataReader(label_dtype=dtype.FLOAT32, dataset=self.dataset, batch_sampler=self.batch_sampler)
         def_output_image_size = [self.image_size, self.image_size]
         res_pp_filter = ftype.BI_LINEAR
         self.decode = fn.ImageDecoder(
@@ -284,14 +317,15 @@ class SDXLMediaPipe(MediaPipe):
         SDXLMediaPipe.instance_count += 1
 
     def definegraph(self):
-        #jpegs, prompt_embeds, pooled_prompt_embeds, original_sizes, crop_top_lefts, text_label = self.input()
-        jpegs, prompt_embeds, pooled_prompt_embeds, original_sizes, crop_top_lefts = self.input()
+        #print(self.input.batch_sampler, 'DEFINEGRAPH')
+        jpegs, prompt_embeds, pooled_prompt_embeds, original_sizes, crop_top_lefts, text_label = self.input() # TODO remove
+        #jpegs, prompt_embeds, pooled_prompt_embeds, original_sizes, crop_top_lefts = self.input()
         images = self.decode(jpegs)
         flip = self.random_flip_input()
         images = self.random_flip(images, flip)
         images = self.cmn(images, self.mean, self.std)
-        #return images, prompt_embeds, pooled_prompt_embeds, original_sizes, crop_top_lefts, text_label
-        return images, prompt_embeds, pooled_prompt_embeds, original_sizes, crop_top_lefts
+        return images, prompt_embeds, pooled_prompt_embeds, original_sizes, crop_top_lefts, text_label
+        #return images, prompt_embeds, pooled_prompt_embeds, original_sizes, crop_top_lefts
 
 
 class MediaApiDataLoader(torch.utils.data.DataLoader):
@@ -299,7 +333,7 @@ class MediaApiDataLoader(torch.utils.data.DataLoader):
         self,
         dataset,
         batch_size=1,
-        sampler=None,
+        sampler=None, # TODO ignored. remove
         collate_fn=None,
         drop_last=False,
         num_workers=0,
@@ -312,14 +346,36 @@ class MediaApiDataLoader(torch.utils.data.DataLoader):
 
         from habana_frameworks.mediapipe.plugins.iterator_pytorch import HPUGenericPytorchIterator
 
+
+
+        try:
+            world_size = get_world_size()
+        except:
+            world_size = 1
+        # TODO use DistributedSamplerwithLoop.. if droplast=True
+        if world_size > 1:
+            process_index = get_rank()
+            #print(f'CREATING DISTSAMPLER world_size = {world_size}, process_index = {process_index}', flush=True)
+            sampler = DistributedSampler(
+                            self.dataset,
+                            num_replicas=world_size,
+                            rank=process_index,
+                            seed=1,
+                        )
+        else:
+            sampler = torch.utils.data.sampler.RandomSampler(self.dataset)
+
+        self.sampler = sampler
+
         pipeline = SDXLMediaPipe(
             dataset=dataset,
-            sampler=sampler,
+            sampler=self.sampler,
             batch_size=batch_size,
             drop_last=drop_last,
             queue_depth=3,
         )
         self.iterator = HPUGenericPytorchIterator(mediapipe=pipeline)
+        self.epoch = 0
         
 
     def __len__(self):
@@ -332,7 +388,14 @@ class MediaApiDataLoader(torch.utils.data.DataLoader):
         if self.fallback_activated:
             return super().__iter__()
         else:
+            try:
+                print(f'SET EPOCH: {self.epoch} {get_rank()}', flush=True)
+                #self.iterator.pipe.sampler.sampler.set_epoch(self.epoch) # Without this dist sampler will create same batches every epoch
+                #self.iterator.pipe.sampler.sampler.seed += self.epoch
+            except:
+                pass
             self.iterator.__iter__()
+        self.epoch += 1
         return self
 
     def __next__(self):
@@ -341,16 +404,16 @@ class MediaApiDataLoader(torch.utils.data.DataLoader):
 
         data = next(self.iterator)
         #import pdb; pdb.set_trace()
-        #txtenc = data[5].to('cpu').numpy()
+        txtenc = data[5].to('cpu').numpy() # TODO remove
         return {
             "pixel_values": data[0],
             "prompt_embeds": data[1],
             "pooled_prompt_embeds": data[2],
             "original_sizes": data[3],  ## 2nd num is ZERO here
             "crop_top_lefts": data[4],
-            #'text': [''.join([chr(i) for i in k]).strip('\x00') for k in txtenc]
+            'text': [''.join([chr(i) for i in k]).strip('\x00') for k in txtenc] # TODO remove
         }
-
+        #TODO sasarkar: at end of each iter, shuffle indexes
 
 
 

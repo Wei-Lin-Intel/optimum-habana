@@ -934,9 +934,19 @@ def main(args):
             "pooled_prompt_embeds": pooled_prompt_embeds,
             "original_sizes": original_sizes,
             "crop_top_lefts": crop_top_lefts,
-            #'text': [example["text"] for example in examples] # TODO sasarkar.. remove later
+            'text': [example["text"] for example in examples] # TODO sasarkar.. remove later
         }
 
+    train_dataloader = torch.utils.data.DataLoader(
+            train_dataset,
+            shuffle=True,
+            collate_fn=collate_fn,
+            batch_size=args.train_batch_size,
+            num_workers=args.dataloader_num_workers,
+        )
+
+
+    '''
     if args.mediapipe:
         from torch.utils.data.sampler import BatchSampler, RandomSampler
         dataloader_params = {
@@ -944,20 +954,15 @@ def main(args):
             #"collate_fn": data_collator,
             "num_workers": 0,
             "pin_memory": True,
-            "sampler": RandomSampler(train_dataset)
+            "sampler": None
         }
         from media_pipe_imgdir import MediaApiDataLoader
         #import pdb; pdb.set_trace()
         train_dataloader = MediaApiDataLoader(train_dataset, **dataloader_params)
     else:
         # DataLoaders creation:
-        train_dataloader = torch.utils.data.DataLoader(
-            train_dataset,
-            shuffle=True,
-            collate_fn=collate_fn,
-            batch_size=args.train_batch_size,
-            num_workers=args.dataloader_num_workers,
-        )
+        train_dataloader = train_dataloader
+    '''  
 
     '''
     dump1 = 'dump4_mediapipe'
@@ -1073,14 +1078,60 @@ def main(args):
 
     unet = unet.to("hpu")
     # Prepare everything with our `accelerator`.
+    #if args.mediapipe:
+    #    unet, optimizer, lr_scheduler = accelerator.prepare(
+    #        unet, optimizer, lr_scheduler
+    #    )
+    #else:
+    unet, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
+        unet, optimizer, train_dataloader, lr_scheduler
+    )
     if args.mediapipe:
-        unet, optimizer, lr_scheduler = accelerator.prepare(
-            unet, optimizer, lr_scheduler
-        )
-    else:
-        unet, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
-            unet, optimizer, train_dataloader, lr_scheduler
-        )
+        from torch.utils.data.sampler import BatchSampler, RandomSampler
+        dataloader_params = {
+            "batch_size": args.train_batch_size,
+            #"collate_fn": data_collator,
+            "num_workers": 0,
+            "pin_memory": True,
+            "sampler": None
+        }
+        from media_pipe_imgdir import MediaApiDataLoader
+        #import pdb; pdb.set_trace()
+        train_dataloader = MediaApiDataLoader(train_dataset, **dataloader_params)
+
+
+    from torch.distributed import get_rank
+    for ep in range(3):
+        train_dataloader.sampler.set_epoch(ep)
+        for i in train_dataloader.sampler:
+            print(f'{get_rank()}, {i} {train_dataloader.sampler}')
+            
+        print('-----------------')
+
+    #assert False
+    
+    # torch.utils.data.sampler.RandomSampler
+    # <torch.utils.data.sampler.SequentialSampler object at 0x7fa9899e92d0>.. after acc.prepare
+    for epoch in range(3):
+        txts = []
+        for i in train_dataloader:
+            #print(train_dataloader.sampler)
+            try:
+                print(i['text'], get_rank())
+            except:
+                print(i['text'], 0)
+            txts += i['text']
+        try:
+            print(f'passed epoch {epoch}, rank = {get_rank()}, lentxt={len(txts)}')
+        except:
+            print(f'passed epoch {epoch}, rank = 0, lentxt={len(txts)}')
+        #if epoch == 0:
+        #    origtxts = [i for i in txts]
+        #else:
+        #    assert sorted(txts) == sorted(origtxts)
+
+
+    assert False
 
 
     # We need to recalculate our total training steps as the size of the training dataloader may have changed.
@@ -1167,6 +1218,10 @@ def main(args):
         if hb_profiler:
             hb_profiler.start()
         for step, batch in enumerate(train_dataloader):
+            try:
+                print(epoch, step, get_rank(), flush=True)
+            except:
+                print(epoch, step, 0, flush=True)
             if t0 is None and global_step == args.throughput_warmup_steps:
                 t0 = time.perf_counter()
             with accelerator.accumulate(unet):
@@ -1445,7 +1500,7 @@ def main(args):
         images = []
         if args.validation_prompt and args.num_validation_images > 0:
             pipeline = pipeline.to(accelerator.device)
-            generator = torch.Generator(device=accelerator.device).manual_seed(args.seed) if args.seed else None
+            generator = torch.Generator(device='cpu').manual_seed(args.seed) if args.seed else None
             with torch.autocast(device_type="hpu", dtype=weight_dtype, enabled=gaudi_config.use_torch_autocast):
                 images = [
                     pipeline(args.validation_prompt, num_inference_steps=25, generator=generator).images[0]

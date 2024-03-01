@@ -1176,7 +1176,7 @@ class GaudiFalconForCausalLM(FalconForCausalLM):
     - add new args reuse_cache
     """
     
-    def allocate_kv_cache(self, batch_size, max_seq_len, inp_seq_len, kv_cache_fp8): ###kv_cache_fp8 to be removed after it is removed from generation/utils.py
+    def allocate_kv_cache(self, batch_size, max_seq_len, inp_seq_len):
         self.transformer.allocate_kv_cache(batch_size, max_seq_len, inp_seq_len)
         self.kv_cache_len = max_seq_len
 

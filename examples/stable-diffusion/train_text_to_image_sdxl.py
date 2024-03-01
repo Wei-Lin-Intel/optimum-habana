@@ -1100,18 +1100,18 @@ def main(args):
         train_dataloader = MediaApiDataLoader(train_dataset, **dataloader_params)
 
 
-    from torch.distributed import get_rank
-    for ep in range(3):
-        train_dataloader.sampler.set_epoch(ep)
-        for i in train_dataloader.sampler:
-            print(f'{get_rank()}, {i} {train_dataloader.sampler}')
-            
-        print('-----------------')
+    #from torch.distributed import get_rank
+    #for ep in range(3):
+    #    train_dataloader.sampler.set_epoch(ep)
+    #    for i in train_dataloader.sampler:
+    #        print(f'{get_rank()}, {i} {train_dataloader.sampler}')       
+    #    print('-----------------')
 
     #assert False
     
     # torch.utils.data.sampler.RandomSampler
     # <torch.utils.data.sampler.SequentialSampler object at 0x7fa9899e92d0>.. after acc.prepare
+    '''
     for epoch in range(3):
         txts = []
         for i in train_dataloader:
@@ -1129,9 +1129,10 @@ def main(args):
         #    origtxts = [i for i in txts]
         #else:
         #    assert sorted(txts) == sorted(origtxts)
+    '''
 
 
-    assert False
+    #assert False
 
 
     # We need to recalculate our total training steps as the size of the training dataloader may have changed.

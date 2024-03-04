@@ -521,6 +521,11 @@ def parse_args(input_args=None):
         type=int,
         help="Print the loss for every logging_step.",
     )
+    parser.add_argument(
+        "--mediapipe",
+        action="store_true",
+        help="Use gaudi2 HW mediapipe over regular dataloader.",
+    )
 
     if input_args is not None:
         args = parser.parse_args(input_args)
@@ -782,12 +787,17 @@ def main(args):
     # In distributed training, the load_dataset function guarantees that only one local process can concurrently
     # download the dataset.
     if args.dataset_name is not None:
-        # Downloading and loading a dataset from the hub.
-        dataset = load_dataset(
-            args.dataset_name,
-            args.dataset_config_name,
-            cache_dir=args.cache_dir,
-        )
+        if args.mediapipe:
+            from media_pipe_imgdir import get_dataset_for_pipeline
+            dt = get_dataset_for_pipeline('dataset_pokemon1')  # TODO this img path is hardcoded for now
+            dataset = {'train': dt}
+        else:
+            # Downloading and loading a dataset from the hub.
+            dataset = load_dataset(
+                args.dataset_name,
+                args.dataset_config_name,
+                cache_dir=args.cache_dir,
+            )
     else:
         data_files = {}
         if args.train_data_dir is not None:
@@ -874,8 +884,10 @@ def main(args):
     with accelerator.main_process_first():
         if args.max_train_samples is not None:
             dataset["train"] = dataset["train"].shuffle(seed=args.seed).select(range(args.max_train_samples))
-        # Set the training transforms
-        train_dataset = dataset["train"].with_transform(preprocess_train)
+        train_dataset = dataset["train"]
+        if not args.mediapipe:
+            # Set the training transforms
+            train_dataset = train_dataset.with_transform(preprocess_train)
 
     compute_embeddings_fn = functools.partial(
         encode_prompt,
@@ -885,6 +897,12 @@ def main(args):
         caption_column=args.caption_column,
     )
 
+    # TODO : adding crop = (0,0) for now.
+    # If we do random crop, we have to do this in mediapipe
+    def attach_metadata(batch):
+        import imagesize
+        return {"original_sizes" : imagesize.get(batch['image']), "crop_top_lefts" : (0,0)}
+
     with accelerator.main_process_first():
         from datasets.fingerprint import Hasher
 
@@ -892,7 +910,9 @@ def main(args):
         # details: https://github.com/huggingface/diffusers/pull/4038#discussion_r1266078401
         new_fingerprint = Hasher.hash(args)
         train_dataset = train_dataset.map(compute_embeddings_fn, batched=True,
-                                          new_fingerprint=new_fingerprint)
+                                          new_fingerprint=new_fingerprint, load_from_cache_file=False)
+        if args.mediapipe:
+            train_dataset = train_dataset.map(attach_metadata)
 
     def collate_fn(examples):
         pixel_values = torch.stack([example["pixel_values"].clone().detach() for example in examples])
@@ -907,6 +927,7 @@ def main(args):
             "pooled_prompt_embeds": pooled_prompt_embeds,
             "original_sizes": original_sizes,
             "crop_top_lefts": crop_top_lefts,
+            'text': [example["text"] for example in examples] # TODO sasarkar.. remove later
         }
 
     # DataLoaders creation:
@@ -917,6 +938,7 @@ def main(args):
         batch_size=args.train_batch_size,
         num_workers=args.dataloader_num_workers,
     )
+        
 
     # Set unet as trainable.
     unet.train()
@@ -985,6 +1007,18 @@ def main(args):
     unet, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
         unet, optimizer, train_dataloader, lr_scheduler
     )
+    if args.mediapipe:
+        from torch.utils.data.sampler import BatchSampler, RandomSampler
+        dataloader_params = {
+            "batch_size": args.train_batch_size,
+            #"collate_fn": data_collator,
+            "num_workers": 0,
+            "pin_memory": True,
+            "sampler": None
+        }
+        from media_pipe_imgdir import MediaApiDataLoader
+        #import pdb; pdb.set_trace()
+        train_dataloader = MediaApiDataLoader(train_dataset, **dataloader_params)
 
 
     # We need to recalculate our total training steps as the size of the training dataloader may have changed.
@@ -1062,6 +1096,12 @@ def main(args):
         disable=not accelerator.is_local_main_process,
     )
 
+    #for epoch in range(first_epoch, args.num_train_epochs):
+    #    for step, batch in enumerate(train_dataloader):
+    #        print(f'{epoch} {step} {batch["text"]}', flush = True)
+    #assert False
+
+
     import habana_frameworks.torch as htorch
     t0 = None
     t_start = time.perf_counter()
@@ -1109,8 +1149,11 @@ def main(args):
                 def compute_time_ids(original_size, crops_coords_top_left):
                     # Adapted from pipeline.StableDiffusionXLPipeline._get_add_time_ids
                     target_size = (args.resolution, args.resolution)
-                    add_time_ids = list(original_size + crops_coords_top_left + target_size)
-                    add_time_ids = torch.tensor([add_time_ids])
+                    if 'torch.Tensor' in str(type(original_size)):
+                        add_time_ids = torch.cat([original_size, crops_coords_top_left, torch.tensor(target_size, device=crops_coords_top_left.device)])
+                    else:
+                        add_time_ids = list(original_size + crops_coords_top_left + target_size)
+                        add_time_ids = torch.tensor([add_time_ids])
                     add_time_ids = add_time_ids.to(accelerator.device, dtype=weight_dtype)
                     return add_time_ids
 

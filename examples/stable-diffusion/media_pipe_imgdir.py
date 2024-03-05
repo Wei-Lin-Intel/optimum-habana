@@ -311,7 +311,7 @@ class SDXLMediaPipe(MediaPipe):
         self.std = norm_std()
 
         self.random_flip_input = fn.MediaFunc(func=RandomFlipFunction,
-                                                  shape=[2], # TODO hardcoded to batch=2
+                                                  shape=[16], # TODO hardcoded to batch=2
                                                   dtype=dtype.UINT8,
                                                   seed=100)
         self.random_flip = fn.RandomFlip(horizontal=1,
@@ -324,8 +324,8 @@ class SDXLMediaPipe(MediaPipe):
         #jpegs, prompt_embeds, pooled_prompt_embeds, original_sizes, crop_top_lefts, text_label = self.input() # TODO remove
         jpegs, prompt_embeds, pooled_prompt_embeds, original_sizes, crop_top_lefts = self.input()
         images = self.decode(jpegs)
-        #flip = self.random_flip_input()
-        #images = self.random_flip(images, flip)  # TODO enable flip
+        flip = self.random_flip_input()
+        images = self.random_flip(images, flip)  # TODO enable flip
         images = self.cmn(images, self.mean, self.std)
         #return images, prompt_embeds, pooled_prompt_embeds, original_sizes, crop_top_lefts, text_label
         return images, prompt_embeds, pooled_prompt_embeds, original_sizes, crop_top_lefts

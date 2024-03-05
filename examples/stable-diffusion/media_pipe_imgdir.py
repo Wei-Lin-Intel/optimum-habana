@@ -9,6 +9,7 @@ TODO right now the data pipe might be static in its cropping. make it random
 
 '''
 import numpy as np
+import time
 import os
 from torch.utils.data.sampler import BatchSampler, RandomSampler
 from torch.utils.data import Dataset
@@ -35,7 +36,6 @@ try:
     from habana_frameworks.mediapipe.operators.cpu_nodes.cpu_nodes import media_function
 except ImportError:
     pass
-
 
 
 
@@ -85,6 +85,27 @@ class read_image_text_from_dataset(MediaReaderNode):
         super().__init__(name, guid, device, inputs, params, cparams, node_attr)
         self.meta_dtype = params["label_dtype"]  # TODO sasarkar.. clean up unnecesary args, add args that are hardcoded etc
         self.dataset = params["dataset"]
+
+        self.dataset_image = []
+        self.dataset_text = [] # TODO can be removed later
+        self.dataset_prompt_embeds = []
+        self.dataset_pooled_prompt_embeds = []
+        self.dataset_original_sizes = []
+        self.dataset_crop_top_lefts = []
+        for k in self.dataset:
+            self.dataset_image += [k['image']]
+            self.dataset_text += [k['text']]
+            self.dataset_prompt_embeds += [k['prompt_embeds']]
+            self.dataset_pooled_prompt_embeds += [k['pooled_prompt_embeds']]
+            self.dataset_original_sizes += [k['original_sizes']]
+            self.dataset_crop_top_lefts += [k['crop_top_lefts']]
+
+        self.dataset_image = np.array(self.dataset_image)
+        self.dataset_prompt_embeds = np.array(self.dataset_prompt_embeds)
+        self.dataset_pooled_prompt_embeds = np.array(self.dataset_pooled_prompt_embeds)
+        self.dataset_original_sizes = np.array(self.dataset_original_sizes)
+        self.dataset_crop_top_lefts = np.array(self.dataset_crop_top_lefts)
+        #import pdb; pdb.set_trace()
         self.epoch = 0
         self.batch_sampler = params["batch_sampler"]
 
@@ -162,32 +183,42 @@ class read_image_text_from_dataset(MediaReaderNode):
         return self
 
     def __next__(self):
+        t0 = time.time()
+        #print('enter reader')
         if self.iter_loc > (self.num_imgs_slice - 1):
             raise StopIteration
 
         data_idx = next(self.batch_sampler_iter)
-        #try:
-        #    print(f'{data_idx} , {get_rank()}. ,,,,,,,,, idx')
-        #except:
-        #    print(f'{data_idx} , {0}. ,,,,,,,,, idx')
-        data = [self.dataset[i] for i in data_idx]
-        # each item of data has keys: dict_keys(['image', 'text', 'prompt_embeds', 'pooled_prompt_embeds'])
+        if True:
+            img_list = [i for i in self.dataset_image[data_idx]]
+            prompt_embeds_np = self.dataset_prompt_embeds[data_idx]
+            pooled_prompt_embeds_np = self.dataset_pooled_prompt_embeds[data_idx]
+            original_sizes = self.dataset_original_sizes[data_idx]
+            crop_top_lefts = self.dataset_crop_top_lefts[data_idx]
+        else:
 
-        img_list = [d['image'] for d in data]
-        prompt_embeds_np = np.array([d['prompt_embeds'] for d in data], dtype=np.float32)
-        pooled_prompt_embeds_np = np.array([d['pooled_prompt_embeds'] for d in data], dtype=np.float32)
-        original_sizes = np.array([d['original_sizes'] for d in data], dtype=np.uint32)
-        crop_top_lefts = np.array([d['crop_top_lefts'] for d in data], dtype=np.uint32)
+            #try:
+            #    print(f'{data_idx} , {get_rank()}. ,,,,,,,,, idx')
+            #except:
+            #    print(f'{data_idx} , {0}. ,,,,,,,,, idx')
+            data = [self.dataset[i] for i in data_idx]
+            # each item of data has keys: dict_keys(['image', 'text', 'prompt_embeds', 'pooled_prompt_embeds'])
 
+            img_list = [d['image'] for d in data]
+            prompt_embeds_np = np.array([d['prompt_embeds'] for d in data], dtype=np.float32)
+            pooled_prompt_embeds_np = np.array([d['pooled_prompt_embeds'] for d in data], dtype=np.float32)
+            original_sizes = np.array([d['original_sizes'] for d in data], dtype=np.uint32)
+            crop_top_lefts = np.array([d['crop_top_lefts'] for d in data], dtype=np.uint32)
+
+            #import pdb; pdb.set_trace()
+
+            #text_label = np.zeros([self.batch_size, self.max_label_len], dtype=np.uint32)
+            #for idxx, d in enumerate(data):
+            #    text_label[idxx,:len(d['text'])] = np.array([ord(kk) for kk in d['text']], dtype=np.uint32)
+
+            #return img_list, prompt_embeds_np, pooled_prompt_embeds_np, original_sizes, crop_top_lefts, text_label
         self.iter_loc = self.iter_loc + self.batch_size
-
-        #import pdb; pdb.set_trace()
-
-        text_label = np.zeros([self.batch_size, self.max_label_len], dtype=np.uint32)
-        for idxx, d in enumerate(data):
-            text_label[idxx,:len(d['text'])] = np.array([ord(kk) for kk in d['text']], dtype=np.uint32)
-
-        #return img_list, prompt_embeds_np, pooled_prompt_embeds_np, original_sizes, crop_top_lefts, text_label
+        #print('exit reader', time.time()-t0)
         return img_list, prompt_embeds_np, pooled_prompt_embeds_np, original_sizes, crop_top_lefts
 
 
@@ -267,7 +298,7 @@ class SDXLMediaPipe(MediaPipe):
     #batch_sampler = None
     instance_count = 0
 
-    def __init__(self, dataset=None, sampler=None, batch_size=512, drop_last=False, queue_depth=1):
+    def __init__(self, dataset=None, sampler=None, batch_size=512, drop_last=False, queue_depth=5):
         self.device = get_device_name()
         self.dataset = dataset
 
@@ -349,8 +380,6 @@ class MediaApiDataLoader(torch.utils.data.DataLoader):
 
         from habana_frameworks.mediapipe.plugins.iterator_pytorch import HPUGenericPytorchIterator
 
-
-
         try:
             world_size = get_world_size()
         except:
@@ -375,7 +404,7 @@ class MediaApiDataLoader(torch.utils.data.DataLoader):
             sampler=self.sampler,
             batch_size=batch_size,
             drop_last=drop_last,
-            queue_depth=3,
+            queue_depth=5,
         )
         self.iterator = HPUGenericPytorchIterator(mediapipe=pipeline)
         self.epoch = 0
@@ -391,12 +420,12 @@ class MediaApiDataLoader(torch.utils.data.DataLoader):
         if self.fallback_activated:
             return super().__iter__()
         else:
-            try:
-                print(f'SET EPOCH: {self.epoch} {get_rank()}', flush=True)
-                #self.iterator.pipe.sampler.sampler.set_epoch(self.epoch) # Without this dist sampler will create same batches every epoch
-                #self.iterator.pipe.sampler.sampler.seed += self.epoch
-            except:
-                pass
+            #try:
+            #    print(f'SET EPOCH: {self.epoch} {get_rank()}', flush=True)
+            #    #self.iterator.pipe.sampler.sampler.set_epoch(self.epoch) # Without this dist sampler will create same batches every epoch
+            #    #self.iterator.pipe.sampler.sampler.seed += self.epoch
+            #except:
+            #    pass
             self.iterator.__iter__()
         self.epoch += 1
         return self
@@ -404,8 +433,10 @@ class MediaApiDataLoader(torch.utils.data.DataLoader):
     def __next__(self):
         if self.fallback_activated:
             return super().__next__()
-
+        #print('call next')
+        #t0 = time.time()
         data = next(self.iterator)
+        #print('next done', time.time()-t0)
         #import pdb; pdb.set_trace()
         #txtenc = data[5].to('cpu').numpy() # TODO remove
         return {
@@ -429,14 +460,19 @@ if __name__ == '__main__':
 
     dataset_dir = 'dataset_pokemon'
 
-    pokemon_dataset = PokemonDataset(dataset_dir)
+    train_dataset = get_dataset_for_pipeline(dataset_dir)
     dataloader_params = {
                 "batch_size": 16,
                 #"collate_fn": data_collator,
-                "num_workers": 0,
+                "num_workers": 8,
                 "pin_memory": True,
-                "sampler": RandomSampler(pokemon_dataset)
+                "sampler": None
             }
-    for i in MediaApiDataLoader(pokemon_dataset, **dataloader_params):
+    def attach_metadata(batch):
+        import imagesize
+        return {"original_sizes" : imagesize.get(batch['image']), "crop_top_lefts" : (0,0)}
+    train_dataset = train_dataset.map(attach_metadata)
+    dataloader = MediaApiDataLoader(train_dataset, **dataloader_params)
+    for idx, dt in enumerate(dataloader):
         import pdb; pdb.set_trace()
         print()

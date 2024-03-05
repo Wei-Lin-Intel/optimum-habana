@@ -276,7 +276,7 @@ class SDXLMediaPipe(MediaPipe):
         self.sampler = sampler
         self.batch_sampler = BatchSampler(self.sampler, batch_size, drop_last)
 
-        self.image_size = 1024
+        self.image_size = 512 # TODO .. hardcoded size
 
         pipe_name = "{}:{}".format(self.__class__.__name__, SDXLMediaPipe.instance_count)
         pipe_name = str(pipe_name)

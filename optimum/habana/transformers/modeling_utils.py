@@ -99,6 +99,7 @@ from .models import (
     gaudi_wav2vec2_encoder_forward,
     gaudi_wav2vec2_forward,
     gaudi_wav2vec2forctc_forward,
+    gaudi_check_and_enable_sdpa,
 )
 
 
@@ -275,3 +276,5 @@ def adapt_transformers_to_gaudi():
     transformers.models.mistral.modeling_mistral.MistralModel.forward = gaudi_mistral_model_forward
     transformers.models.mistral.modeling_mistral.MistralAttention.forward = gaudi_mistral_attn_forward
     transformers.models.mistral.modeling_mistral.MistralDecoderLayer.forward = gaudi_mistral_decoder_layer_forward
+
+    transformers.modeling_utils.PreTrainedModel._check_and_enable_sdpa = gaudi_check_and_enable_sdpa

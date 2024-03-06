@@ -101,10 +101,10 @@ class read_image_text_from_dataset(MediaReaderNode):
             self.dataset_crop_top_lefts += [k['crop_top_lefts']]
 
         self.dataset_image = np.array(self.dataset_image)
-        self.dataset_prompt_embeds = np.array(self.dataset_prompt_embeds)
-        self.dataset_pooled_prompt_embeds = np.array(self.dataset_pooled_prompt_embeds)
-        self.dataset_original_sizes = np.array(self.dataset_original_sizes)
-        self.dataset_crop_top_lefts = np.array(self.dataset_crop_top_lefts)
+        self.dataset_prompt_embeds = np.array(self.dataset_prompt_embeds, dtype=np.float32)
+        self.dataset_pooled_prompt_embeds = np.array(self.dataset_pooled_prompt_embeds, dtype=np.float32)
+        self.dataset_original_sizes = np.array(self.dataset_original_sizes, dtype=np.uint32)
+        self.dataset_crop_top_lefts = np.array(self.dataset_crop_top_lefts, dtype=np.uint32)
         #import pdb; pdb.set_trace()
         self.epoch = 0
         self.batch_sampler = params["batch_sampler"]
@@ -195,7 +195,7 @@ class read_image_text_from_dataset(MediaReaderNode):
             pooled_prompt_embeds_np = self.dataset_pooled_prompt_embeds[data_idx]
             original_sizes = self.dataset_original_sizes[data_idx]
             crop_top_lefts = self.dataset_crop_top_lefts[data_idx]
-        else:
+        else: # TODO get rid of the else section
 
             #try:
             #    print(f'{data_idx} , {get_rank()}. ,,,,,,,,, idx')
@@ -217,6 +217,7 @@ class read_image_text_from_dataset(MediaReaderNode):
             #    text_label[idxx,:len(d['text'])] = np.array([ord(kk) for kk in d['text']], dtype=np.uint32)
 
             #return img_list, prompt_embeds_np, pooled_prompt_embeds_np, original_sizes, crop_top_lefts, text_label
+
         self.iter_loc = self.iter_loc + self.batch_size
         #print('exit reader', time.time()-t0)
         return img_list, prompt_embeds_np, pooled_prompt_embeds_np, original_sizes, crop_top_lefts

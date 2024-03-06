@@ -172,8 +172,7 @@ python ../gaudi_spawn.py --use_deepspeed --world_size 8 run_generation.py \
 > --use_hpu_graphs \
 > --use_kv_cache \
 > --max_new_tokens 100 \
-> --bf16 \
-> --attn_implementation eager
+> --bf16
 > ```
 
 

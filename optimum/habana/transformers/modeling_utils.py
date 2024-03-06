@@ -56,6 +56,7 @@ from .models import (
     gaudi_bloom_convert_to_bloom_cache,
     gaudi_bloom_convert_to_standard_cache,
     gaudi_bloom_model_forward,
+    gaudi_check_and_enable_sdpa,
     gaudi_codegen_block_forward,
     gaudi_codegen_model_forward,
     gaudi_conv1d_forward,
@@ -99,7 +100,6 @@ from .models import (
     gaudi_wav2vec2_encoder_forward,
     gaudi_wav2vec2_forward,
     gaudi_wav2vec2forctc_forward,
-    gaudi_check_and_enable_sdpa,
 )
 
 

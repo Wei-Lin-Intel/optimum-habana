@@ -304,8 +304,7 @@ QUANT_CONFIG=./quantization_config/maxabs_measure.json python run_generation.py 
 --bucket_size 128 \
 --max_new_tokens 128 \
 --batch_size 1 \
---bf16 \
---attn_implementation eager
+--bf16
 ```
 
 Here is an example to quantize the model based on previous measurements for Mixtral-8x7B with 1 card:
@@ -319,8 +318,7 @@ QUANT_CONFIG=./quantization_config/maxabs_quant_mixtral.json python run_generati
 --max_new_tokens 2048 \
 --batch_size 16 \
 --bf16 \
---fp8 \
---attn_implementation eager
+--fp8
 ```
 `--fp8` is required to enable quantization in fp8.
 

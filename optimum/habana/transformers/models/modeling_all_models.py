@@ -122,6 +122,7 @@ def gaudi_check_and_enable_sdpa(cls, config, hard_check_only: bool = False) -> P
     MODELS_ATTN_IMPLEMENTATION_EAGER = [
         "gpt_bigcode",
         "mistral",
+        "mixtral"
     ]
 
     if config.model_type in MODELS_ATTN_IMPLEMENTATION_EAGER:

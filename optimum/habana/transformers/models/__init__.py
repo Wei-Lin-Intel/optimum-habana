@@ -77,6 +77,14 @@ from .modeling_all_models import (
     gaudi_get_extended_attention_mask,
     gaudi_invert_attention_mask,
 )
+from .mixtral import (
+    GaudiMixtralForCausalLM,
+    gaudi_mixtral_attention_forward,
+    gaudi_mixtral_block_sparse_moe_forward,
+    gaudi_mixtral_decoder_layer_forward,
+    gaudi_mixtral_model_forward,
+    gaudi_mixtral_rmsnorm_forward,
+)
 from .mpt import (
     GaudiMptForCausalLM,
     GaudiMptModel,

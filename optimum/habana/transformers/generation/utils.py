@@ -1384,10 +1384,8 @@ class GaudiGenerationMixin(GenerationMixin):
         hb_profer = HabanaProfile(warmup=profiling_warmup_steps, active=profiling_steps)
         hb_profer.start()
         this_peer_finished = False  # used by synced_gpus only
-        bucket_size = model_kwargs["bucket_size"]
-        prev_idx = None  # avoiding calculate cache_idx when its value is not changing
-        bucket_internal = model_kwargs["bucket_internal"]
-        reduce_recompile = model_kwargs["reduce_recompile"]
+        bucket_size = model_kwargs.get("bucket_size", -1)
+        reduce_recompile = model_kwargs.get("reduce_recompile", False)
 
         prompt_len = input_ids.shape[-1]
         
@@ -2167,8 +2165,8 @@ class GaudiGenerationMixin(GenerationMixin):
         hb_profer.start()
         this_peer_finished = False  # used by synced_gpus only
 
-        bucket_size = model_kwargs["bucket_size"]
-        reduce_recompile = model_kwargs["reduce_recompile"]
+        bucket_size = model_kwargs.get("bucket_size", -1)
+        reduce_recompile = model_kwargs.get("reduce_recompile", False)
         prompt_len = input_ids.shape[-1]
         if bucket_size >= 0:
             inc = iter(incrementor(bucket_size, prompt_len))

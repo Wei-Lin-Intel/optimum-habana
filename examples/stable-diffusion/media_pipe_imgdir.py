@@ -53,6 +53,8 @@ class PokemonDataset(Dataset):
             key = int(item.split('.')[0])
             dct['image'] += [f'{self.dataset_dir}/{item}']
             dct['text'] += [labels[key]]
+            if len(dct['image']) >= 16*6*8: # TODO get rid of later
+                break
         return dct
 
     def map(self, fn):

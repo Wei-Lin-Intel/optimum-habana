@@ -912,7 +912,7 @@ def main(args):
         train_dataset = train_dataset.map(compute_embeddings_fn, batched=True,
                                           new_fingerprint=new_fingerprint, load_from_cache_file=False)
         if args.mediapipe:
-            train_dataset = train_dataset.map(attach_metadata)
+            train_dataset = train_dataset.map(attach_metadata, load_from_cache_file=False)
 
     def collate_fn(examples):
         pixel_values = torch.stack([example["pixel_values"].clone().detach() for example in examples])

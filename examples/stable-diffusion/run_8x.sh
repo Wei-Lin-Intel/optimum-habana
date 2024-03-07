@@ -1,5 +1,8 @@
-PT_HPU_RECIPE_CACHE_CONFIG=/tmp/stdxl_recipe_cache,True,1024  \
-python ../gaudi_spawn.py --world_size 8 --use_mpi train_text_to_image_sdxl.py \
+#LOG_LEVEL_ALL=3 HABANA_LOGS=SDXL_8x_mediapipe
+
+
+PT_HPU_RECIPE_CACHE_CONFIG=/tmp/stdxl_recipe_cache_ss,True,1024  \
+python ../gaudi_spawn.py --world_size 8 --use_mpi --master_port 29500 train_text_to_image_sdxl.py \
   --pretrained_model_name_or_path stabilityai/stable-diffusion-xl-base-1.0 \
   --pretrained_vae_model_name_or_path stabilityai/sdxl-vae \
   --dataset_name lambdalabs/pokemon-blip-captions \
@@ -23,4 +26,6 @@ python ../gaudi_spawn.py --world_size 8 --use_mpi train_text_to_image_sdxl.py \
   --use_hpu_graphs_for_inference \
   --validation_prompt="a robotic cat with wings" \
   --validation_epochs 48  \
-  --checkpointing_steps 336 2>&1 | tee log_8x_r512.txt
+  --checkpointing_steps 500 --mediapipe 2>&1 | tee log_8x_r512_nomediapipe_mar7_docker383_numpyspeedup_nanchk1.txt
+  
+  #log_8x_r512_nomediapipe_mar5_docker383.txt

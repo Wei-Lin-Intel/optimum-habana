@@ -49,10 +49,12 @@ class PokemonDataset(Dataset):
     def load_dt(self):
         labels = open(f'{self.dataset_dir}/label.txt').readlines()
         dct = {'image': [], 'text': []}
-        for item in sorted([i for i in os.listdir(self.dataset_dir) if 'txt' not in i], key=lambda x : int(x.split('.')[0])):
+        for idx, item in enumerate(sorted([i for i in os.listdir(self.dataset_dir) if 'txt' not in i], key=lambda x : int(x.split('.')[0]))):
             key = int(item.split('.')[0])
             dct['image'] += [f'{self.dataset_dir}/{item}']
             dct['text'] += [labels[key]]
+            if len(dct['image']) >= 16*6*8: # TODO get rid of later
+                break
         return dct
 
     def map(self, fn):
@@ -85,6 +87,7 @@ class read_image_text_from_dataset(MediaReaderNode):
         super().__init__(name, guid, device, inputs, params, cparams, node_attr)
         self.meta_dtype = params["label_dtype"]  # TODO sasarkar.. clean up unnecesary args, add args that are hardcoded etc
         self.dataset = params["dataset"]
+        #import pdb; pdb.set_trace()
 
         self.dataset_image = []
         self.dataset_text = [] # TODO can be removed later
@@ -189,38 +192,50 @@ class read_image_text_from_dataset(MediaReaderNode):
             raise StopIteration
 
         data_idx = next(self.batch_sampler_iter)
-        if True:
-            img_list = [i for i in self.dataset_image[data_idx]]
-            prompt_embeds_np = self.dataset_prompt_embeds[data_idx]
-            pooled_prompt_embeds_np = self.dataset_pooled_prompt_embeds[data_idx]
-            original_sizes = self.dataset_original_sizes[data_idx]
-            crop_top_lefts = self.dataset_crop_top_lefts[data_idx]
-        else: # TODO get rid of the else section
+        #if True:
+        img_list1 = [i for i in self.dataset_image[data_idx]]
+        prompt_embeds_np1 = self.dataset_prompt_embeds[data_idx]
+        pooled_prompt_embeds_np1 = self.dataset_pooled_prompt_embeds[data_idx]
+        original_sizes1 = self.dataset_original_sizes[data_idx]
+        crop_top_lefts1 = self.dataset_crop_top_lefts[data_idx]
+        #else: # TODO get rid of the else section
 
-            #try:
-            #    print(f'{data_idx} , {get_rank()}. ,,,,,,,,, idx')
-            #except:
-            #    print(f'{data_idx} , {0}. ,,,,,,,,, idx')
-            data = [self.dataset[i] for i in data_idx]
-            # each item of data has keys: dict_keys(['image', 'text', 'prompt_embeds', 'pooled_prompt_embeds'])
+        #try:
+        #    print(f'{data_idx} , {get_rank()}. ,,,,,,,,, idx')
+        #except:
+        #    print(f'{data_idx} , {0}. ,,,,,,,,, idx')
+        #data = [self.dataset[i] for i in data_idx]
+        # each item of data has keys: dict_keys(['image', 'text', 'prompt_embeds', 'pooled_prompt_embeds'])
 
-            img_list = [d['image'] for d in data]
-            prompt_embeds_np = np.array([d['prompt_embeds'] for d in data], dtype=np.float32)
-            pooled_prompt_embeds_np = np.array([d['pooled_prompt_embeds'] for d in data], dtype=np.float32)
-            original_sizes = np.array([d['original_sizes'] for d in data], dtype=np.uint32)
-            crop_top_lefts = np.array([d['crop_top_lefts'] for d in data], dtype=np.uint32)
+        #img_list = [d['image'] for d in data]
+        #prompt_embeds_np = np.array([d['prompt_embeds'] for d in data], dtype=np.float32)
+        #pooled_prompt_embeds_np = np.array([d['pooled_prompt_embeds'] for d in data], dtype=np.float32)
+        #original_sizes = np.array([d['original_sizes'] for d in data], dtype=np.uint32)
+        #crop_top_lefts = np.array([d['crop_top_lefts'] for d in data], dtype=np.uint32)
 
-            #import pdb; pdb.set_trace()
+        #import pdb; pdb.set_trace()
 
-            #text_label = np.zeros([self.batch_size, self.max_label_len], dtype=np.uint32)
-            #for idxx, d in enumerate(data):
-            #    text_label[idxx,:len(d['text'])] = np.array([ord(kk) for kk in d['text']], dtype=np.uint32)
+        #text_label = np.zeros([self.batch_size, self.max_label_len], dtype=np.uint32)
+        #for idxx, d in enumerate(data):
+        #    text_label[idxx,:len(d['text'])] = np.array([ord(kk) for kk in d['text']], dtype=np.uint32)
 
-            #return img_list, prompt_embeds_np, pooled_prompt_embeds_np, original_sizes, crop_top_lefts, text_label
+        #return img_list, prompt_embeds_np, pooled_prompt_embeds_np, original_sizes, crop_top_lefts, text_label
 
         self.iter_loc = self.iter_loc + self.batch_size
         #print('exit reader', time.time()-t0)
-        return img_list, prompt_embeds_np, pooled_prompt_embeds_np, original_sizes, crop_top_lefts
+        #assert img_list1 == img_list1
+        #assert (prompt_embeds_np1 == prompt_embeds_np1).all()
+        #assert (pooled_prompt_embeds_np1 == pooled_prompt_embeds_np).all()
+        #assert (original_sizes1 == original_sizes).all()
+        #assert (crop_top_lefts1 == crop_top_lefts).all()
+        #import pdb; pdb.set_trace()
+        #assert np.isfinite(prompt_embeds_np).all()
+        #assert np.isfinite(pooled_prompt_embeds_np).all()
+        #assert np.isfinite(original_sizes).all()
+        #assert np.isfinite(crop_top_lefts).all()
+        #return img_list, prompt_embeds_np, pooled_prompt_embeds_np, original_sizes, crop_top_lefts
+        #print(f'{img_list1} READERNODE', flush=True)
+        return img_list1, prompt_embeds_np1, pooled_prompt_embeds_np1, original_sizes1, crop_top_lefts1
 
 
 read_image_text_from_dataset_params = {

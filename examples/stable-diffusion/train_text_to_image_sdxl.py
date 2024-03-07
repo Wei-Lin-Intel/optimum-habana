@@ -884,7 +884,10 @@ def main(args):
     with accelerator.main_process_first():
         if args.max_train_samples is not None:
             dataset["train"] = dataset["train"].shuffle(seed=args.seed).select(range(args.max_train_samples))
+        #import pdb; pdb.set_trace()
         train_dataset = dataset["train"]
+        #import pdb; pdb.set_trace()
+        #train_dataset = train_dataset.select(range(64))
         if not args.mediapipe:
             # Set the training transforms
             train_dataset = train_dataset.with_transform(preprocess_train)
@@ -909,10 +912,14 @@ def main(args):
         # fingerprint used by the cache for the other processes to load the result
         # details: https://github.com/huggingface/diffusers/pull/4038#discussion_r1266078401
         new_fingerprint = Hasher.hash(args)
+        #import pdb; pdb.set_trace()
         train_dataset = train_dataset.map(compute_embeddings_fn, batched=True,
                                           new_fingerprint=new_fingerprint, load_from_cache_file=False)
+        #import pdb; pdb.set_trace()
         if args.mediapipe:
-            train_dataset = train_dataset.map(attach_metadata)
+            train_dataset = train_dataset.map(attach_metadata, load_from_cache_file=False)
+        #import pdb; pdb.set_trace()
+        
 
     def collate_fn(examples):
         pixel_values = torch.stack([example["pixel_values"].clone().detach() for example in examples])
@@ -1096,9 +1103,69 @@ def main(args):
         disable=not accelerator.is_local_main_process,
     )
 
-    #for epoch in range(first_epoch, args.num_train_epochs):
+    '''
+    def compare(r0, r1):
+        nomatchcnt = 0
+        matchcnt = 0
+        for a0,a1,a2,a3,a4 in r0:
+            match = 0
+            for b0,b1,b2,b3,b4 in r1:
+                m1 = torch.isclose(a1, b1, rtol=1e-04,atol=1e-05).all().item()
+                m2 = torch.isclose(a2, b2, rtol=1e-04,atol=1e-05).all().item()
+                #import pdb; pdb.set_trace()
+                if type(a3) == type(tuple()):
+                    m3 = a3==b3
+                    m4 = a4 == b4
+                else:
+                    m3 = (a3==b3).all().item()
+                    m4 = (a4==b4).all().item()
+                #import pdb; pdb.set_trace()
+                #print()
+                if m1 and m2 and m3 and m4:
+                    m0_0 = torch.isclose(a0, b0, rtol=1e-04,atol=1e-05).all().item()
+                    m0_1 = torch.isclose(a0, torch.flip(b0, [2]), rtol=1e-04,atol=1e-05).all().item()
+
+                    #if not (m0_0 or m0_1):
+                    #    import pdb; pdb.set_trace()
+                    #    print()
+                    match += 1
+
+            if match == 1:
+                matchcnt += 1
+            else:
+                nomatchcnt += 1
+        return matchcnt, nomatchcnt
+
+    results = []
+    import pdb; pdb.set_trace()
+    for epoch in range(first_epoch, args.num_train_epochs):
+        epoch_results = []
+        for step, batch in enumerate(train_dataloader):
+            #import pdb; pdb.set_trace()
+            bs = batch['pixel_values'].shape[0]
+            pixel_values = [batch['pixel_values'][i] for i in range(bs)]
+            prompt_embeds = [batch['prompt_embeds'][i] for i in range(bs)]
+            pooled_prompt_embeds = [batch['pooled_prompt_embeds'][i] for i in range(bs)]
+            original_sizes = [batch['original_sizes'][i] for i in range(bs)]
+            crop_top_lefts = [batch['crop_top_lefts'][i] for i in range(bs)]
+            for a,b,c,d,e in zip(pixel_values, prompt_embeds, pooled_prompt_embeds, original_sizes, crop_top_lefts):
+                epoch_results += [(a,b,c,d,e)]
+
+            #print(f'{epoch} {step} {batch["text"]}', flush = True)
+        results += [epoch_results]
+        #import pdb; pdb.set_trace()
+        if epoch >= 1:
+            matchcnt, nomatchcnt = compare(results[0], results[epoch])
+            import pdb; pdb.set_trace()
+            print(matchcnt, nomatchcnt, 'epoch {epoch}')
+    import pdb; pdb.set_trace()
+    print()
+    assert False
+    '''
+
+    #for epoch in range(first_epoch, 5):
     #    for step, batch in enumerate(train_dataloader):
-    #        print(f'{epoch} {step} {batch["text"]}', flush = True)
+    #        print(epoch, step, batch['pixel_values'].shape, batch['pixel_values'].min(), batch['pixel_values'].max(), '<<<<<<<')
     #assert False
 
 
@@ -1107,14 +1174,17 @@ def main(args):
     t_start = time.perf_counter()
     train_loss = torch.tensor(0, dtype=torch.float, device='hpu')
     for epoch in range(first_epoch, args.num_train_epochs):
+        #print('-------------------->', epoch)
         train_loss.zero_()
         if hb_profiler:
             hb_profiler.start()
         for step, batch in enumerate(train_dataloader):
+            #print('>>>>>>>>', step, epoch, flush=True)
             if t0 is None or global_step == args.throughput_warmup_steps:
                 t0 = time.perf_counter()
             with accelerator.accumulate(unet):
                 # Move compute_vae_encoding here to reflect the transformed image input
+                print(batch['pixel_values'].shape, batch['pixel_values'].min(), batch['pixel_values'].max(), '<<<<<<<')
                 model_input = compute_vae_encodings(batch['pixel_values'], vae)
                 # Sample noise that we'll add to the latents
                 noise = torch.randn_like(model_input)
@@ -1165,6 +1235,8 @@ def main(args):
                 prompt_embeds = batch["prompt_embeds"].to(accelerator.device)
                 pooled_prompt_embeds = batch["pooled_prompt_embeds"].to(accelerator.device)
                 unet_added_conditions.update({"text_embeds": pooled_prompt_embeds})
+
+                #print(noisy_model_input.shape, noisy_model_input.min(), noisy_model_input.max(), prompt_embeds.shape, prompt_embeds.min(), prompt_embeds.max(), pooled_prompt_embeds.shape, pooled_prompt_embeds.min(), pooled_prompt_embeds.max())
 
                 model_pred = unet(
                     noisy_model_input,

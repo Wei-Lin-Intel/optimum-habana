@@ -1,8 +1,8 @@
 import contextlib
 import math
+import os
 import warnings
 from typing import Optional, Tuple, Union
-import os
 
 import torch
 
@@ -42,13 +42,10 @@ from transformers.models.falcon.modeling_falcon import (
     FalconDecoderLayer,
     FalconForCausalLM,
     FalconMLP,
-    FalconLinear,
     FalconModel,
-    FalconRotaryEmbedding,
     apply_rotary_pos_emb,
     build_alibi_tensor,
 )
-from ..modeling_all_models import ScopedLinearAllReduce
 from transformers.utils import logging
 
 from ...modeling_attn_mask_utils import (
@@ -66,7 +63,10 @@ def dropout_add(x: torch.Tensor, residual: torch.Tensor, prob: float, training: 
     https://github.com/huggingface/transformers/blob/b338a6c3b8eda29610d4d472cad8cd87cbfdaaed/src/transformers/models/falcon/modeling_falcon.py#L248
     """
     out = F.dropout(x, p=prob, training=training)
-    out.add_(residual)
+    if training:
+        out = residual + out
+    else:
+        out.add_(residual)
     return out
 
 
@@ -161,6 +161,7 @@ class ScaledDotProductAttention(nn.Module):
 
         if is_causal:
             assert attn_mask is None
+            attn_bias = torch.zeros(L, S, dtype=query.dtype)
             temp_mask = torch.ones(L, S, dtype=torch.bool).tril(diagonal=0)
             attn_bias.masked_fill_(temp_mask.logical_not(), float("-inf"))
             attn_bias.to(query.dtype)
@@ -230,13 +231,6 @@ class GaudiFalconAttention(FalconAttention):
     def __init__(self, config: FalconConfig):
         super().__init__(config)
 
-        if config.new_decoder_architecture:
-            qkv_out_dim = (config.num_kv_heads * 2 + config.num_attention_heads) * self.head_dim
-        elif config.multi_query:
-            qkv_out_dim = self.hidden_size + 2 * self.head_dim
-        else:
-            qkv_out_dim = 3 * self.hidden_size
-
         if os.getenv("QUANT_CONFIG", ""):
             self.sdpa = ScaledDotProductAttention(config)
 
@@ -285,7 +279,7 @@ class GaudiFalconAttention(FalconAttention):
         The only differences are:
         - add new args token_idx and position_ids
         - replace F.scaled_dot_product_attention with Habana torch's version
-	- add new arg reuse_cache
+        - add new arg reuse_cache
         """
         if "padding_mask" in kwargs:
             warnings.warn(
@@ -541,9 +535,7 @@ class GaudiFalconDecoderLayer(FalconDecoderLayer):
         )
 
         self.self_attention.attention_all_reduce(hidden_states)
-        hidden_states = self.self_attention.post_attn_forward(
-            hidden_states
-        )
+        hidden_states = self.self_attention.post_attn_forward(hidden_states)
 
         attention_output = hidden_states
 

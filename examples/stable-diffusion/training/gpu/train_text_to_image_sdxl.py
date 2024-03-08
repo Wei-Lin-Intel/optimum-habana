@@ -461,8 +461,7 @@ def parse_args(input_args=None):
         "--enable_xformers_memory_efficient_attention", action="store_true", help="Whether or not to use xformers."
     )
     parser.add_argument("--noise_offset", type=float, default=0, help="The scale of noise offset.")
-
-    parser.add_argument( #YSY
+    parser.add_argument(
         "--image_save_dir",
         type=str,
         default="./stable-diffusion-generated-images",
@@ -491,15 +490,6 @@ def parse_args(input_args=None):
         type=int,
         help="Print the loss for every logging_step.",
     )
-    parser.add_argument(
-        "--crop_resolution", 
-        type=int,
-        default=1024,
-        help=(
-            "The resolution for crop input images, all the images in the train/validation dataset will be resized to this"
-            " resolution"
-        ),
-    )
 
     if input_args is not None:
         args = parser.parse_args(input_args)
@@ -522,7 +512,6 @@ def parse_args(input_args=None):
 
 # Adapted from pipelines.StableDiffusionXLPipeline.encode_prompt
 def encode_prompt(batch, text_encoders, tokenizers, proportion_empty_prompts, caption_column, is_train=True):
-    # print("### YSY - encode_prompt")
     prompt_embeds_list = []
     prompt_batch = batch[caption_column]
 
@@ -549,32 +538,30 @@ def encode_prompt(batch, text_encoders, tokenizers, proportion_empty_prompts, ca
             prompt_embeds = text_encoder(
                 text_input_ids.to(text_encoder.device),
                 output_hidden_states=True,
-                return_dict=False,
             )
 
             # We are only ALWAYS interested in the pooled output of the final text encoder
             pooled_prompt_embeds = prompt_embeds[0]
-            # prompt_embeds = prompt_embeds.hidden_states[-2]
-            prompt_embeds = prompt_embeds[-1][-2] #YSY
+            prompt_embeds = prompt_embeds.hidden_states[-2]
             bs_embed, seq_len, _ = prompt_embeds.shape
             prompt_embeds = prompt_embeds.view(bs_embed, seq_len, -1)
             prompt_embeds_list.append(prompt_embeds)
 
     prompt_embeds = torch.concat(prompt_embeds_list, dim=-1)
     pooled_prompt_embeds = pooled_prompt_embeds.view(bs_embed, -1)
-    #map creates cache in cpu so need to change tensor to float32 #YSY
-    return {"prompt_embeds": prompt_embeds.to(torch.float32), "pooled_prompt_embeds": pooled_prompt_embeds.to(torch.float32)}
+    return {"prompt_embeds": prompt_embeds.cpu(), "pooled_prompt_embeds": pooled_prompt_embeds.cpu()}
 
 
-def compute_vae_encodings(pixel_values, vae): #YSY
-    # print("### YSY - compute_vae_encodings")
+def compute_vae_encodings(batch, vae):
+    images = batch.pop("pixel_values")
+    pixel_values = torch.stack(list(images))
     pixel_values = pixel_values.to(memory_format=torch.contiguous_format).float()
     pixel_values = pixel_values.to(vae.device, dtype=vae.dtype)
 
     with torch.no_grad():
         model_input = vae.encode(pixel_values).latent_dist.sample()
     model_input = model_input * vae.config.scaling_factor
-    return model_input #YSY
+    return {"model_input": model_input.cpu()}
 
 
 def generate_timestep_weights(args, num_timesteps):
@@ -654,7 +641,6 @@ def main(args):
     # If passed along, set the training seed now.
     if args.seed is not None:
         set_seed(args.seed)
-        # torch.use_deterministic_algorithms(True) #YSY
 
     # Handle the repository creation
     if accelerator.is_main_process:
@@ -689,9 +675,7 @@ def main(args):
     )
 
     # Load scheduler and models
-    noise_scheduler = DDPMScheduler.from_pretrained(
-	     args.pretrained_model_name_or_path, subfolder="scheduler"
-	)
+    noise_scheduler = DDPMScheduler.from_pretrained(args.pretrained_model_name_or_path, subfolder="scheduler")
     # Check for terminal SNR in combination with SNR Gamma
     text_encoder_one = text_encoder_cls_one.from_pretrained(
         args.pretrained_model_name_or_path, subfolder="text_encoder", revision=args.revision, variant=args.variant
@@ -699,9 +683,10 @@ def main(args):
     text_encoder_two = text_encoder_cls_two.from_pretrained(
         args.pretrained_model_name_or_path, subfolder="text_encoder_2", revision=args.revision, variant=args.variant
     )
+
     # For mixed precision training we cast all non-trainable weigths to half-precision
     # as these weights are only used for inference, keeping weights in full precision is not required.
-    weight_dtype = torch.float32 #YSY
+    weight_dtype = torch.float32
     if accelerator.mixed_precision == "fp16":
         weight_dtype = torch.float16
     elif accelerator.mixed_precision == "bf16":
@@ -723,13 +708,28 @@ def main(args):
         subfolder="unet",
         revision=args.revision,
         variant=args.variant,
-        torch_dtype=weight_dtype #YSY
+        torch_dtype=weight_dtype
     )
 
     # Freeze vae and text encoders.
     vae.requires_grad_(False)
     text_encoder_one.requires_grad_(False)
     text_encoder_two.requires_grad_(False)
+    # Set unet as trainable.
+    unet.train()
+
+    # Move unet, vae and text_encoder to device and cast to weight_dtype
+    # The VAE is in float32 to avoid NaN losses.
+    vae.to(accelerator.device, dtype=torch.float32)
+    text_encoder_one.to(accelerator.device, dtype=weight_dtype)
+    text_encoder_two.to(accelerator.device, dtype=weight_dtype)
+
+    # Create EMA for the unet.
+    if args.use_ema:
+        ema_unet = UNet2DConditionModel.from_pretrained(
+            args.pretrained_model_name_or_path, subfolder="unet", revision=args.revision, variant=args.variant
+        )
+        ema_unet = EMAModel(ema_unet.parameters(), model_cls=UNet2DConditionModel, model_config=ema_unet.config)
 
     if args.enable_xformers_memory_efficient_attention:
         if is_xformers_available():
@@ -862,22 +862,13 @@ def main(args):
                 f"--caption_column' value '{args.caption_column}' needs to be one of: {', '.join(column_names)}"
             )
 
-    text_encoder_one = text_encoder_one.to(accelerator.device, dtype=weight_dtype)
-    text_encoder_two = text_encoder_two.to(accelerator.device, dtype=weight_dtype)
     # Preprocessing the datasets.
     train_resize = transforms.Resize(args.resolution, interpolation=transforms.InterpolationMode.BILINEAR)
     train_crop = transforms.CenterCrop(args.resolution) if args.center_crop else transforms.RandomCrop(args.resolution)
     train_flip = transforms.RandomHorizontalFlip(p=1.0)
     train_transforms = transforms.Compose([transforms.ToTensor(), transforms.Normalize([0.5], [0.5])])
-    
-    vae = vae.to(accelerator.device, dtype=weight_dtype)
-    # Let's first compute all the embeddings so that we can free up the text encoders
-    # from memory. We will pre-compute the VAE encodings too.
-    text_encoders = [text_encoder_one, text_encoder_two]
-    tokenizers = [tokenizer_one, tokenizer_two]
 
     def preprocess_train(examples):
-        # print("### YSY - preprocess_train")
         images = [image.convert("RGB") for image in examples[image_column]]
         # image aug
         original_sizes = []
@@ -886,17 +877,13 @@ def main(args):
         for image in images:
             original_sizes.append((image.height, image.width))
             image = train_resize(image)
-            if args.crop_resolution < args.resolution: #YSY
-                if args.center_crop:
-                    y1 = max(0, int(round((image.height - args.resolution) / 2.0)))
-                    x1 = max(0, int(round((image.width - args.resolution) / 2.0)))
-                    image = train_crop(image)
-                else:
-                    y1, x1, h, w = train_crop.get_params(image, (args.resolution, args.resolution))
-                    image = crop(image, y1, x1, h, w)
+            if args.center_crop:
+                y1 = max(0, int(round((image.height - args.resolution) / 2.0)))
+                x1 = max(0, int(round((image.width - args.resolution) / 2.0)))
+                image = train_crop(image)
             else:
-                x1 = 0
-                y1 = 0
+                y1, x1, h, w = train_crop.get_params(image, (args.resolution, args.resolution))
+                image = crop(image, y1, x1, h, w)
             if args.random_flip and random.random() < 0.5:
                 # flip
                 x1 = image.width - x1
@@ -919,6 +906,8 @@ def main(args):
 
     # Let's first compute all the embeddings so that we can free up the text encoders
     # from memory. We will pre-compute the VAE encodings too.
+    text_encoders = [text_encoder_one, text_encoder_two]
+    tokenizers = [tokenizer_one, tokenizer_two]
     compute_embeddings_fn = functools.partial(
         encode_prompt,
         text_encoders=text_encoders,
@@ -926,25 +915,35 @@ def main(args):
         proportion_empty_prompts=args.proportion_empty_prompts,
         caption_column=args.caption_column,
     )
-
+    compute_vae_encodings_fn = functools.partial(compute_vae_encodings, vae=vae)
     with accelerator.main_process_first():
         from datasets.fingerprint import Hasher
 
         # fingerprint used by the cache for the other processes to load the result
         # details: https://github.com/huggingface/diffusers/pull/4038#discussion_r1266078401
         new_fingerprint = Hasher.hash(args)
-        train_dataset = train_dataset.map(compute_embeddings_fn, batched=True,
-                                          new_fingerprint=new_fingerprint)
+        new_fingerprint_for_vae = Hasher.hash("vae")
+        train_dataset = train_dataset.map(compute_embeddings_fn, batched=True, new_fingerprint=new_fingerprint)
+        train_dataset = train_dataset.map(
+            compute_vae_encodings_fn,
+            batched=True,
+            batch_size=args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps,
+            new_fingerprint=new_fingerprint_for_vae,
+        )
+
+    del text_encoders, tokenizers, vae
+    gc.collect()
+    torch.cuda.empty_cache()
 
     def collate_fn(examples):
-        pixel_values = torch.stack([example["pixel_values"].clone().detach() for example in examples]) #YSY
+        model_input = torch.stack([torch.tensor(example["model_input"]) for example in examples])
         original_sizes = [example["original_sizes"] for example in examples]
         crop_top_lefts = [example["crop_top_lefts"] for example in examples]
         prompt_embeds = torch.stack([torch.tensor(example["prompt_embeds"]) for example in examples])
         pooled_prompt_embeds = torch.stack([torch.tensor(example["pooled_prompt_embeds"]) for example in examples])
 
         return {
-            "pixel_values": pixel_values, #YSY
+            "model_input": model_input,
             "prompt_embeds": prompt_embeds,
             "pooled_prompt_embeds": pooled_prompt_embeds,
             "original_sizes": original_sizes,
@@ -959,19 +958,6 @@ def main(args):
         batch_size=args.train_batch_size,
         num_workers=args.dataloader_num_workers,
     )
-
-    # Set unet as trainable.
-    unet.train()
-
-    del text_encoders, tokenizers
-    gc.collect()
-    torch.cuda.empty_cache()
-    # Create EMA for the unet.
-    if args.use_ema:
-        ema_unet = UNet2DConditionModel.from_pretrained(
-            args.pretrained_model_name_or_path, subfolder="unet", revision=args.revision, variant=args.variant
-        )
-        ema_unet = EMAModel(ema_unet.parameters(), model_cls=UNet2DConditionModel, model_config=ema_unet.config)
 
     # Scheduler and math around the number of training steps.
     overrode_max_train_steps = False
@@ -1053,20 +1039,18 @@ def main(args):
         disable=not accelerator.is_local_main_process,
     )
 
-    t0 = None #YSY
+    t0 = None
     t_start = time.perf_counter()
-    train_loss = torch.tensor(0, dtype=torch.float, device='cuda') #YSY
+    train_loss = torch.tensor(0, dtype=torch.float, device='cuda')
     for epoch in range(first_epoch, args.num_train_epochs):
-        # train_loss = 0.0
         train_loss.zero_()
         for step, batch in enumerate(train_dataloader):
-            if t0 is None and global_step == args.throughput_warmup_steps: #YSY
+            if t0 is None and global_step == args.throughput_warmup_steps:
                 t0 = time.perf_counter()
 
             with accelerator.accumulate(unet):
-                # Move compute_vae_encoding here to reflect the transformed image input
-                model_input = compute_vae_encodings(batch['pixel_values'], vae) #YSY
                 # Sample noise that we'll add to the latents
+                model_input = batch["model_input"].to(accelerator.device)
                 noise = torch.randn_like(model_input)
                 if args.noise_offset:
                     # https://www.crosslabs.org//blog/diffusion-with-offset-noise
@@ -1080,7 +1064,6 @@ def main(args):
                     timesteps = torch.randint(
                         0, noise_scheduler.config.num_train_timesteps, (bsz,), device=model_input.device
                     )
-                    timesteps = timesteps.long()
                 else:
                     # Sample a random timestep for each image, potentially biased by the timestep weights.
                     # Biasing the timestep weights allows us to spend less time training irrelevant timesteps.
@@ -1112,12 +1095,8 @@ def main(args):
                 pooled_prompt_embeds = batch["pooled_prompt_embeds"].to(accelerator.device)
                 unet_added_conditions.update({"text_embeds": pooled_prompt_embeds})
                 model_pred = unet(
-                    noisy_model_input,
-                    timesteps,
-                    prompt_embeds,
-                    added_cond_kwargs=unet_added_conditions,
-                    return_dict=False,
-                )[0] #.sample #YSY
+                    noisy_model_input, timesteps, prompt_embeds, added_cond_kwargs=unet_added_conditions
+                ).sample
 
                 # Get the target for loss depending on the prediction type
                 if args.prediction_type is not None:
@@ -1156,7 +1135,7 @@ def main(args):
 
                 # Gather the losses across all processes for logging (if we use distributed training).
                 avg_loss = accelerator.gather(loss.repeat(args.train_batch_size)).mean()
-                train_loss += avg_loss / args.gradient_accumulation_steps #YSY  #avg_loss.item()
+                train_loss += avg_loss / args.gradient_accumulation_steps
 
                 # Backpropagate
                 accelerator.backward(loss)
@@ -1165,12 +1144,14 @@ def main(args):
                     accelerator.clip_grad_norm_(params_to_clip, args.max_grad_norm)
                 optimizer.step()
                 lr_scheduler.step()
-                optimizer.zero_grad(set_to_none=True)
+                optimizer.zero_grad()
 
             # Checks if the accelerator has performed an optimization step behind the scenes
             if accelerator.sync_gradients:
                 progress_bar.update(1)
                 global_step += 1
+                # accelerator.log({"train_loss": train_loss}, step=global_step)
+                # train_loss = 0.0
 
                 if accelerator.is_main_process:
                     if global_step % args.checkpointing_steps == 0:
@@ -1208,12 +1189,12 @@ def main(args):
                         logs = {"step_loss": train_loss_scalar, "lr": lr_scheduler.get_last_lr()[0], "mem_used":torch.cuda.memory.memory_allocated()}
                     progress_bar.set_postfix(**logs)
                 train_loss.zero_()
-            
+
             if global_step >= args.max_train_steps:
                 break
 
         if accelerator.is_main_process:
-            if args.validation_prompt is not None and (epoch+1) % args.validation_epochs == 0: #YSY
+            if args.validation_prompt is not None and (epoch+1) % args.validation_epochs == 0:
                 logger.info(
                     f"Running validation... \n Generating {args.num_validation_images} images with prompt:"
                     f" {args.validation_prompt}."
@@ -1272,13 +1253,13 @@ def main(args):
                 del pipeline
                 torch.cuda.empty_cache()
 
-    duration = time.perf_counter() - t0 #YSY
+    duration = time.perf_counter() - t0
     ttt = time.perf_counter() - t_start
     throughput = (args.max_train_steps - args.throughput_warmup_steps) * total_batch_size / duration
 
     accelerator.wait_for_everyone()
     if accelerator.is_main_process:
-        logger.info(f"Throughput = {throughput} samples/s") #YSY
+        logger.info(f"Throughput = {throughput} samples/s")
         logger.info(f"Train runtime = {duration} seconds")
         logger.info(f"Total Train runtime = {ttt} seconds")
         metrics = {
@@ -1318,7 +1299,7 @@ def main(args):
         if args.validation_prompt and args.num_validation_images > 0:
             pipeline = pipeline.to(accelerator.device)
             generator = torch.Generator(device=accelerator.device).manual_seed(args.seed) if args.seed else None
-            with torch.cuda.amp.autocast(): #YSY
+            with torch.cuda.amp.autocast():
                 images = [
                     pipeline(args.validation_prompt, num_inference_steps=25, generator=generator).images[0]
                     for _ in range(args.num_validation_images)

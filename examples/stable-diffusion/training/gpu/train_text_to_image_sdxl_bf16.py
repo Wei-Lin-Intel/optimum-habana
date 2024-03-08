@@ -18,56 +18,50 @@
 import argparse
 import functools
 import gc
-import json
 import logging
 import math
 import os
 import random
 import shutil
-import time
 from pathlib import Path
 
+import accelerate
 import datasets
-import diffusers
-import habana_frameworks.torch.core as htcore
 import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.utils.checkpoint
 import transformers
+from accelerate import Accelerator
 from accelerate.logging import get_logger
-from accelerate.utils import ProjectConfiguration, DistributedDataParallelKwargs
-
+from accelerate.utils import ProjectConfiguration, set_seed
 from datasets import load_dataset
-from diffusers import (
-    AutoencoderKL,
-    DDPMScheduler,
-    UNet2DConditionModel,
-)
-from diffusers.optimization import get_scheduler
-from diffusers.training_utils import EMAModel, compute_snr
-from diffusers.utils import check_min_version, is_wandb_available
-from diffusers.utils.torch_utils import is_compiled_module
 from huggingface_hub import create_repo, upload_folder
+from packaging import version
 from torchvision import transforms
 from torchvision.transforms.functional import crop
 from tqdm.auto import tqdm
 from transformers import AutoTokenizer, PretrainedConfig
 
-from optimum.habana import GaudiConfig
-from optimum.habana.accelerate import GaudiAccelerator
-from optimum.habana.diffusers import GaudiEulerDiscreteScheduler, GaudiStableDiffusionXLPipeline
-from optimum.habana.utils import set_seed, HabanaProfile
-from optimum.habana.accelerate.utils.dataclasses import GaudiDistributedType
-from optimum.habana.utils import to_gb_rounded
+import diffusers
+from diffusers import (
+    AutoencoderKL,
+    DDPMScheduler,
+    StableDiffusionXLPipeline,
+    UNet2DConditionModel,
+)
+from diffusers.optimization import get_scheduler
+from diffusers.training_utils import EMAModel, compute_snr
+from diffusers.utils import check_min_version, is_wandb_available
+from diffusers.utils.import_utils import is_xformers_available
 
-if is_wandb_available():
-    import wandb
+import time, json
 
 # Will error if the minimal version of diffusers is not installed. Remove at your own risks.
-check_min_version("0.23.1")
+check_min_version("0.25.0")
 
-logger = get_logger(__name__, log_level="INFO")
+logger = get_logger(__name__)
+
 
 DATASET_NAME_MAPPING = {
     "lambdalabs/pokemon-blip-captions": ("image", "text"),
@@ -244,22 +238,13 @@ def parse_args(input_args=None):
         default=None,
         help="The directory where the downloaded models and datasets will be stored.",
     )
-    parser.add_argument("--seed", type=int, default=42, help="A seed for reproducible training.")
+    parser.add_argument("--seed", type=int, default=None, help="A seed for reproducible training.")
     parser.add_argument(
         "--resolution",
         type=int,
         default=1024,
         help=(
             "The resolution for input images, all the images in the train/validation dataset will be resized to this"
-            " resolution"
-        ),
-    )
-    parser.add_argument(
-        "--crop_resolution",
-        type=int,
-        default=1024,
-        help=(
-            "The resolution for crop input images, all the images in the train/validation dataset will be resized to this"
             " resolution"
         ),
     )
@@ -420,6 +405,9 @@ def parse_args(input_args=None):
             "Number of subprocesses to use for data loading. 0 means that the data will be loaded in the main process."
         ),
     )
+    parser.add_argument(
+        "--use_8bit_adam", action="store_true", help="Whether or not to use 8-bit Adam from bitsandbytes."
+    )
     parser.add_argument("--adam_beta1", type=float, default=0.9, help="The beta1 parameter for the Adam optimizer.")
     parser.add_argument("--adam_beta2", type=float, default=0.999, help="The beta2 parameter for the Adam optimizer.")
     parser.add_argument("--adam_weight_decay", type=float, default=1e-2, help="Weight decay to use.")
@@ -458,37 +446,21 @@ def parse_args(input_args=None):
         ),
     )
     parser.add_argument(
-        "--bf16",
-        action="store_true",
-        default=False,
-        help=("Whether to use bf16 mixed precision."),
-    )
-    parser.add_argument("--local_rank", type=int, default=-1, help="For distributed training: local_rank")
-    parser.add_argument("--noise_offset", type=float, default=0, help="The scale of noise offset.")
-    parser.add_argument(
-        "--gaudi_config_name",
+        "--mixed_precision",
         type=str,
         default=None,
-        help="Local path to the Gaudi configuration file or its name on the Hugging Face Hub.",
-    )
-    parser.add_argument(
-        "--throughput_warmup_steps",
-        type=int,
-        default=0,
+        choices=["no", "fp16", "bf16"],
         help=(
-            "Number of steps to ignore for throughput calculation. For example, with throughput_warmup_steps=N, the"
-            " first N steps will not be considered in the calculation of the throughput. This is especially useful in"
-            " lazy mode."
+            "Whether to use mixed precision. Choose between fp16 and bf16 (bfloat16). Bf16 requires PyTorch >="
+            " 1.10.and an Nvidia Ampere GPU.  Default to the value of accelerate config of the current system or the"
+            " flag passed with the `accelerate.launch` command. Use this argument to override the accelerate config."
         ),
     )
+    parser.add_argument("--local_rank", type=int, default=-1, help="For distributed training: local_rank")
     parser.add_argument(
-        "--use_hpu_graphs_for_training",
-        action="store_true",
-        help="Use HPU graphs for training on HPU.")
-    parser.add_argument(
-        "--use_hpu_graphs_for_inference",
-        action="store_true",
-        help="Use HPU graphs for inference on HPU.")
+        "--enable_xformers_memory_efficient_attention", action="store_true", help="Whether or not to use xformers."
+    )
+    parser.add_argument("--noise_offset", type=float, default=0, help="The scale of noise offset.")
 
     parser.add_argument(
         "--image_save_dir",
@@ -504,16 +476,14 @@ def parse_args(input_args=None):
         help="Whether to return PIL images or Numpy arrays.",
     )
     parser.add_argument(
-        "--profiling_warmup_steps",
-        default=0,
+        "--throughput_warmup_steps",
         type=int,
-        help="Number of steps to ignore for profiling.",
-    )
-    parser.add_argument(
-        "--profiling_steps",
         default=0,
-        type=int,
-        help="Number of steps to capture for profiling.",
+        help=(
+            "Number of steps to ignore for throughput calculation. For example, with throughput_warmup_steps=N, the"
+            " first N steps will not be considered in the calculation of the throughput. This is especially useful in"
+            " lazy mode."
+        ),
     )
     parser.add_argument(
         "--logging_step",
@@ -522,9 +492,13 @@ def parse_args(input_args=None):
         help="Print the loss for every logging_step.",
     )
     parser.add_argument(
-        "--mediapipe",
-        action="store_true",
-        help="Use gaudi2 HW mediapipe over regular dataloader.",
+        "--crop_resolution", 
+        type=int,
+        default=1024,
+        help=(
+            "The resolution for crop input images, all the images in the train/validation dataset will be resized to this"
+            " resolution"
+        ),
     )
 
     if input_args is not None:
@@ -579,10 +553,12 @@ def encode_prompt(batch, text_encoders, tokenizers, proportion_empty_prompts, ca
 
             # We are only ALWAYS interested in the pooled output of the final text encoder
             pooled_prompt_embeds = prompt_embeds[0]
+            # prompt_embeds = prompt_embeds.hidden_states[-2]
             prompt_embeds = prompt_embeds[-1][-2]
             bs_embed, seq_len, _ = prompt_embeds.shape
             prompt_embeds = prompt_embeds.view(bs_embed, seq_len, -1)
             prompt_embeds_list.append(prompt_embeds)
+
     prompt_embeds = torch.concat(prompt_embeds_list, dim=-1)
     pooled_prompt_embeds = pooled_prompt_embeds.view(bs_embed, -1)
     #map creates cache in cpu so need to change tensor to float32
@@ -592,6 +568,7 @@ def encode_prompt(batch, text_encoders, tokenizers, proportion_empty_prompts, ca
 def compute_vae_encodings(pixel_values, vae):
     pixel_values = pixel_values.to(memory_format=torch.contiguous_format).float()
     pixel_values = pixel_values.to(vae.device, dtype=vae.dtype)
+
     with torch.no_grad():
         model_input = vae.encode(pixel_values).latent_dist.sample()
     model_input = model_input * vae.config.scaling_factor
@@ -644,14 +621,17 @@ def main(args):
 
     accelerator_project_config = ProjectConfiguration(project_dir=args.output_dir, logging_dir=logging_dir)
 
-    gaudi_config = GaudiConfig.from_pretrained(args.gaudi_config_name)
-    accelerator = GaudiAccelerator(
+    accelerator = Accelerator(
         gradient_accumulation_steps=args.gradient_accumulation_steps,
-        mixed_precision="bf16" if gaudi_config.use_torch_autocast or args.bf16 else "no",
+        mixed_precision=args.mixed_precision,
         log_with=args.report_to,
         project_config=accelerator_project_config,
-        force_autocast=gaudi_config.use_torch_autocast or args.bf16,
     )
+
+    if args.report_to == "wandb":
+        if not is_wandb_available():
+            raise ImportError("Make sure to install wandb if you want to use it for logging during training.")
+        import wandb
 
     # Make one log on every process with the configuration for debugging.
     logging.basicConfig(
@@ -672,6 +652,7 @@ def main(args):
     # If passed along, set the training seed now.
     if args.seed is not None:
         set_seed(args.seed)
+        # torch.use_deterministic_algorithms(True)
 
     # Handle the repository creation
     if accelerator.is_main_process:
@@ -707,21 +688,21 @@ def main(args):
 
     # Load scheduler and models
     noise_scheduler = DDPMScheduler.from_pretrained(
-        args.pretrained_model_name_or_path, subfolder="scheduler"
-    )
-
+	     args.pretrained_model_name_or_path, subfolder="scheduler"
+	)
     # Check for terminal SNR in combination with SNR Gamma
     text_encoder_one = text_encoder_cls_one.from_pretrained(
         args.pretrained_model_name_or_path, subfolder="text_encoder", revision=args.revision, variant=args.variant
-    ).to(accelerator.device)
+    )
     text_encoder_two = text_encoder_cls_two.from_pretrained(
         args.pretrained_model_name_or_path, subfolder="text_encoder_2", revision=args.revision, variant=args.variant
-    ).to(accelerator.device)
-
+    )
     # For mixed precision training we cast all non-trainable weigths to half-precision
     # as these weights are only used for inference, keeping weights in full precision is not required.
     weight_dtype = torch.float32
-    if gaudi_config.use_torch_autocast or args.bf16:
+    if accelerator.mixed_precision == "fp16":
+        weight_dtype = torch.float16
+    elif accelerator.mixed_precision == "bf16":
         weight_dtype = torch.bfloat16
 
     vae_path = (
@@ -729,7 +710,6 @@ def main(args):
         if args.pretrained_vae_model_name_or_path is None
         else args.pretrained_vae_model_name_or_path
     )
-
     vae = AutoencoderKL.from_pretrained(
         vae_path,
         subfolder="vae" if args.pretrained_vae_model_name_or_path is None else None,
@@ -748,28 +728,80 @@ def main(args):
     vae.requires_grad_(False)
     text_encoder_one.requires_grad_(False)
     text_encoder_two.requires_grad_(False)
-    
+
+    if args.enable_xformers_memory_efficient_attention:
+        if is_xformers_available():
+            import xformers
+
+            xformers_version = version.parse(xformers.__version__)
+            if xformers_version == version.parse("0.0.16"):
+                logger.warn(
+                    "xFormers 0.0.16 cannot be used for training in some GPUs. If you observe problems during training, please update xFormers to at least 0.0.17. See https://huggingface.co/docs/diffusers/main/en/optimization/xformers for more details."
+                )
+            unet.enable_xformers_memory_efficient_attention()
+        else:
+            raise ValueError("xformers is not available. Make sure it is installed correctly")
+
+    # `accelerate` 0.16.0 will have better support for customized saving
+    if version.parse(accelerate.__version__) >= version.parse("0.16.0"):
+        # create custom saving & loading hooks so that `accelerator.save_state(...)` serializes in a nice format
+        def save_model_hook(models, weights, output_dir):
+            if accelerator.is_main_process:
+                if args.use_ema:
+                    ema_unet.save_pretrained(os.path.join(output_dir, "unet_ema"))
+
+                for i, model in enumerate(models):
+                    model.save_pretrained(os.path.join(output_dir, "unet"))
+
+                    # make sure to pop weight so that corresponding model is not saved again
+                    weights.pop()
+
+        def load_model_hook(models, input_dir):
+            if args.use_ema:
+                load_model = EMAModel.from_pretrained(os.path.join(input_dir, "unet_ema"), UNet2DConditionModel)
+                ema_unet.load_state_dict(load_model.state_dict())
+                ema_unet.to(accelerator.device)
+                del load_model
+
+            for i in range(len(models)):
+                # pop models so that they are not loaded again
+                model = models.pop()
+
+                # load diffusers style into model
+                load_model = UNet2DConditionModel.from_pretrained(input_dir, subfolder="unet")
+                model.register_to_config(**load_model.config)
+
+                model.load_state_dict(load_model.state_dict())
+                del load_model
+
+        accelerator.register_save_state_pre_hook(save_model_hook)
+        accelerator.register_load_state_pre_hook(load_model_hook)
+
     if args.gradient_checkpointing:
         unet.enable_gradient_checkpointing()
 
+    # Enable TF32 for faster training on Ampere GPUs,
+    # cf https://pytorch.org/docs/stable/notes/cuda.html#tensorfloat-32-tf32-on-ampere-devices
+    if args.allow_tf32:
+        torch.backends.cuda.matmul.allow_tf32 = True
 
     if args.scale_lr:
         args.learning_rate = (
             args.learning_rate * args.gradient_accumulation_steps * args.train_batch_size * accelerator.num_processes
         )
 
-    # Initialize the optimizer
-    if gaudi_config.use_fused_adam:
-        from habana_frameworks.torch.hpex.optimizers import FusedAdamW
+    # Use 8-bit Adam for lower memory usage or to fine-tune the model in 16GB GPUs
+    if args.use_8bit_adam:
+        try:
+            import bitsandbytes as bnb
+        except ImportError:
+            raise ImportError(
+                "To use 8-bit Adam, please install the bitsandbytes library: `pip install bitsandbytes`."
+            )
 
-        optimizer_class = FusedAdamW
+        optimizer_class = bnb.optim.AdamW8bit
     else:
         optimizer_class = torch.optim.AdamW
-
-
-    if gaudi_config.use_fused_clip_norm:
-        from habana_frameworks.torch.hpex.normalization import FusedClipNorm
-        fused_clip_norm = FusedClipNorm(unet.parameters(), args.max_grad_norm)
 
     # Optimizer creation
     params_to_optimize = unet.parameters()
@@ -787,17 +819,12 @@ def main(args):
     # In distributed training, the load_dataset function guarantees that only one local process can concurrently
     # download the dataset.
     if args.dataset_name is not None:
-        if args.mediapipe:
-            from media_pipe_imgdir import get_dataset_for_pipeline
-            dt = get_dataset_for_pipeline('dataset_pokemon1')  # TODO this img path is hardcoded for now
-            dataset = {'train': dt}
-        else:
-            # Downloading and loading a dataset from the hub.
-            dataset = load_dataset(
-                args.dataset_name,
-                args.dataset_config_name,
-                cache_dir=args.cache_dir,
-            )
+        # Downloading and loading a dataset from the hub.
+        dataset = load_dataset(
+            args.dataset_name,
+            args.dataset_config_name,
+            cache_dir=args.cache_dir,
+        )
     else:
         data_files = {}
         if args.train_data_dir is not None:
@@ -884,11 +911,11 @@ def main(args):
     with accelerator.main_process_first():
         if args.max_train_samples is not None:
             dataset["train"] = dataset["train"].shuffle(seed=args.seed).select(range(args.max_train_samples))
-        train_dataset = dataset["train"]
-        if not args.mediapipe:
-            # Set the training transforms
-            train_dataset = train_dataset.with_transform(preprocess_train)
+        # Set the training transforms
+        train_dataset = dataset["train"].with_transform(preprocess_train)
 
+    # Let's first compute all the embeddings so that we can free up the text encoders
+    # from memory. We will pre-compute the VAE encodings too.
     compute_embeddings_fn = functools.partial(
         encode_prompt,
         text_encoders=text_encoders,
@@ -897,12 +924,6 @@ def main(args):
         caption_column=args.caption_column,
     )
 
-    # TODO : adding crop = (0,0) for now.
-    # If we do random crop, we have to do this in mediapipe
-    def attach_metadata(batch):
-        import imagesize
-        return {"original_sizes" : imagesize.get(batch['image']), "crop_top_lefts" : (0,0)}
-
     with accelerator.main_process_first():
         from datasets.fingerprint import Hasher
 
@@ -910,9 +931,7 @@ def main(args):
         # details: https://github.com/huggingface/diffusers/pull/4038#discussion_r1266078401
         new_fingerprint = Hasher.hash(args)
         train_dataset = train_dataset.map(compute_embeddings_fn, batched=True,
-                                          new_fingerprint=new_fingerprint, load_from_cache_file=False)
-        if args.mediapipe:
-            train_dataset = train_dataset.map(attach_metadata, load_from_cache_file=False)
+                                          new_fingerprint=new_fingerprint)
 
     def collate_fn(examples):
         pixel_values = torch.stack([example["pixel_values"].clone().detach() for example in examples])
@@ -927,7 +946,6 @@ def main(args):
             "pooled_prompt_embeds": pooled_prompt_embeds,
             "original_sizes": original_sizes,
             "crop_top_lefts": crop_top_lefts,
-            'text': [example["text"] for example in examples] # TODO sasarkar.. remove later
         }
 
     # DataLoaders creation:
@@ -938,13 +956,13 @@ def main(args):
         batch_size=args.train_batch_size,
         num_workers=args.dataloader_num_workers,
     )
-        
 
     # Set unet as trainable.
     unet.train()
 
     del text_encoders, tokenizers
     gc.collect()
+    torch.cuda.empty_cache()
     # Create EMA for the unet.
     if args.use_ema:
         ema_unet = UNet2DConditionModel.from_pretrained(
@@ -952,42 +970,6 @@ def main(args):
         )
         ema_unet = EMAModel(ema_unet.parameters(), model_cls=UNet2DConditionModel, model_config=ema_unet.config)
 
-    ## `accelerate` 0.16.0 will have better support for customized saving
-    # if version.parse(accelerate.__version__) >= version.parse("0.16.0"):
-    #    # create custom saving & loading hooks so that `accelerator.save_state(...)` serializes in a nice format
-    #    def save_model_hook(models, weights, output_dir):
-    #        if accelerator.is_main_process:
-    #            if args.use_ema:
-    #                ema_unet.save_pretrained(os.path.join(output_dir, "unet_ema"))
-
-    #            for i, model in enumerate(models):
-    #                model.save_pretrained(os.path.join(output_dir, "unet"))
-
-    #                # make sure to pop weight so that corresponding model is not saved again
-    #                weights.pop()
-
-    #    def load_model_hook(models, input_dir):
-    #        if args.use_ema:
-    #            load_model = EMAModel.from_pretrained(os.path.join(input_dir, "unet_ema"), UNet2DConditionModel)
-    #            ema_unet.load_state_dict(load_model.state_dict())
-    #            ema_unet.to(accelerator.device)
-    #            del load_model
-
-    #        for i in range(len(models)):
-    #            # pop models so that they are not loaded again
-    #            model = models.pop()
-
-    #            # load diffusers style into model
-    #            load_model = UNet2DConditionModel.from_pretrained(input_dir, subfolder="unet")
-    #            model.register_to_config(**load_model.config)
-
-    #            model.load_state_dict(load_model.state_dict())
-    #            del load_model
-
-    #    accelerator.register_save_state_pre_hook(save_model_hook)
-    #    accelerator.register_load_state_pre_hook(load_model_hook)
-
-    
     # Scheduler and math around the number of training steps.
     overrode_max_train_steps = False
     num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
@@ -1002,24 +984,10 @@ def main(args):
         num_training_steps=args.max_train_steps * args.gradient_accumulation_steps,
     )
 
-    unet = unet.to("hpu")
     # Prepare everything with our `accelerator`.
     unet, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
         unet, optimizer, train_dataloader, lr_scheduler
     )
-    if args.mediapipe:
-        from torch.utils.data.sampler import BatchSampler, RandomSampler
-        dataloader_params = {
-            "batch_size": args.train_batch_size,
-            #"collate_fn": data_collator,
-            "num_workers": 0,
-            "pin_memory": True,
-            "sampler": None
-        }
-        from media_pipe_imgdir import MediaApiDataLoader
-        #import pdb; pdb.set_trace()
-        train_dataloader = MediaApiDataLoader(train_dataset, **dataloader_params)
-
 
     # We need to recalculate our total training steps as the size of the training dataloader may have changed.
     num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
@@ -1027,26 +995,12 @@ def main(args):
         args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
     # Afterwards we recalculate our number of training epochs
     args.num_train_epochs = math.ceil(args.max_train_steps / num_update_steps_per_epoch)
+
     # We need to initialize the trackers we use, and also store our configuration.
     # The trackers initializes automatically on the main process.
     if accelerator.is_main_process:
         accelerator.init_trackers("text2image-fine-tune-sdxl", config=vars(args))
 
-    def unwrap_model(model, training=False):
-        model = accelerator.unwrap_model(model)
-        model = model._orig_mod if is_compiled_module(model) else model
-        if not training:
-            return model
-        else:
-            if accelerator.distributed_type == GaudiDistributedType.MULTI_HPU:
-                kwargs = {}
-                kwargs["gradient_as_bucket_view"] = True
-                accelerator.ddp_handler = DistributedDataParallelKwargs(**kwargs)
-            if args.use_hpu_graphs_for_training:
-                htcore.hpu.ModuleCacher()(model=model, inplace=True)
-
-    unwrap_model(model=unet, training=True)
-    hb_profiler = HabanaProfile(warmup=args.profiling_warmup_steps, active=args.profiling_steps, record_shapes=False)
     # Train!
     total_batch_size = args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
 
@@ -1096,23 +1050,16 @@ def main(args):
         disable=not accelerator.is_local_main_process,
     )
 
-    #for epoch in range(first_epoch, args.num_train_epochs):
-    #    for step, batch in enumerate(train_dataloader):
-    #        print(f'{epoch} {step} {batch["text"]}', flush = True)
-    #assert False
-
-
-    import habana_frameworks.torch as htorch
     t0 = None
     t_start = time.perf_counter()
-    train_loss = torch.tensor(0, dtype=torch.float, device='hpu')
+    train_loss = torch.tensor(0, dtype=torch.float, device='cuda')
     for epoch in range(first_epoch, args.num_train_epochs):
+        # train_loss = 0.0
         train_loss.zero_()
-        if hb_profiler:
-            hb_profiler.start()
         for step, batch in enumerate(train_dataloader):
-            if t0 is None or global_step == args.throughput_warmup_steps:
+            if t0 is None and global_step == args.throughput_warmup_steps:
                 t0 = time.perf_counter()
+
             with accelerator.accumulate(unet):
                 # Move compute_vae_encoding here to reflect the transformed image input
                 model_input = compute_vae_encodings(batch['pixel_values'], vae)
@@ -1120,14 +1067,11 @@ def main(args):
                 noise = torch.randn_like(model_input)
                 if args.noise_offset:
                     # https://www.crosslabs.org//blog/diffusion-with-offset-noise
-                    rand_device = model_input.device
                     noise += args.noise_offset * torch.randn(
-                        (model_input.shape[0], model_input.shape[1], 1, 1), device=rand_device
+                        (model_input.shape[0], model_input.shape[1], 1, 1), device=model_input.device
                     )
-                noise = noise.to(model_input.device)
 
                 bsz = model_input.shape[0]
-
                 if args.timestep_bias_strategy == "none":
                     # Sample a random timestep for each image without bias.
                     timesteps = torch.randint(
@@ -1145,34 +1089,32 @@ def main(args):
                 # Add noise to the model input according to the noise magnitude at each timestep
                 # (this is the forward diffusion process)
                 noisy_model_input = noise_scheduler.add_noise(model_input, noise, timesteps)
+
                 # time ids
                 def compute_time_ids(original_size, crops_coords_top_left):
                     # Adapted from pipeline.StableDiffusionXLPipeline._get_add_time_ids
                     target_size = (args.resolution, args.resolution)
-                    if 'torch.Tensor' in str(type(original_size)):
-                        add_time_ids = torch.cat([original_size, crops_coords_top_left, torch.tensor(target_size, device=crops_coords_top_left.device)])
-                    else:
-                        add_time_ids = list(original_size + crops_coords_top_left + target_size)
-                        add_time_ids = torch.tensor([add_time_ids])
+                    add_time_ids = list(original_size + crops_coords_top_left + target_size)
+                    add_time_ids = torch.tensor([add_time_ids])
                     add_time_ids = add_time_ids.to(accelerator.device, dtype=weight_dtype)
                     return add_time_ids
 
                 add_time_ids = torch.cat(
                     [compute_time_ids(s, c) for s, c in zip(batch["original_sizes"], batch["crop_top_lefts"])]
                 )
+
                 # Predict the noise residual
                 unet_added_conditions = {"time_ids": add_time_ids}
                 prompt_embeds = batch["prompt_embeds"].to(accelerator.device)
                 pooled_prompt_embeds = batch["pooled_prompt_embeds"].to(accelerator.device)
                 unet_added_conditions.update({"text_embeds": pooled_prompt_embeds})
-
                 model_pred = unet(
                     noisy_model_input,
                     timesteps,
                     prompt_embeds,
                     added_cond_kwargs=unet_added_conditions,
                     return_dict=False,
-                )[0]
+                )[0] #.sample
 
                 # Get the target for loss depending on the prediction type
                 if args.prediction_type is not None:
@@ -1212,25 +1154,15 @@ def main(args):
                 # Gather the losses across all processes for logging (if we use distributed training).
                 avg_loss = accelerator.gather(loss.repeat(args.train_batch_size)).mean()
                 train_loss += avg_loss / args.gradient_accumulation_steps
-                # Backpropagate
-                #TODO: check why this cause bufferoverflow issue
-                #with torch.autocast(device_type="hpu", dtype=weight_dtype, enabled=True):
-                accelerator.backward(loss)
-                htcore.mark_step()
 
+                # Backpropagate
+                accelerator.backward(loss)
                 if accelerator.sync_gradients:
                     params_to_clip = unet.parameters()
-                    if gaudi_config.use_fused_clip_norm:
-                        fused_clip_norm.clip_norm(params_to_clip)
-                    else:
-                        accelerator.clip_grad_norm_(params_to_clip, args.max_grad_norm)
-
+                    accelerator.clip_grad_norm_(params_to_clip, args.max_grad_norm)
                 optimizer.step()
                 lr_scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
-                htcore.mark_step()
-                hb_profiler.step()
-
 
             # Checks if the accelerator has performed an optimization step behind the scenes
             if accelerator.sync_gradients:
@@ -1268,16 +1200,15 @@ def main(args):
                     accelerator.log({"train_loss": train_loss_scalar}, step=global_step)
 
                     if args.gradient_accumulation_steps > 1:
-                        logs = {"step_loss": loss.item(), "lr": lr_scheduler.get_last_lr()[0], "mem_used": to_gb_rounded(htorch.hpu.memory_allocated())}
+                        logs = {"step_loss": loss.item(), "lr": lr_scheduler.get_last_lr()[0], "mem_used":torch.cuda.memory.memory_allocated()}
                     else:
-                        logs = {"step_loss": train_loss_scalar, "lr": lr_scheduler.get_last_lr()[0], "mem_used": to_gb_rounded(htorch.hpu.memory_allocated())}
+                        logs = {"step_loss": train_loss_scalar, "lr": lr_scheduler.get_last_lr()[0], "mem_used":torch.cuda.memory.memory_allocated()}
                     progress_bar.set_postfix(**logs)
                 train_loss.zero_()
-
+            
             if global_step >= args.max_train_steps:
                 break
 
-        hb_profiler.stop()
         if accelerator.is_main_process:
             if args.validation_prompt is not None and (epoch+1) % args.validation_epochs == 0:
                 logger.info(
@@ -1296,28 +1227,26 @@ def main(args):
                     revision=args.revision,
                     variant=args.variant,
                 )
-                pipeline = GaudiStableDiffusionXLPipeline.from_pretrained(
+                pipeline = StableDiffusionXLPipeline.from_pretrained(
                     args.pretrained_model_name_or_path,
                     vae=vae,
-                    unet=unwrap_model(unet),
+                    unet=accelerator.unwrap_model(unet),
                     revision=args.revision,
                     variant=args.variant,
-                    use_habana=True,
-                    use_hpu_graphs=args.use_hpu_graphs_for_inference,
-                    gaudi_config=args.gaudi_config_name,
+                    torch_dtype=weight_dtype,
                 )
                 if args.prediction_type is not None:
                     scheduler_args = {"prediction_type": args.prediction_type}
                     pipeline.scheduler = pipeline.scheduler.from_config(pipeline.scheduler.config, **scheduler_args)
-                pipeline.scheduler = GaudiEulerDiscreteScheduler.from_config(pipeline.scheduler.config)
+
                 pipeline = pipeline.to(accelerator.device)
                 pipeline.set_progress_bar_config(disable=True)
 
                 # run inference
-                generator = torch.Generator(device='cpu').manual_seed(args.seed) if args.seed else None
+                generator = torch.Generator(device=accelerator.device).manual_seed(args.seed) if args.seed else None
                 pipeline_args = {"prompt": args.validation_prompt}
 
-                with torch.autocast(device_type="hpu", dtype=torch.bfloat16, enabled=gaudi_config.use_torch_autocast):
+                with torch.cuda.amp.autocast():
                     images = [
                         pipeline(**pipeline_args, generator=generator, num_inference_steps=25).images[0]
                         for _ in range(args.num_validation_images)
@@ -1338,6 +1267,7 @@ def main(args):
                         )
 
                 del pipeline
+                torch.cuda.empty_cache()
 
     duration = time.perf_counter() - t0
     ttt = time.perf_counter() - t_start
@@ -1367,17 +1297,13 @@ def main(args):
             variant=args.variant,
             torch_dtype=weight_dtype,
         )
-        pipeline = GaudiStableDiffusionXLPipeline.from_pretrained(
+        pipeline = StableDiffusionXLPipeline.from_pretrained(
             args.pretrained_model_name_or_path,
             unet=unet,
             vae=vae,
             revision=args.revision,
             variant=args.variant,
             torch_dtype=weight_dtype,
-            scheduler=noise_scheduler,
-            use_habana=True,
-            use_hpu_graphs=args.use_hpu_graphs_for_inference,
-            gaudi_config=args.gaudi_config_name,
         )
         if args.prediction_type is not None:
             scheduler_args = {"prediction_type": args.prediction_type}
@@ -1388,8 +1314,8 @@ def main(args):
         images = []
         if args.validation_prompt and args.num_validation_images > 0:
             pipeline = pipeline.to(accelerator.device)
-            generator = torch.Generator(device='cpu').manual_seed(args.seed) if args.seed else None
-            with torch.autocast(device_type="hpu", dtype=weight_dtype, enabled=gaudi_config.use_torch_autocast):
+            generator = torch.Generator(device=accelerator.device).manual_seed(args.seed) if args.seed else None
+            with torch.cuda.amp.autocast():
                 images = [
                     pipeline(args.validation_prompt, num_inference_steps=25, generator=generator).images[0]
                     for _ in range(args.num_validation_images)

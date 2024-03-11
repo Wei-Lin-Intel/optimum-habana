@@ -5,7 +5,7 @@ from torch.utils.data.sampler import BatchSampler, RandomSampler
 from torch.utils.data import Dataset
 from datasets import Dataset as DatasetHF
 
-from transformers.trainer_pt_utils import DistributedSampler
+from transformers.trainer_pt_utils import DistributedSampler, DistributedSamplerWithLoop
 
 import torch
 from optimum.utils import logging
@@ -36,8 +36,6 @@ def get_dataset_for_pipeline(img_dir):
         key = int(item.split('.')[0])
         dct['image'] += [f'{img_dir}/{item}']
         dct['text'] += [labels[key]]
-        if len(dct['image']) >= 16*6*8: # TODO get rid of later
-            break
 
     def gen():
         for idx in range(len(dct['image'])):
@@ -203,7 +201,7 @@ class SDXLMediaPipe(MediaPipe):
 
     instance_count = 0
 
-    def __init__(self, dataset=None, image_size=512, sampler=None, batch_size=512, drop_last=False, queue_depth=5):
+    def __init__(self, dataset=None, image_size=512, sampler=None, batch_size=512, drop_last=True, queue_depth=5):
         self.device = get_device_name()
         self.dataset = dataset
         self.batch_size = batch_size
@@ -270,7 +268,6 @@ class MediaApiDataLoader(torch.utils.data.DataLoader):
         dataset,
         resolution,
         batch_size=1,
-        drop_last=False,
     ):
         self.dataset = dataset
 
@@ -280,14 +277,15 @@ class MediaApiDataLoader(torch.utils.data.DataLoader):
             world_size = get_world_size()
         except:
             world_size = 1
-        # TODO use DistributedSamplerwithLoop.. if droplast=True
+
         if world_size > 1:
             process_index = get_rank()
-            self.sampler = DistributedSampler(
+            self.sampler = DistributedSamplerWithLoop(
                             self.dataset,
                             num_replicas=world_size,
                             rank=process_index,
                             seed=1,
+                            batch_size=batch_size,
                         )
         else:
             self.sampler = torch.utils.data.sampler.RandomSampler(self.dataset)
@@ -297,7 +295,7 @@ class MediaApiDataLoader(torch.utils.data.DataLoader):
             image_size=resolution,
             sampler=self.sampler,
             batch_size=batch_size,
-            drop_last=drop_last,
+            drop_last=True,
             queue_depth=5,
         )
         self.iterator = HPUGenericPytorchIterator(mediapipe=pipeline)

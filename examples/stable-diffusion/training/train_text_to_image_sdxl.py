@@ -524,6 +524,13 @@ def parse_args(input_args=None):
         case 2: an empty or non existant path is passed -> images are dumped from dataset (passed in through dataset_name) in that location before first run \
         case 3: a non empty path is passed -> images from that location are used ",
     )
+    parser.add_argument(
+        "--discount_chkpoint_saving_in_throughput",
+        default=False,
+        action="store_true",
+        help="Checkpoitn saving takes a lot of time. Ignore time for checkpoint saving for throughput calculations"
+    )
+
 
     if input_args is not None:
         args = parser.parse_args(input_args)
@@ -1092,6 +1099,7 @@ def main(args):
     t0 = None
     t_start = time.perf_counter()
     train_loss = torch.tensor(0, dtype=torch.float, device='hpu')
+    checkpoint_time = 0
     for epoch in range(first_epoch, args.num_train_epochs):
         train_loss.zero_()
         if hb_profiler:
@@ -1225,6 +1233,7 @@ def main(args):
 
                 if accelerator.is_main_process:
                     if args.checkpointing_steps is not None and global_step % args.checkpointing_steps == 0:
+                        t_chkpt_start = time.perf_counter()
                         # _before_ saving state, check if this save would set us over the `checkpoints_total_limit`
                         if args.checkpoints_total_limit is not None:
                             checkpoints = os.listdir(args.output_dir)
@@ -1248,6 +1257,8 @@ def main(args):
                         save_path = os.path.join(args.output_dir, f"checkpoint-{global_step}")
                         accelerator.save_state(save_path)
                         logger.info(f"Saved state to {save_path}")
+                        t_chkpt_end = time.perf_counter()
+                        checkpoint_time += (t_chkpt_end - t_chkpt_start)
 
                 if (global_step - 1) % args.logging_step == 0 or global_step == args.max_train_steps:
                     train_loss_scalar = train_loss.item()
@@ -1325,7 +1336,7 @@ def main(args):
 
                 del pipeline
 
-    duration = time.perf_counter() - t0
+    duration = time.perf_counter() - t0 - (checkpoint_time if args.discount_chkpoint_saving_in_throughput else 0)
     ttt = time.perf_counter() - t_start
     throughput = (args.max_train_steps - args.throughput_warmup_steps) * total_batch_size / duration
 

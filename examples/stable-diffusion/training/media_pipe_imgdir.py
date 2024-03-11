@@ -203,15 +203,16 @@ class SDXLMediaPipe(MediaPipe):
 
     instance_count = 0
 
-    def __init__(self, dataset=None, sampler=None, batch_size=512, drop_last=False, queue_depth=5):
+    def __init__(self, dataset=None, image_size=512, sampler=None, batch_size=512, drop_last=False, queue_depth=5):
         self.device = get_device_name()
         self.dataset = dataset
+        self.batch_size = batch_size
   
         self.drop_last = drop_last
         self.sampler = sampler
         self.batch_sampler = BatchSampler(self.sampler, batch_size, drop_last)
 
-        self.image_size = 512 # TODO .. hardcoded size
+        self.image_size = image_size
 
         pipe_name = "{}:{}".format(self.__class__.__name__, SDXLMediaPipe.instance_count)
         pipe_name = str(pipe_name)
@@ -246,7 +247,7 @@ class SDXLMediaPipe(MediaPipe):
         self.std = norm_std()
 
         self.random_flip_input = fn.MediaFunc(func=RandomFlipFunction,
-                                                  shape=[16], # TODO hardcoded to batch=2
+                                                  shape=[self.batch_size],
                                                   dtype=dtype.UINT8,
                                                   seed=100)
         self.random_flip = fn.RandomFlip(horizontal=1,
@@ -267,6 +268,7 @@ class MediaApiDataLoader(torch.utils.data.DataLoader):
     def __init__(
         self,
         dataset,
+        resolution,
         batch_size=1,
         drop_last=False,
     ):
@@ -292,6 +294,7 @@ class MediaApiDataLoader(torch.utils.data.DataLoader):
 
         pipeline = SDXLMediaPipe(
             dataset=dataset,
+            image_size=resolution,
             sampler=self.sampler,
             batch_size=batch_size,
             drop_last=drop_last,
@@ -304,13 +307,6 @@ class MediaApiDataLoader(torch.utils.data.DataLoader):
         return len(self.iterator)
 
     def __iter__(self):
-        # TODO do these need to be uncommented?
-        #try:
-        #    print(f'SET EPOCH: {self.epoch} {get_rank()}', flush=True)
-        #    #self.iterator.pipe.sampler.sampler.set_epoch(self.epoch) # Without this dist sampler will create same batches every epoch
-        #    #self.iterator.pipe.sampler.sampler.seed += self.epoch
-        #except:
-        #    pass
         self.iterator.__iter__()
         self.epoch += 1
         return self
@@ -324,5 +320,4 @@ class MediaApiDataLoader(torch.utils.data.DataLoader):
             "original_sizes": data[3],
             "crop_top_lefts": data[4],
         }
-        #TODO sasarkar: at end of each iter, shuffle indexes
 

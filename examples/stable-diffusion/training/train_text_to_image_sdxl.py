@@ -907,6 +907,8 @@ def main(args):
         caption_column=args.caption_column,
     )
 
+    # TODO : adding crop = (0,0) for now.
+    # If we do random crop, we have to do this in mediapipe
     def attach_metadata(batch):
         import imagesize
         return {"original_sizes" : imagesize.get(batch['image']), "crop_top_lefts" : (0,0)}

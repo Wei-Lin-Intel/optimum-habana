@@ -36,6 +36,8 @@ def get_dataset_for_pipeline(img_dir):
         key = int(item.split('.')[0])
         dct['image'] += [f'{img_dir}/{item}']
         dct['text'] += [labels[key]]
+        if len(dct['image']) >= 16*6*8: # TODO get rid of later
+            break
 
     def gen():
         for idx in range(len(dct['image'])):

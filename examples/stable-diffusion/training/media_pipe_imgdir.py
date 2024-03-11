@@ -56,7 +56,7 @@ def get_dataset_for_pipeline(img_dir):
     return DatasetHF.from_generator(gen)
 
 
-class read_image_text_from_dataset(MediaReaderNode):
+class ReadImageTextFromDataset(MediaReaderNode):
     """
     Class defining read image/text from directory node.
 
@@ -64,7 +64,6 @@ class read_image_text_from_dataset(MediaReaderNode):
 
     def __init__(self, name, guid, device, inputs, params, cparams, node_attr):
         super().__init__(name, guid, device, inputs, params, cparams, node_attr)
-        self.meta_dtype = params["label_dtype"]  # TODO sasarkar.. clean up unnecesary args, add args that are hardcoded etc
         self.dataset = params["dataset"]
 
         self.dataset_image = []
@@ -97,9 +96,6 @@ class read_image_text_from_dataset(MediaReaderNode):
         logger.info("Finding largest file ...")
         self.max_file = max(self.dataset['image'], key= lambda x : len(x))
 
-
-
-
     def set_params(self, params):
         self.batch_size = params.batch_size
 
@@ -107,27 +103,27 @@ class read_image_text_from_dataset(MediaReaderNode):
         out_info = []
         o = opnode_tensor_info(dtype.NDT, np.array([self.batch_size], dtype=np.uint32), "")
         out_info.append(o)
+        sample = self.dataset[0]
+        sample['pooled_prompt_embeds']
+        d0 = len(sample['pooled_prompt_embeds'])
+        d1 = len(sample['prompt_embeds'])
+        d2 = len(sample['prompt_embeds'][0])
         o = opnode_tensor_info(
-            self.meta_dtype, np.array([2048, 77, self.batch_size], dtype=np.uint32), ""
-        ) # TODO sarkar: whats 77? max tokenized len of labels ? remove hardcode
+            dtype.FLOAT32, np.array([d2, d1, self.batch_size], dtype=np.uint32), ""
+        )
         out_info.append(o)
-
         o = opnode_tensor_info(
-            self.meta_dtype, np.array([1280, self.batch_size], dtype=np.uint32), ""
-        )  # TODO sasarkar: hardcoded shapes. remove later
-        out_info.append(o)
-
-
-        o = opnode_tensor_info(
-            'uint32', np.array([2, self.batch_size], dtype=np.uint32), ""
+            dtype.FLOAT32, np.array([d0, self.batch_size], dtype=np.uint32), ""
         )
         out_info.append(o)
         o = opnode_tensor_info(
             'uint32', np.array([2, self.batch_size], dtype=np.uint32), ""
         )
         out_info.append(o)
-
-
+        o = opnode_tensor_info(
+            'uint32', np.array([2, self.batch_size], dtype=np.uint32), ""
+        )
+        out_info.append(o)
         return out_info
 
     def get_largest_file(self):
@@ -165,7 +161,6 @@ class read_image_text_from_dataset(MediaReaderNode):
 
 
 read_image_text_from_dataset_params = {
-    "label_dtype": dtype.FLOAT32,
     "dataset": None,
     'batch_sampler': []
 }
@@ -179,7 +174,7 @@ schema.add_operator(
     5,
     read_image_text_from_dataset_params,
     None,
-    read_image_text_from_dataset,
+    ReadImageTextFromDataset,
     dtype.NDT,
 )
 op_class = fn.operator_add("SDXLDataReader", False)
@@ -210,7 +205,6 @@ class RandomFlipFunction(media_function):
         probabilities = [1.0 - 0.5, 0.5]
         random_flips = self.rng.choice([0, 1], p=probabilities, size=self.np_shape)
         random_flips = np.array(random_flips, dtype=self.np_dtype)
-        #print(random_flips)
         return random_flips
 
 class SDXLMediaPipe(MediaPipe):
@@ -228,8 +222,7 @@ class SDXLMediaPipe(MediaPipe):
     def __init__(self, dataset=None, sampler=None, batch_size=512, drop_last=False, queue_depth=5):
         self.device = get_device_name()
         self.dataset = dataset
-
-        
+  
         self.drop_last = drop_last
         self.sampler = sampler
         self.batch_sampler = BatchSampler(self.sampler, batch_size, drop_last)
@@ -243,7 +236,7 @@ class SDXLMediaPipe(MediaPipe):
             device=self.device, batch_size=batch_size, prefetch_depth=queue_depth, pipe_name=pipe_name
         )
 
-        self.input = fn.SDXLDataReader(label_dtype=dtype.FLOAT32, dataset=self.dataset, batch_sampler=self.batch_sampler)
+        self.input = fn.SDXLDataReader(dataset=self.dataset, batch_sampler=self.batch_sampler)
         def_output_image_size = [self.image_size, self.image_size]
         res_pp_filter = ftype.BI_LINEAR
         self.decode = fn.ImageDecoder(
@@ -291,16 +284,9 @@ class MediaApiDataLoader(torch.utils.data.DataLoader):
         self,
         dataset,
         batch_size=1,
-        sampler=None, # TODO ignored. remove
-        collate_fn=None,
         drop_last=False,
-        num_workers=0,
-        pin_memory=False,
-        worker_init_fn=None,
     ):
         self.dataset = dataset
-        self.sampler = sampler
-        self.fallback_activated = False
 
         from habana_frameworks.mediapipe.plugins.iterator_pytorch import HPUGenericPytorchIterator
 
@@ -311,16 +297,14 @@ class MediaApiDataLoader(torch.utils.data.DataLoader):
         # TODO use DistributedSamplerwithLoop.. if droplast=True
         if world_size > 1:
             process_index = get_rank()
-            sampler = DistributedSampler(
+            self.sampler = DistributedSampler(
                             self.dataset,
                             num_replicas=world_size,
                             rank=process_index,
                             seed=1,
                         )
         else:
-            sampler = torch.utils.data.sampler.RandomSampler(self.dataset)
-
-        self.sampler = sampler
+            self.sampler = torch.utils.data.sampler.RandomSampler(self.dataset)
 
         pipeline = SDXLMediaPipe(
             dataset=dataset,
@@ -331,39 +315,30 @@ class MediaApiDataLoader(torch.utils.data.DataLoader):
         )
         self.iterator = HPUGenericPytorchIterator(mediapipe=pipeline)
         self.epoch = 0
-        
 
     def __len__(self):
-        if self.fallback_activated:
-            return super().__len__()
-        else:
-            return len(self.iterator)
+        return len(self.iterator)
 
     def __iter__(self):
-        if self.fallback_activated:
-            return super().__iter__()
-        else:
-            #try:
-            #    print(f'SET EPOCH: {self.epoch} {get_rank()}', flush=True)
-            #    #self.iterator.pipe.sampler.sampler.set_epoch(self.epoch) # Without this dist sampler will create same batches every epoch
-            #    #self.iterator.pipe.sampler.sampler.seed += self.epoch
-            #except:
-            #    pass
-            self.iterator.__iter__()
+        # TODO do these need to be uncommented?
+        #try:
+        #    print(f'SET EPOCH: {self.epoch} {get_rank()}', flush=True)
+        #    #self.iterator.pipe.sampler.sampler.set_epoch(self.epoch) # Without this dist sampler will create same batches every epoch
+        #    #self.iterator.pipe.sampler.sampler.seed += self.epoch
+        #except:
+        #    pass
+        self.iterator.__iter__()
         self.epoch += 1
         return self
 
     def __next__(self):
-        if self.fallback_activated:
-            return super().__next__()
         data = next(self.iterator)
         return {
             "pixel_values": data[0],
             "prompt_embeds": data[1],
             "pooled_prompt_embeds": data[2],
-            "original_sizes": data[3],  ## 2nd num is ZERO here
+            "original_sizes": data[3],
             "crop_top_lefts": data[4],
         }
         #TODO sasarkar: at end of each iter, shuffle indexes
-
 

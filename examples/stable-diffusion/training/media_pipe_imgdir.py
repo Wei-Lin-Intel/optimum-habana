@@ -1,13 +1,3 @@
-'''
-
-
-this is dummy "encoding"
-[ord(i) for i in x[1]]
-
-
-TODO right now the data pipe might be static in its cropping. make it random
-
-'''
 import numpy as np
 import time
 import os
@@ -59,7 +49,6 @@ def get_dataset_for_pipeline(img_dir):
 class ReadImageTextFromDataset(MediaReaderNode):
     """
     Class defining read image/text from directory node.
-
     """
 
     def __init__(self, name, guid, device, inputs, params, cparams, node_attr):
@@ -67,14 +56,12 @@ class ReadImageTextFromDataset(MediaReaderNode):
         self.dataset = params["dataset"]
 
         self.dataset_image = []
-        self.dataset_text = [] # TODO can be removed later
         self.dataset_prompt_embeds = []
         self.dataset_pooled_prompt_embeds = []
         self.dataset_original_sizes = []
         self.dataset_crop_top_lefts = []
         for k in self.dataset:
             self.dataset_image += [k['image']]
-            self.dataset_text += [k['text']]
             self.dataset_prompt_embeds += [k['prompt_embeds']]
             self.dataset_pooled_prompt_embeds += [k['pooled_prompt_embeds']]
             self.dataset_original_sizes += [k['original_sizes']]
@@ -88,10 +75,8 @@ class ReadImageTextFromDataset(MediaReaderNode):
         self.epoch = 0
         self.batch_sampler = params["batch_sampler"]
 
-
         self.num_imgs_slice = len(self.batch_sampler.sampler)
         self.num_batches_slice = len(self.batch_sampler)
-
 
         logger.info("Finding largest file ...")
         self.max_file = max(self.dataset['image'], key= lambda x : len(x))
@@ -214,7 +199,6 @@ class SDXLMediaPipe(MediaPipe):
 
     Original set of PyTorch transformations:
         aspect ratio preserving resize -> center crop -> normalize
-
     """
 
     instance_count = 0

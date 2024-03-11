@@ -782,6 +782,7 @@ def main(args):
     # download the dataset.
     if args.dataset_name is not None:
         if len(args.mediapipe) > 0:
+            assert args.resolution == args.crop_resolution, f'To use hardware pipe, --resolution ({args.resolution}) must equal --crop_resolution ({args.crop_resolution})'
             if not os.path.exists(args.mediapipe):
                 os.mkdir(args.mediapipe)
             if len(os.listdir(args.mediapipe)) == 0:

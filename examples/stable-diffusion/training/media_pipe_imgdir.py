@@ -39,42 +39,21 @@ except ImportError:
 
 
 
-class PokemonDataset(Dataset):
-
-    def __init__(self, dataset_dir):
-        self.dataset_dir = dataset_dir
-        self.loaded_dataset = self.load_dt()
-        self.column_names = ['image', 'text']
-
-    def load_dt(self):
-        labels = open(f'{self.dataset_dir}/label.txt').readlines()
-        dct = {'image': [], 'text': []}
-        for item in sorted([i for i in os.listdir(self.dataset_dir) if 'txt' not in i], key=lambda x : int(x.split('.')[0])):
-            key = int(item.split('.')[0])
-            dct['image'] += [f'{self.dataset_dir}/{item}']
-            dct['text'] += [labels[key]]
-            if len(dct['image']) >= 16*6*8: # TODO get rid of later
-                break
-        return dct
-
-    def map(self, fn):
-        pass
-
-    def __len__(self):
-        return len(self.loaded_dataset['text'])
-
-    def __getitem__(self, idx):
-        return {'image': self.loaded_dataset['image'][idx], 'text': self.loaded_dataset['text'][idx]}
-
-
 def get_dataset_for_pipeline(img_dir):
-    def create_gen(torch_dataset):
-        def gen():
-            for ex in torch_dataset:
-                yield ex
-        return gen
-    dt = PokemonDataset(img_dir) #TODO PokemonDataset is not needed. just create a generator
-    return DatasetHF.from_generator(create_gen(dt))
+    labels = open(f'{img_dir}/label.txt').readlines()
+    dct = {'image': [], 'text': []}
+    for item in sorted([i for i in os.listdir(img_dir) if 'txt' not in i], key=lambda x : int(x.split('.')[0])):
+        key = int(item.split('.')[0])
+        dct['image'] += [f'{img_dir}/{item}']
+        dct['text'] += [labels[key]]
+        if len(dct['image']) >= 16*6*8: # TODO get rid of later
+            break
+
+    def gen():
+        for idx in range(len(dct['image'])):
+            yield {'image': dct['image'][idx], 'text': dct['text'][idx]}
+
+    return DatasetHF.from_generator(gen)
 
 
 class read_image_text_from_dataset(MediaReaderNode):
@@ -107,26 +86,18 @@ class read_image_text_from_dataset(MediaReaderNode):
         self.dataset_pooled_prompt_embeds = np.array(self.dataset_pooled_prompt_embeds, dtype=np.float32)
         self.dataset_original_sizes = np.array(self.dataset_original_sizes, dtype=np.uint32)
         self.dataset_crop_top_lefts = np.array(self.dataset_crop_top_lefts, dtype=np.uint32)
-        #import pdb; pdb.set_trace()
         self.epoch = 0
         self.batch_sampler = params["batch_sampler"]
 
-        #self.num_imgs_slice = len(SDXLMediaPipe.batch_sampler.sampler)
-        #self.num_batches_slice = len(SDXLMediaPipe.batch_sampler)
+
         self.num_imgs_slice = len(self.batch_sampler.sampler)
         self.num_batches_slice = len(self.batch_sampler)
 
-        #print(self.num_imgs_slice)
-        #print(self.num_batches_slice)
-        #print('XXXXX here....')
 
         logger.info("Finding largest file ...")
         self.max_file = max(self.dataset['image'], key= lambda x : len(x))
-        #self.max_file_length = max([len(i) for i in self.dataset['image']])
 
-        self.max_label_len = len(max(self.dataset['text'], key= lambda x : len(x))) # TODO remove
 
-        #logger.info(f"The largest file is {self.max_file_length}.")
 
 
     def set_params(self, params):
@@ -151,16 +122,12 @@ class read_image_text_from_dataset(MediaReaderNode):
             'uint32', np.array([2, self.batch_size], dtype=np.uint32), ""
         )
         out_info.append(o)
-        #import pdb; pdb.set_trace()
         o = opnode_tensor_info(
             'uint32', np.array([2, self.batch_size], dtype=np.uint32), ""
         )
         out_info.append(o)
 
-        #o = opnode_tensor_info(
-        #    'uint32', np.array([self.max_label_len, self.batch_size], dtype=np.uint32), ""
-        #)
-        #out_info.append(o) # TODO can remove this later. this is text label
+
         return out_info
 
     def get_largest_file(self):
@@ -170,9 +137,7 @@ class read_image_text_from_dataset(MediaReaderNode):
         return readerOutType.FILE_LIST
 
     def __len__(self):
-        #import pdb; pdb.set_trace()
         return self.num_batches_slice
-        #return len(self.dataset)
 
     def __iter__(self):
         self.iter_loc = 0
@@ -185,43 +150,17 @@ class read_image_text_from_dataset(MediaReaderNode):
         return self
 
     def __next__(self):
-        t0 = time.time()
-        #print('enter reader')
         if self.iter_loc > (self.num_imgs_slice - 1):
             raise StopIteration
 
         data_idx = next(self.batch_sampler_iter)
-        if True:
-            img_list = [i for i in self.dataset_image[data_idx]]
-            prompt_embeds_np = self.dataset_prompt_embeds[data_idx]
-            pooled_prompt_embeds_np = self.dataset_pooled_prompt_embeds[data_idx]
-            original_sizes = self.dataset_original_sizes[data_idx]
-            crop_top_lefts = self.dataset_crop_top_lefts[data_idx]
-        else: # TODO get rid of the else section
-
-            #try:
-            #    print(f'{data_idx} , {get_rank()}. ,,,,,,,,, idx')
-            #except:
-            #    print(f'{data_idx} , {0}. ,,,,,,,,, idx')
-            data = [self.dataset[i] for i in data_idx]
-            # each item of data has keys: dict_keys(['image', 'text', 'prompt_embeds', 'pooled_prompt_embeds'])
-
-            img_list = [d['image'] for d in data]
-            prompt_embeds_np = np.array([d['prompt_embeds'] for d in data], dtype=np.float32)
-            pooled_prompt_embeds_np = np.array([d['pooled_prompt_embeds'] for d in data], dtype=np.float32)
-            original_sizes = np.array([d['original_sizes'] for d in data], dtype=np.uint32)
-            crop_top_lefts = np.array([d['crop_top_lefts'] for d in data], dtype=np.uint32)
-
-            #import pdb; pdb.set_trace()
-
-            #text_label = np.zeros([self.batch_size, self.max_label_len], dtype=np.uint32)
-            #for idxx, d in enumerate(data):
-            #    text_label[idxx,:len(d['text'])] = np.array([ord(kk) for kk in d['text']], dtype=np.uint32)
-
-            #return img_list, prompt_embeds_np, pooled_prompt_embeds_np, original_sizes, crop_top_lefts, text_label
+        img_list = [i for i in self.dataset_image[data_idx]]
+        prompt_embeds_np = self.dataset_prompt_embeds[data_idx]
+        pooled_prompt_embeds_np = self.dataset_pooled_prompt_embeds[data_idx]
+        original_sizes = self.dataset_original_sizes[data_idx]
+        crop_top_lefts = self.dataset_crop_top_lefts[data_idx]
 
         self.iter_loc = self.iter_loc + self.batch_size
-        #print('exit reader', time.time()-t0)
         return img_list, prompt_embeds_np, pooled_prompt_embeds_np, original_sizes, crop_top_lefts
 
 
@@ -230,28 +169,14 @@ read_image_text_from_dataset_params = {
     "dataset": None,
     'batch_sampler': []
 }
-#name, guid, device, inputs, params, cparams, node_attr
-'''
- def add_operator(self,
-                     name,
-                     guid,
-                     min_inputs,
-                     max_inputs,
-                     input_keys,
-                     num_outputs,
-                     params,
-                     cparams,
-                     op_class,
-                     dtype):
-        """
-'''
+
 schema.add_operator(
     "SDXLDataReader",
     None,
     0,
     0,
     [],
-    5, #5, #6
+    5,
     read_image_text_from_dataset_params,
     None,
     read_image_text_from_dataset,
@@ -298,7 +223,6 @@ class SDXLMediaPipe(MediaPipe):
 
     """
 
-    #batch_sampler = None
     instance_count = 0
 
     def __init__(self, dataset=None, sampler=None, batch_size=512, drop_last=False, queue_depth=5):
@@ -354,14 +278,11 @@ class SDXLMediaPipe(MediaPipe):
         SDXLMediaPipe.instance_count += 1
 
     def definegraph(self):
-        #print(self.input.batch_sampler, 'DEFINEGRAPH')
-        #jpegs, prompt_embeds, pooled_prompt_embeds, original_sizes, crop_top_lefts, text_label = self.input() # TODO remove
         jpegs, prompt_embeds, pooled_prompt_embeds, original_sizes, crop_top_lefts = self.input()
         images = self.decode(jpegs)
         flip = self.random_flip_input()
-        images = self.random_flip(images, flip)  # TODO enable flip
+        images = self.random_flip(images, flip)
         images = self.cmn(images, self.mean, self.std)
-        #return images, prompt_embeds, pooled_prompt_embeds, original_sizes, crop_top_lefts, text_label
         return images, prompt_embeds, pooled_prompt_embeds, original_sizes, crop_top_lefts
 
 
@@ -390,7 +311,6 @@ class MediaApiDataLoader(torch.utils.data.DataLoader):
         # TODO use DistributedSamplerwithLoop.. if droplast=True
         if world_size > 1:
             process_index = get_rank()
-            #print(f'CREATING DISTSAMPLER world_size = {world_size}, process_index = {process_index}', flush=True)
             sampler = DistributedSampler(
                             self.dataset,
                             num_replicas=world_size,
@@ -436,46 +356,14 @@ class MediaApiDataLoader(torch.utils.data.DataLoader):
     def __next__(self):
         if self.fallback_activated:
             return super().__next__()
-        #print('call next')
-        #t0 = time.time()
         data = next(self.iterator)
-        #print('next done', time.time()-t0)
-        #import pdb; pdb.set_trace()
-        #txtenc = data[5].to('cpu').numpy() # TODO remove
         return {
             "pixel_values": data[0],
             "prompt_embeds": data[1],
             "pooled_prompt_embeds": data[2],
             "original_sizes": data[3],  ## 2nd num is ZERO here
             "crop_top_lefts": data[4],
-            #'text': [''.join([chr(i) for i in k]).strip('\x00') for k in txtenc] # TODO remove
         }
         #TODO sasarkar: at end of each iter, shuffle indexes
 
 
-
-if __name__ == '__main__':
-    
-    #params = {'shuffle': True, 'seed': 42, 'drop_remainder': True, 'pad_remainder': True, 'dataset': 'dataset_pokemon', 'label_dtype': dtype.NDT, 'num_slices': 1, 'slice_index': 0, }
-    #cparams = None
-    #node_attr = None
-    #rdr = read_image_text_from_dataset("RDR", None, 'cpu', [], params, cparams, node_attr)
-
-    dataset_dir = 'dataset_pokemon'
-
-    train_dataset = get_dataset_for_pipeline(dataset_dir)
-    dataloader_params = {
-                "batch_size": 16,
-                #"collate_fn": data_collator,
-                "num_workers": 8,
-                "pin_memory": True,
-                "sampler": None
-            }
-    def attach_metadata(batch):
-        import imagesize
-        return {"original_sizes" : imagesize.get(batch['image']), "crop_top_lefts" : (0,0)}
-    train_dataset = train_dataset.map(attach_metadata)
-    dataloader = MediaApiDataLoader(train_dataset, **dataloader_params)
-    for idx, dt in enumerate(dataloader):
-        import pdb; pdb.set_trace()
-        print()

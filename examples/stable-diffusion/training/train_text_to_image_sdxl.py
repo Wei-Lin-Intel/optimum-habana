@@ -558,9 +558,9 @@ def encode_prompt(batch, text_encoders, tokenizers, proportion_empty_prompts, ca
 
     captions = []
     for caption in prompt_batch:
-        if random.random() < proportion_empty_prompts:
-            captions.append("")
-        elif isinstance(caption, str):
+        #if random.random() < proportion_empty_prompts:
+        #    captions.append("")
+        if isinstance(caption, str):
             captions.append(caption)
         elif isinstance(caption, (list, np.ndarray)):
             # take a random caption if there are multiple
@@ -893,7 +893,8 @@ def main(args):
 
     with accelerator.main_process_first():
         if args.max_train_samples is not None:
-            dataset["train"] = dataset["train"].shuffle(seed=args.seed).select(range(args.max_train_samples))
+            #dataset["train"] = dataset["train"].shuffle(seed=args.seed).select(range(args.max_train_samples))
+            dataset["train"] = dataset["train"].select(range(args.max_train_samples))
         train_dataset = dataset["train"]
         if len(args.mediapipe) == 0:
             # Set the training transforms
@@ -920,7 +921,7 @@ def main(args):
         # details: https://github.com/huggingface/diffusers/pull/4038#discussion_r1266078401
         new_fingerprint = Hasher.hash(args)
         train_dataset = train_dataset.map(compute_embeddings_fn, batched=True,
-                                          new_fingerprint=new_fingerprint)
+                                          new_fingerprint=new_fingerprint, load_from_cache_file=False)
         if len(args.mediapipe) > 0:
             train_dataset = train_dataset.map(attach_metadata, load_from_cache_file=False)
 
@@ -937,12 +938,13 @@ def main(args):
             "pooled_prompt_embeds": pooled_prompt_embeds,
             "original_sizes": original_sizes,
             "crop_top_lefts": crop_top_lefts,
+            'text': [example["text"] for example in examples]
         }
 
     # DataLoaders creation:
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
-        shuffle=True,
+        shuffle=False,
         collate_fn=collate_fn,
         batch_size=args.train_batch_size,
         num_workers=args.dataloader_num_workers,
@@ -1098,6 +1100,13 @@ def main(args):
         disable=not accelerator.is_local_main_process,
     )
 
+    #for step, batch in enumerate(train_dataloader):
+    #    try:
+    #        print(batch['text'])
+    #    except:
+    #        pass #mediapipe doesnt have this field
+    #assert False
+
     t0 = None
     t_start = time.perf_counter()
     train_loss = torch.tensor(0, dtype=torch.float, device='hpu')
@@ -1113,7 +1122,8 @@ def main(args):
                 # Move compute_vae_encoding here to reflect the transformed image input
                 model_input = compute_vae_encodings(batch['pixel_values'], vae)
                 # Sample noise that we'll add to the latents
-                noise = torch.randn_like(model_input)
+                #noise = torch.randn_like(model_input)
+                noise = torch.zeros_like(model_input)
                 if args.noise_offset:
                     # https://www.crosslabs.org//blog/diffusion-with-offset-noise
                     rand_device = model_input.device
@@ -1126,9 +1136,11 @@ def main(args):
 
                 if args.timestep_bias_strategy == "none":
                     # Sample a random timestep for each image without bias.
-                    timesteps = torch.randint(
-                        0, noise_scheduler.config.num_train_timesteps, (bsz,), device=model_input.device
-                    )
+                    #timesteps = torch.randint(
+                    #    0, noise_scheduler.config.num_train_timesteps, (bsz,), device=model_input.device
+                    #)
+                    timesteps = torch.ones(
+                        (bsz,), device=model_input.device)
                     timesteps = timesteps.long()
                 else:
                     # Sample a random timestep for each image, potentially biased by the timestep weights.
@@ -1262,7 +1274,7 @@ def main(args):
                         t_chkpt_end = time.perf_counter()
                         checkpoint_time += (t_chkpt_end - t_chkpt_start)
 
-                if (global_step - 1) % args.logging_step == 0 or global_step == args.max_train_steps:
+                if True: #(global_step - 1) % args.logging_step == 0 or global_step == args.max_train_steps:
                     train_loss_scalar = train_loss.item()
                     accelerator.log({"train_loss": train_loss_scalar}, step=global_step)
 

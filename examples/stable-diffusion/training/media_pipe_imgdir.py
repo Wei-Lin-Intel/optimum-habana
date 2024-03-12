@@ -28,7 +28,6 @@ except ImportError:
     pass
 
 
-
 def get_dataset_for_pipeline(img_dir):
     labels = open(f'{img_dir}/label.txt').readlines()
     dct = {'image': [], 'text': []}
@@ -58,12 +57,14 @@ class ReadImageTextFromDataset(MediaReaderNode):
         self.dataset_pooled_prompt_embeds = []
         self.dataset_original_sizes = []
         self.dataset_crop_top_lefts = []
+        self.dataset_text = []
         for k in self.dataset:
             self.dataset_image += [k['image']]
             self.dataset_prompt_embeds += [k['prompt_embeds']]
             self.dataset_pooled_prompt_embeds += [k['pooled_prompt_embeds']]
             self.dataset_original_sizes += [k['original_sizes']]
             self.dataset_crop_top_lefts += [k['crop_top_lefts']]
+            self.dataset_text += [k['text']]
 
         self.dataset_image = np.array(self.dataset_image)
         self.dataset_prompt_embeds = np.array(self.dataset_prompt_embeds, dtype=np.float32)
@@ -78,6 +79,8 @@ class ReadImageTextFromDataset(MediaReaderNode):
 
         logger.info("Finding largest file ...")
         self.max_file = max(self.dataset['image'], key= lambda x : len(x))
+
+        self.call_num = 0
 
     def set_params(self, params):
         self.batch_size = params.batch_size
@@ -132,7 +135,11 @@ class ReadImageTextFromDataset(MediaReaderNode):
         if self.iter_loc > (self.num_imgs_slice - 1):
             raise StopIteration
 
-        data_idx = next(self.batch_sampler_iter)
+        #data_idx = next(self.batch_sampler_iter)
+        data_idx = range(self.call_num*self.batch_size, (self.call_num+1)*self.batch_size)
+        self.call_num += 1 # expected to run less than 1 epoch, so not resetting back to 0
+        #print(self.call_num, data_idx)
+        #print([self.dataset_text[i] for i in data_idx]) 
         img_list = [i for i in self.dataset_image[data_idx]]
         prompt_embeds_np = self.dataset_prompt_embeds[data_idx]
         pooled_prompt_embeds_np = self.dataset_pooled_prompt_embeds[data_idx]
@@ -256,8 +263,8 @@ class SDXLMediaPipe(MediaPipe):
     def definegraph(self):
         jpegs, prompt_embeds, pooled_prompt_embeds, original_sizes, crop_top_lefts = self.input()
         images = self.decode(jpegs)
-        flip = self.random_flip_input()
-        images = self.random_flip(images, flip)
+        #flip = self.random_flip_input()
+        #images = self.random_flip(images, flip)
         images = self.cmn(images, self.mean, self.std)
         return images, prompt_embeds, pooled_prompt_embeds, original_sizes, crop_top_lefts
 

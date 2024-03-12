@@ -5,10 +5,9 @@ python train_text_to_image_sdxl.py \
   --resolution 512 \
   --crop_resolution 512 \
   --center_crop \
-  --random_flip \
   --proportion_empty_prompts=0.2 \
   --train_batch_size 16 \
-  --max_train_steps 2500 \
+  --max_train_steps 50 \
   --learning_rate 1e-05 \
   --max_grad_norm 1 \
   --lr_scheduler constant \
@@ -23,4 +22,8 @@ python train_text_to_image_sdxl.py \
   --validation_prompt="a robotic cat with wings" \
   --validation_epochs 48 \
   --checkpointing_steps 2500 \
-  --logging_step 10 --discount_chkpoint_saving_in_throughput 2>&1 | tee log_1x_r512.txt
+  --logging_step 0 --discount_chkpoint_saving_in_throughput \
+  --proportion_empty_prompts=0  --seed 42 2>&1 | tee log_1x_r512_det_nomedpipe_log0.txt
+
+  #--mediapipe dataset_sdxl_pokemon
+  #--random_flip \

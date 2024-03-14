@@ -220,7 +220,6 @@ def setup_parser(parser):
         action="store_true",
         help="Preprocess on cpu, and some other optimizations. Useful to prevent recompilations when using dynamic prompts (simulate_dyn_prompt)",
     )
-
     parser.add_argument("--fp8", action="store_true", help="Enable Quantization to fp8")
     parser.add_argument(
         "--use_flash_attention",
@@ -276,6 +275,13 @@ def main():
     parser = argparse.ArgumentParser()
     args = setup_parser(parser)
     model, tokenizer, generation_config = initialize_model(args, logger)
+
+    # Enable hpu dynamic shape
+    try:
+        import habana_frameworks.torch.hpu as hthpu
+        hthpu.enable_dynamic_shape()
+    except ImportError:
+        print("habana_frameworks could not be loaded")
 
     use_lazy_mode = True
     if args.torch_compile and model.config.model_type == "llama":
@@ -343,25 +349,36 @@ def main():
             num_sentences_to_add = args.batch_size - len(input_sentences)
             for i in range(num_sentences_to_add):
                 input_sentences.append(input_sentences[i % len(input_sentences)])
-        elif args.batch_size < len(input_sentences):
-            input_sentences = input_sentences[: args.batch_size]
+        #elif args.batch_size < len(input_sentences):
+        #    input_sentences = input_sentences[: args.batch_size]
 
-        def generate(size=None, reduce_recompile=False):
+        def generate(size=None, reduce_recompile=False, iternum=0):
             """Generates sequences from the input sentences and returns them."""
+
+            input_sentences_indx = (args.batch_size * iternum) % len(input_sentences)
+            print ("input_sentences = ", input_sentences)
+            print ("input_sentences_indx = ", input_sentences_indx)
+            input_sentences1 = None
+            if input_sentences_indx + args.batch_size > len(input_sentences):
+                input_sentences1 = input_sentences[input_sentences_indx : ]
+                input_sentences1.join(input_sentences[ : args.batch_size - (len(input_sentences) - input_sentences_indx) - 1])
+            else:
+                input_sentences1 = input_sentences[input_sentences_indx : input_sentences_indx + args.batch_size]
+            print ("input_sentences1 = ", input_sentences1)
 
             t0 = time.perf_counter()
             print(f"Step4+ starting time is {t0*1000}", flush=True)
             # Tokenization
             if args.max_input_tokens > 0:
                 input_tokens = tokenizer.batch_encode_plus(
-                    input_sentences,
+                    input_sentences1,
                     return_tensors="pt",
                     padding="max_length",
                     max_length=args.max_input_tokens,
                     truncation=True,
                 )
             else:
-                input_tokens = tokenizer.batch_encode_plus(input_sentences, return_tensors="pt", padding=True)
+                input_tokens = tokenizer.batch_encode_plus(input_sentences1, return_tensors="pt", padding=True)
 
             if size is not None:
                 input_tokens = adjust_batch(input_tokens, size)
@@ -425,13 +442,13 @@ def main():
         # Benchmark over n_iterations iterations
         if dyn_prompt_lens is None:
             for i in range(args.n_iterations):
-                generated = generate(None, args.reduce_recompile)
+                generated = generate(None, args.reduce_recompile, i)
         else:
             repeated_prompt_len = cycle(dyn_prompt_lens)
             for i in range(args.n_iterations):
                 prompt_len = next(repeated_prompt_len)
                 print("Generating for shape,", prompt_len)
-                generated = generate(prompt_len, args.reduce_recompile)
+                generated = generate(prompt_len, args.reduce_recompile, i)
         duration = time.perf_counter() - t0
         total_new_tokens_generated = args.n_iterations * args.batch_size * args.max_new_tokens
         throughput = total_new_tokens_generated / duration

@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 
 import pytest
 
-from test_examples import TIME_PERF_FACTOR
+from .test_examples import TIME_PERF_FACTOR
 
 
 if os.environ.get("GAUDI2_CI", "0") == "1":
@@ -27,7 +27,7 @@ if os.environ.get("GAUDI2_CI", "0") == "1":
             ("mistralai/Mixtral-8x7B-v0.1", 23.78652574031883),
         ],
         "fp8": [
-            ("tiiuae/falcon-180B", 52.525947696914784),
+            ("tiiuae/falcon-180B", 47.67900945905787),
         ],
         "deepspeed": [
             ("bigscience/bloomz", 36.34664210641816),

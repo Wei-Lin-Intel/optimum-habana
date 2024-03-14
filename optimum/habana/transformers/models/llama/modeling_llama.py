@@ -211,7 +211,6 @@ class GaudiLlamaAttention(LlamaAttention):
         flash_attention_recompute: Optional[bool] = False,
         flash_attention_causal_mask: Optional[bool] = False,
         cache_idx: int = None,
-        use_fused_rope: Optional[bool] = True,
         **kwargs,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
         """
@@ -277,7 +276,7 @@ class GaudiLlamaAttention(LlamaAttention):
 
         cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
         query_states, key_states = apply_customized_rope(
-            query_states, key_states, cos, sin, position_ids, use_fused_rope=use_fused_rope
+            query_states, key_states, cos, sin, position_ids
         )
 
         if use_cache:
@@ -466,7 +465,6 @@ class GaudiLlamaDecoderLayer(LlamaDecoderLayer):
         flash_attention_recompute: Optional[bool] = False,
         flash_attention_causal_mask: Optional[bool] = False,
         cache_idx: int = None,
-        use_fused_rope: Optional[bool] = True,
         **kwargs,
     ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
         """
@@ -499,7 +497,6 @@ class GaudiLlamaDecoderLayer(LlamaDecoderLayer):
             flash_attention_recompute=flash_attention_recompute,
             flash_attention_causal_mask=flash_attention_causal_mask,
             cache_idx=cache_idx,
-            use_fused_rope=use_fused_rope,
             **kwargs,
         )
         self.self_attn.attention_all_reduce(hidden_states)
@@ -531,7 +528,6 @@ class GaudiLlamaDecoderLayer(LlamaDecoderLayer):
         flash_attention_recompute: Optional[bool] = False,
         flash_attention_causal_mask: Optional[bool] = False,
         cache_idx: int = None,
-        use_fused_rope: Optional[bool] = True,
     ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
         hidden_states = self.input_layernorm(hidden_states)
         hidden_states, attn_weights, present_key_value = self.self_attn.pre_attn_forward(
@@ -548,7 +544,7 @@ class GaudiLlamaDecoderLayer(LlamaDecoderLayer):
             flash_attention_recompute,
             flash_attention_causal_mask,
             cache_idx=cache_idx,
-            use_fused_rope=use_fused_rope,
+
         )
         return hidden_states, attn_weights, present_key_value
 
@@ -614,7 +610,6 @@ class GaudiLlamaModel(LlamaModel):
         flash_attention_recompute: Optional[bool] = False,
         flash_attention_causal_mask: Optional[bool] = False,
         cache_idx: int = None,
-        use_fused_rope: Optional[bool] = True,
         lazy_mode: Optional[bool] = True,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
         """
@@ -717,7 +712,6 @@ class GaudiLlamaModel(LlamaModel):
                     False,
                     use_flash_attention,
                     flash_attention_recompute,
-                    use_fused_rope,
                 )
             else:
                 layer_outputs = decoder_layer(
@@ -734,7 +728,6 @@ class GaudiLlamaModel(LlamaModel):
                     flash_attention_recompute=flash_attention_recompute,
                     flash_attention_causal_mask=flash_attention_causal_mask,
                     cache_idx=cache_idx,
-                    use_fused_rope=use_fused_rope,
                 )
 
             hidden_states = layer_outputs[0]
@@ -809,7 +802,6 @@ class GaudiLlamaForCausalLM(LlamaForCausalLM):
         flash_attention_recompute: Optional[bool] = False,
         flash_attention_causal_mask: Optional[bool] = False,
         cache_idx: int = None,
-        use_fused_rope: Optional[bool] = True,
         lazy_mode: Optional[bool] = True,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
@@ -818,6 +810,9 @@ class GaudiLlamaForCausalLM(LlamaForCausalLM):
         )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
+        if self.generation_config.use_fused_rope is False:
+            global has_fused_rope
+            has_fused_rope = False
         outputs = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -835,7 +830,6 @@ class GaudiLlamaForCausalLM(LlamaForCausalLM):
             flash_attention_recompute=flash_attention_recompute,
             flash_attention_causal_mask=flash_attention_causal_mask,
             cache_idx=cache_idx,
-            use_fused_rope=use_fused_rope,
             lazy_mode=lazy_mode,
         )
         hidden_states = outputs[0]
@@ -956,8 +950,8 @@ class GaudiLlamaForCausalLM(LlamaForCausalLM):
         return model_inputs
 
 
-def apply_customized_rope(q, k, cos, sin, position_ids, use_fused_rope=True):
-    if q.device.type == "hpu" and has_fused_rope and use_fused_rope:
+def apply_customized_rope(q, k, cos, sin, position_ids):
+    if q.device.type == "hpu" and has_fused_rope:
         # TODO: remove `.clone()` when SynapseAI v1.15 is released
         return FusedRoPE.apply(
             q, cos.unsqueeze(0).unsqueeze(0).clone(), sin.unsqueeze(0).unsqueeze(0).clone(), position_ids

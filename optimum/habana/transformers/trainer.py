@@ -848,6 +848,11 @@ class GaudiTrainer(Trainer):
         )
         hb_profiler.start()
 
+        if self.args.device_profiling_enable:
+            from .synapse_profiler_api import SynapseProfilerApi, TraceType
+            api = SynapseProfilerApi()
+            curr_step = 0
+
         total_batched_samples = 0
         for epoch in range(epochs_trained, num_train_epochs):
             epoch_iterator = train_dataloader
@@ -928,6 +933,10 @@ class GaudiTrainer(Trainer):
                         if self.model.generation_config.flash_attention_causal_mask:
                             inputs["flash_attention_causal_mask"] = True
 
+                if self.args.device_profiling_enable:
+                    if curr_step == self.args.start_device_profiling_step:
+                        api.profiler_start(TraceType.TraceAll, 0)
+
                 # TODO: keep syncs for fast DDP?
                 with self.accelerator.accumulate(model):
                     tr_loss_step = self.training_step(model, inputs)
@@ -1004,6 +1013,15 @@ class GaudiTrainer(Trainer):
                     self.control = self.callback_handler.on_substep_end(args, self.state, self.control)
 
                 hb_profiler.step()
+
+                if self.args.device_profiling_enable:
+                    if curr_step == self.args.stop_device_profiling_step:
+                        import habana_frameworks.torch.hpu as hpu
+                        hpu.synchronize()
+                        api.profiler_stop(TraceType.TraceAll, 0)
+                        api.profiler_get_trace_json(TraceType.TraceAll, 0)
+                    curr_step = curr_step + 1
+
                 if self.control.should_epoch_stop or self.control.should_training_stop:
                     break
             if step < 0:

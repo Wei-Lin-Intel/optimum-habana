@@ -116,6 +116,14 @@ class GaudiTrainingArguments(TrainingArguments):
             Number of steps to ignore for profling.
         profiling_steps (`int`, *optional*, defaults to 0):
             Number of steps to be captured when enabling profiling.
+        profiling_record_shapes (`boolean`, *optional*, defaults to True):
+            Record shapes when enabling profiling.
+        start_device_profiling_step (`int`, *optional*, defaults to -1):
+            Training iteration number where device profiling starts.
+        stop_device_profiling_step (`int`, *optional*, defaults to -1):
+            Training iteration number where device profiling stops.
+        device_profiling_enable (`boolean`, *optional*, defaults to False):
+            Enable device profiling.
     """
 
     use_habana: Optional[bool] = field(
@@ -226,6 +234,22 @@ class GaudiTrainingArguments(TrainingArguments):
         default=True,
         metadata={"help": ("Record shapes when enabling profiling.")},
     )
+
+    start_device_profiling_step: Optional[int] = field(
+        default=0,
+        metadata={"help": ("Training iteration number where device profiling starts.")},
+    )
+
+    stop_device_profiling_step: Optional[int] = field(
+        default=0,
+        metadata={"help": ("Training iteration number where device profiling stops.")},
+    )
+
+    device_profiling_enable: Optional[bool] = field(
+        default=False,
+        metadata={"help": ("Enable device profiler.")},
+    )
+
     # Overriding the default value of optim because 'adamw_hf' is deprecated
     optim: Optional[Union[OptimizerNames, str]] = field(
         default="adamw_torch",
@@ -582,7 +606,6 @@ class GaudiTrainingArguments(TrainingArguments):
         self.fsdp_config["xla"] = self.fsdp_config.get("xla", False)
         self.fsdp_config["xla_fsdp_v2"] = self.fsdp_config.get("xla_fsdp_v2", False)
         self.fsdp_config["xla_fsdp_grad_ckpt"] = self.fsdp_config.get("xla_fsdp_grad_ckpt", False)
-
         # accelerate integration for FSDP
         if len(self.fsdp) > 0 and not self.fsdp_config["xla"]:
             os.environ["ACCELERATE_USE_FSDP"] = "true"

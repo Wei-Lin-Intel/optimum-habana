@@ -799,7 +799,7 @@ def main(args):
                         for idx, dt in enumerate(dataset['train']):
                             dt['image'].save(f'{args.mediapipe}/{idx}.jpg')
                             f.write(dt['text'] + '\n')
-            if torch.distributed.is_initialized():
+            if accelerator.distributed_type != GaudiDistributedType.NO:
                 torch.distributed.barrier()
             from media_pipe_imgdir import get_dataset_for_pipeline
             dt = get_dataset_for_pipeline(args.mediapipe)

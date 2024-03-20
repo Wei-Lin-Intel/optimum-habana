@@ -799,7 +799,8 @@ def main(args):
                         for idx, dt in enumerate(dataset['train']):
                             dt['image'].save(f'{args.mediapipe}/{idx}.jpg')
                             f.write(dt['text'] + '\n')
-            torch.distributed.barrier()
+            if torch.distributed.is_initialized():
+                torch.distributed.barrier()
             from media_pipe_imgdir import get_dataset_for_pipeline
             dt = get_dataset_for_pipeline(args.mediapipe)
             dataset = {'train': dt}

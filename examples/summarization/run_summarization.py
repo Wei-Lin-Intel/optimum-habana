@@ -410,6 +410,10 @@ def main():
             "`--source_prefix 'summarize: ' `"
         )
 
+    if model_args.model_name_or_path == "google/flan-t5-xxl":
+        os.environ["HPU_DISABLE_DYNAMIC_SHAPE"]=0
+        os.environ["PT_HPU_ENABLE_REFINE_DYNAMIC_SHAPES"]=1
+
     # Detecting last checkpoint.
     last_checkpoint = None
     if os.path.isdir(training_args.output_dir) and training_args.do_train and not training_args.overwrite_output_dir:

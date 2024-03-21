@@ -411,8 +411,8 @@ def main():
         )
 
     if model_args.model_name_or_path == "google/flan-t5-xxl":
-        os.environ["HPU_DISABLE_DYNAMIC_SHAPE"] = 0
-        os.environ["PT_HPU_ENABLE_REFINE_DYNAMIC_SHAPES"] = 1
+        os.environ["HPU_DISABLE_DYNAMIC_SHAPE"] = "0"
+        os.environ["PT_HPU_ENABLE_REFINE_DYNAMIC_SHAPES"] = "1"
 
     # Detecting last checkpoint.
     last_checkpoint = None

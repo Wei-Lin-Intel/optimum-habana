@@ -60,6 +60,9 @@ def setup_lm_eval_parser():
         default=["hellaswag", "lambada_openai", "piqa", "winogrande"],
     )
     parser.add_argument("--limit_iters", type=int, help="limit examples to run that many iterations", default=None)
+    parser.add_argument(
+        "--metrics", action="store_true", help="Store metrics per query"
+    )
     args = setup_parser(parser)
 
     return args
@@ -155,7 +158,8 @@ def main():
     lm = HabanaModelAdapter(tokenizer, model, args, generation_config)
 
     eval_start = time.perf_counter()
-    results = lm_eval.evaluator.evaluate(lm, lm_tasks, limit=args.limit_iters)
+    results = lm_eval.evaluator.evaluate(lm, lm_tasks, limit=args.limit_iters, write_out=args.metrics and args.local_rank==0, output_base_path=os.path.dirname(args.output_file))
+
     if args.device == "hpu":
         import habana_frameworks.torch.hpu as torch_hpu
 

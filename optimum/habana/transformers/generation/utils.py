@@ -1472,6 +1472,7 @@ class GaudiGenerationMixin(GenerationMixin):
 
             # argmax
             next_tokens = torch.argmax(next_tokens_scores, dim=-1)
+
             # finished sentences should have their next token be a padding token
             if not ignore_eos and eos_token_id is not None:
                 if pad_token_id is None:

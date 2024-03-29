@@ -415,7 +415,7 @@ def main():
             acc_file = []
             num_token = 0
             for i, idx in enumerate(ds.index):
-                pred = generated[i]
+                pred = results[i]
                 eos_token_id = 2
                 try:
                     ind_eos = pred.index(eos_token_id)+1

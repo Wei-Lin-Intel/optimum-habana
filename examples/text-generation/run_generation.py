@@ -88,6 +88,12 @@ def setup_parser(parser):
         help="Optional argument if you want to assess your model on a given dataset of the HF Hub.",
     )
     parser.add_argument(
+        "--dataset",
+        default="/mnt/weka/data/mlperf_inference/llama2/processed-data.pkl",
+        type=str,
+        help="path of the dataset to run rouge evaluation and measurement for rouge",
+    )
+    parser.add_argument(
         "--column_name",
         default=None,
         type=str,
@@ -287,10 +293,7 @@ def main():
     if args.dataset_name == "openorca":
         # Benchmark over the prompts below
         def get_ds(args):
-            ds = pd.read_pickle("/mnt/weka/data/mlperf_inference/llama2/processed-data.pkl")
-            #n_iterations = 1 means whole dataset
-            if args.n_iterations > 1:
-                ds = ds.head(args.n_iterations * args.batch_size)
+            ds = pd.read_pickle(args.dataset)
             return ds
 
 
@@ -341,7 +344,7 @@ def main():
             for i in range(len(outputs)):
                 outputs[i] = outputs[i][args.max_input_tokens:]
             duration = time.perf_counter() - t0
-            print(f"Total E2E time of this iteration is {duration:.3f}s", flush=True)
+            print(f"Total E2E time of this batch is {duration:.3f}s", flush=True)
             return outputs
 
         from optimum.habana.utils import HabanaProfile
@@ -391,7 +394,7 @@ def main():
                 for sentence in input_sentences:
                     generated = generate(sentence, None, args.reduce_recompile)
                     results.extend(generated)
-                    print(f"generatig batch {b}/{N}")
+                    print(f"Generatig batch {b}/{N}")
                     b +=1
         else:
             repeated_prompt_len = cycle(dyn_prompt_lens)

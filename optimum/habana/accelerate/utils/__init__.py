@@ -9,3 +9,6 @@ from .transformer_engine import (
     has_transformer_engine_layers,
     is_fp8_available,
 )
+from .fp8_helper import (
+    FP8ForwardMaker,
+)

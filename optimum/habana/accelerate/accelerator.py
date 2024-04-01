@@ -75,6 +75,7 @@ from .utils import (
     GaudiDynamoBackend,
     GaudiFullyShardedDataParallelPlugin,
     GaudiTorchDynamoPlugin,
+    FP8ForwardMaker,
     convert_model,
     has_transformer_engine_layers,
     is_fp8_available,
@@ -86,23 +87,6 @@ if is_fp8_available():
 
 
 logger = get_logger(__name__)
-
-class SwitchableForwardMaker:
-    def __init__(self, module, fp8_recipe_handler):
-        self.original_forward = module.forward
-        self.fp8_forward = te.fp8_autocast(enabled=True, fp8_recipe=fp8_recipe_handler)(module.forward)
-        self.module = module
-        module.forward = self.forward
-
-    def forward(self, *args, **kwargs):
-        if self.module.training:
-            return self.fp8_forward(*args, **kwargs)
-        else:
-            return self.original_forward(*args, **kwargs)
-
-    @staticmethod
-    def convert(module, fp8_recipe_handler):
-        SwitchableForwardMaker(module, fp8_recipe_handler)
 
 class GaudiAccelerator(Accelerator):
     """
@@ -385,8 +369,7 @@ class GaudiAccelerator(Accelerator):
                 model.forward = convert_outputs_to_fp32(new_forward)
         elif self.state.is_fp8_enabled:
             model = self.wrap_fp8(model)
-            SwitchableForwardMaker.convert(model, self.fp8_recipe_handler)
-
+            FP8ForwardMaker.convert(model, self.fp8_recipe_handler)
         if (getattr(model, "is_loaded_in_8bit", False) or getattr(model, "is_loaded_in_4bit", False)) and getattr(
             model, "hf_device_map", False
         ):
@@ -695,7 +678,7 @@ class GaudiAccelerator(Accelerator):
             self.deepspeed_engine_wrapped = DeepSpeedEngineWrapper(engine)
 
             if self.state.is_fp8_enabled:
-                SwitchableForwardMaker.convert(engine, self.fp8_recipe_handler)
+                FP8ForwardMaker.convert(engine, self.fp8_recipe_handler)
 
             self._models.append(engine)
             if optimizer is not None:

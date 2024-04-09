@@ -97,6 +97,7 @@ def _test_fsdp(
             f"--gaudi_config_name {gaudi_config}",
             "--throughput_warmup_steps 100",
             "--do_eval",
+            "--torch_compile_backend hpu_backend",
         ]
     else:
         command += [

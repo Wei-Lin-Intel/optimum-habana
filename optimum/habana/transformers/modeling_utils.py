@@ -20,6 +20,7 @@ from .generation import (
     GaudiGenerationMixin,
     gaudi_MaxLengthCriteria_call,
     gaudi_MaxNewTokensCriteria_call,
+    gaudi_StoppingCriteriaList_call,
 )
 from .models import (
     GaudiBloomForCausalLM,
@@ -137,6 +138,7 @@ from .models import (
     gaudi_wav2vec2_forward,
     gaudi_wav2vec2_tdnnlayer_forward,
     gaudi_wav2vec2forctc_forward,
+    gaudi_MambaForCausalLM_prepare_inputs_for_generation,
 )
 
 
@@ -198,6 +200,7 @@ def adapt_transformers_to_gaudi():
     transformers.modeling_utils.GenerationConfig = GaudiGenerationConfig
     transformers.generation.MaxLengthCriteria.__call__ = gaudi_MaxLengthCriteria_call
     transformers.generation.MaxNewTokensCriteria.__call__ = gaudi_MaxNewTokensCriteria_call
+    transformers.generation.StoppingCriteriaList.__call__ = gaudi_StoppingCriteriaList_call
 
     # Optimization for BLOOM generation on Gaudi
     transformers.models.bloom.modeling_bloom.BloomAttention.forward = gaudi_bloom_attention_forward
@@ -367,3 +370,6 @@ def adapt_transformers_to_gaudi():
     transformers.models.speecht5.modeling_speecht5.SpeechT5SpeechDecoderPrenet.forward = (
         gaudi_SpeechT5SpeechDecoderPrenet_forward
     )
+
+    # Optimization for mamba on Gaudi
+    transformers.models.mamba.modeling_mamba.MambaForCausalLM.prepare_inputs_for_generation = gaudi_MambaForCausalLM_prepare_inputs_for_generation

@@ -78,6 +78,7 @@ MODELS_OPTIMIZED_WITH_STATIC_SHAPES = [
     "phi",
     "mixtral",
     "blip_text_model",
+    "mamba",
 ]
 
 
@@ -745,7 +746,8 @@ class GaudiGenerationMixin(GenerationMixin):
                     unwrap_deepspeed_model(self).update_sincos_cache(seq_len=calculated_max_length)
 
         # 7. determine generation mode
-        generation_mode = self._get_generation_mode(generation_config, assistant_model)
+        #generation_mode = self._get_generation_mode(generation_config, assistant_model)
+        generation_mode = generation_config.get_generation_mode(assistant_model)
         if generation_config.bucket_size > 0:
             assert generation_config.static_shapes, "bucket_size > 0 can be set only when static_shapes is set"
         # if generation_config.bucket_size <= 0, padding is handled by the generating fn (like greedy_search)
@@ -1529,7 +1531,6 @@ class GaudiGenerationMixin(GenerationMixin):
                 # stop when each sentence is finished
                 if not ignore_eos and unfinished_sequences.max() == 0:
                     this_peer_finished = True
-
             # stop if we exceed the maximum length
             if stopping_criteria(input_ids, scores, token_idx=cur_len):
                 this_peer_finished = True

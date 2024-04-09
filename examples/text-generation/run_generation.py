@@ -377,15 +377,15 @@ def main():
                 for t in input_tokens:
                     if torch.is_tensor(input_tokens[t]):
                         input_tokens[t] = input_tokens[t].to(args.device)
-
-            output_tokens = model.generate(
-                **input_tokens,
-                generation_config=generation_config,
-                lazy_mode=use_lazy_mode,
-                hpu_graphs=args.use_hpu_graphs,
-                profiling_steps=args.profiling_steps,
-                profiling_warmup_steps=args.profiling_warmup_steps,
-            ).cpu()
+            with torch.autocast(device_type="hpu", dtype=torch.bfloat16):
+                output_tokens = model.generate(
+                    **input_tokens,
+                    generation_config=generation_config,
+                    lazy_mode=use_lazy_mode,
+                    hpu_graphs=args.use_hpu_graphs,
+                    profiling_steps=args.profiling_steps,
+                    profiling_warmup_steps=args.profiling_warmup_steps,
+                    ).cpu()
             outputs = tokenizer.batch_decode(output_tokens, skip_special_tokens=True)
             duration = time.perf_counter() - t0
             print(f"Total E2E time of this iteration is {duration:.3f}s", flush=True)

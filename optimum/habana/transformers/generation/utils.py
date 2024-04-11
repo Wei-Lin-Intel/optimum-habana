@@ -163,6 +163,91 @@ class GaudiGenerationMixin(GenerationMixin):
                 hpu_graphs_kwargs.update({"bypass_hpu_graphs": True})
         return hpu_graphs_kwargs
 
+    def _pad_past_key_values(self, model_kwargs):
+        pad_amount = model_kwargs.get("kv_cache_pad_len" , 0)
+        print(f"PAD KV Cache by {pad_amount} tokens")
+        if model_kwargs["past_key_values"]:
+            for i in range(len(model_kwargs["past_key_values"])):
+                for j in range(len(model_kwargs["past_key_values"][i])):
+                    if torch.is_tensor(model_kwargs["past_key_values"][i][j]):
+                        model_kwargs["past_key_values"][i][j] = torch.nn.functional.pad(model_kwargs["past_key_values"][i][j], (0, 0, 0, pad_amount))
+                        if model_kwargs.get("lazy_mode" , False):
+                            self.htcore_generation.mark_step()
+
+    def _remove_past_key_values(self, model_kwargs):
+        if model_kwargs["past_key_values"]:
+            for i in range(len(model_kwargs["past_key_values"])):
+                for j in range(len(model_kwargs["past_key_values"][i])):
+                    if torch.is_tensor(model_kwargs["past_key_values"][i][j]):
+                        t = model_kwargs["past_key_values"][i][j]
+                        del t
+                        model_kwargs["past_key_values"][i][j] = None
+        del model_kwargs["past_key_values"]
+        model_kwargs["past_key_values"] = None
+
+    def _update_model_kwargs_for_generation(
+        self,
+        outputs: ModelOutput,
+        model_kwargs: Dict[str, Any],
+        is_encoder_decoder: bool = False,
+        standardize_cache_format: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Copied from Transformers: https://github.com/huggingface/transformers/blob/527ab894e59b6582578008e3b47648a65063f73d/src/transformers/generation/utils.py#L745
+
+        Adds support for `token_idx`, which is necessary for using static shapes.
+        """
+        # mark to identify starting from second token
+        model_kwargs["first_token"] = False
+        if not model_kwargs.get("pad_done", False):
+            # update past_key_values
+            model_kwargs["past_key_values"] = self._extract_past_from_model_output(
+                outputs, standardize_cache_format=standardize_cache_format
+            )
+        if getattr(outputs, "state", None) is not None:
+            model_kwargs["state"] = outputs.state
+
+        # update token_type_ids with last value
+        if "token_type_ids" in model_kwargs:
+            token_type_ids = model_kwargs["token_type_ids"]
+            model_kwargs["token_type_ids"] = torch.cat([token_type_ids, token_type_ids[:, -1].unsqueeze(-1)], dim=-1)
+
+        token_idx = model_kwargs.get("token_idx", None)
+
+        if not is_encoder_decoder:
+            # update attention mask
+            if "attention_mask" in model_kwargs:
+                attention_mask = model_kwargs["attention_mask"]
+                if token_idx is not None:
+                    attention_mask.index_fill_(1, token_idx, 1)
+                else:
+                    attention_mask = torch.cat(
+                        [attention_mask, attention_mask.new_ones((attention_mask.shape[0], 1))], dim=-1
+                    )
+                model_kwargs["attention_mask"] = attention_mask
+        else:
+            # update decoder attention mask
+            if "decoder_attention_mask" in model_kwargs:
+                decoder_attention_mask = model_kwargs["decoder_attention_mask"]
+                if token_idx is not None:
+                    decoder_attention_mask.index_fill_(1, token_idx, 1)
+                else:
+                    decoder_attention_mask = torch.cat(
+                        [
+                            decoder_attention_mask,
+                            decoder_attention_mask.new_ones((decoder_attention_mask.shape[0], 1)),
+                        ],
+                        dim=-1,
+                    )
+                model_kwargs["decoder_attention_mask"] = decoder_attention_mask
+
+        if token_idx is not None:
+            token_idx.add_(1)
+            if "token_idx_cpu" in model_kwargs:
+                model_kwargs["token_idx_cpu"] += 1
+
+        return model_kwargs
+
     def _prepare_decoder_attention_mask(
         self,
         max_steps: int,  # current stopping criteria
@@ -246,68 +331,6 @@ class GaudiGenerationMixin(GenerationMixin):
                 )
                 model_kwargs["decoder_attention_mask"] = decoder_attention_mask
         return decoder_input_ids, model_kwargs
-
-    def _update_model_kwargs_for_generation(
-        self,
-        outputs: ModelOutput,
-        model_kwargs: Dict[str, Any],
-        is_encoder_decoder: bool = False,
-        standardize_cache_format: bool = False,
-    ) -> Dict[str, Any]:
-        """
-        Copied from Transformers: https://github.com/huggingface/transformers/blob/527ab894e59b6582578008e3b47648a65063f73d/src/transformers/generation/utils.py#L745
-
-        Adds support for `token_idx`, which is necessary for using static shapes.
-        """
-        # mark to identify starting from second token
-        model_kwargs["first_token"] = False
-        # update past_key_values
-        model_kwargs["past_key_values"] = self._extract_past_from_model_output(
-            outputs, standardize_cache_format=standardize_cache_format
-        )
-        if getattr(outputs, "state", None) is not None:
-            model_kwargs["state"] = outputs.state
-
-        # update token_type_ids with last value
-        if "token_type_ids" in model_kwargs:
-            token_type_ids = model_kwargs["token_type_ids"]
-            model_kwargs["token_type_ids"] = torch.cat([token_type_ids, token_type_ids[:, -1].unsqueeze(-1)], dim=-1)
-
-        token_idx = model_kwargs.get("token_idx", None)
-
-        if not is_encoder_decoder:
-            # update attention mask
-            if "attention_mask" in model_kwargs:
-                attention_mask = model_kwargs["attention_mask"]
-                if token_idx is not None:
-                    attention_mask.index_fill_(1, token_idx, 1)
-                else:
-                    attention_mask = torch.cat(
-                        [attention_mask, attention_mask.new_ones((attention_mask.shape[0], 1))], dim=-1
-                    )
-                model_kwargs["attention_mask"] = attention_mask
-        else:
-            # update decoder attention mask
-            if "decoder_attention_mask" in model_kwargs:
-                decoder_attention_mask = model_kwargs["decoder_attention_mask"]
-                if token_idx is not None:
-                    decoder_attention_mask.index_fill_(1, token_idx, 1)
-                else:
-                    decoder_attention_mask = torch.cat(
-                        [
-                            decoder_attention_mask,
-                            decoder_attention_mask.new_ones((decoder_attention_mask.shape[0], 1)),
-                        ],
-                        dim=-1,
-                    )
-                model_kwargs["decoder_attention_mask"] = decoder_attention_mask
-
-        if token_idx is not None:
-            token_idx.add_(1)
-            if "token_idx_cpu" in model_kwargs:
-                model_kwargs["token_idx_cpu"] += 1
-
-        return model_kwargs
 
     @torch.no_grad()
     def update_model_kwargs_for_bucketing(
@@ -738,7 +761,9 @@ class GaudiGenerationMixin(GenerationMixin):
                     unwrap_deepspeed_model(self).allocate_kv_cache(
                         bs * generation_config.num_beams, calculated_max_length, token_idx
                     )
-                    model_kwargs["kv_cache_len"] = calculated_max_length
+            if generation_config.use_cache:
+                model_kwargs["kv_cache_len"] = calculated_max_length
+                model_kwargs["kv_cache_pad_len"] = generation_config.max_new_tokens
 
             if self.config.model_type in ["llama", "falcon"]:
                 if self.config.max_position_embeddings < calculated_max_length:
@@ -1415,6 +1440,9 @@ class GaudiGenerationMixin(GenerationMixin):
             # Update cur_len in case of static shapes
             cur_len = token_idx.item()
         greedy_first = True
+        model_kwargs["pad_done"] = False
+        model_kwargs["lazy_mode"] = lazy_mode
+
         while True:
             if lazy_mode:
                 self.htcore_generation.mark_step()
@@ -1437,7 +1465,6 @@ class GaudiGenerationMixin(GenerationMixin):
                 )
 
             # prepare model inputs
-            model_kwargs["lazy_mode"] = lazy_mode
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
             hpu_graphs_kwargs = self._get_hpu_graphs_kwargs(model_kwargs)
@@ -1548,6 +1575,21 @@ class GaudiGenerationMixin(GenerationMixin):
 
             if this_peer_finished and not synced_gpus:
                 break
+
+            if not model_kwargs.get("pad_done", False) and not model_kwargs.get("reuse_cache", False) \
+                and bucket_internal:
+                # Pad the returned pask key values tensors from prefill phase forward run to maximum length
+                # before starting the decode phase.
+                self._pad_past_key_values(model_kwargs)
+                model_kwargs["pad_done"] = True
+
+        if model_kwargs.get("use_hpu_graphs", False) and model_kwargs.get("limit_hpu_graphs", False) \
+            and not model_kwargs.get("reuse_cache", False) and bucket_internal:
+            # Clear HPU graphs input tensors of the decode phase after the full generation while loop
+            print("CLEAR HPU GRAPH INPUTS OF DECODE PHASE")
+            self.clear_inputs()
+            # Delete past key value tensors
+            self._remove_past_key_values(model_kwargs)
 
         hb_profer.stop()
         if streamer is not None:

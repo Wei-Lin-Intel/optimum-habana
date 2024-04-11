@@ -139,6 +139,7 @@ from .models import (
     gaudi_wav2vec2_tdnnlayer_forward,
     gaudi_wav2vec2forctc_forward,
     gaudi_MambaForCausalLM_prepare_inputs_for_generation,
+    gaudi_MambaForCausalLM_update_model_kwargs_for_generation,
 )
 
 
@@ -373,3 +374,4 @@ def adapt_transformers_to_gaudi():
 
     # Optimization for mamba on Gaudi
     transformers.models.mamba.modeling_mamba.MambaForCausalLM.prepare_inputs_for_generation = gaudi_MambaForCausalLM_prepare_inputs_for_generation
+    transformers.models.mamba.modeling_mamba.MambaForCausalLM._update_model_kwargs_for_generation = gaudi_MambaForCausalLM_update_model_kwargs_for_generation

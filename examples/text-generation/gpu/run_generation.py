@@ -430,7 +430,7 @@ def main():
     #else:
     input_ids = encoded_prompt.input_ids
     attention_mask = encoded_prompt.attention_mask
-    import pdb;pdb.set_trace()
+
     if args.jit:
         jit_input_texts = ["enable jit"]
         jit_inputs = prepare_jit_inputs(jit_input_texts, model, tokenizer)
@@ -467,17 +467,20 @@ def main():
     separator = "-" * 50
     logger.info("Running generate dataset...")
     t_start = time.time()
-    for i in range(2):
+    for i in range(1):
         t0 = time.perf_counter()
         outputs = generate_dataset(input_ids, attention_mask)
+        #import pdb;pdb.set_trace()
         duration += time.perf_counter() - t0
         total_new_tokens_generated += args.batch_size * args.length
+        output = tokenizer.batch_decode(outputs, skip_special_tokens=True)
         print(separator)
-        print(f"Batch n°{i+1}")
-        print(f"Input: {prompt_texts[:args.batch_size]}")
-        print(
-            f"Output: {tokenizer.batch_decode(outputs, skip_special_tokens=True)[:args.batch_size*args.num_return_sequences]}"
-        )
+        for j in range(args.batch_size):
+            print(f"Input [{j}]: {prompt_texts[j]}")
+            print(
+                f"Output [{j}]: {output[j]}"
+            )
+            print(separator)
     print(separator)
     t_end = time.time()
 

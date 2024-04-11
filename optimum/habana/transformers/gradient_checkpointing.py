@@ -73,6 +73,7 @@ class CheckpointFunction(torch.autograd.Function):
         ctx.hpu_autocast_kwargs, ctx.cpu_autocast_kwargs = _get_autocast_kwargs()
         if preserve_rng_state:
             ctx.fwd_cpu_state = torch.get_rng_state()
+            ctx.fwd_hpu_state = torch.hpu.get_rng_state()
             # Don't eagerly initialize the cuda context by accident.
             # (If the user intends that the context is initialized later, within their
             # run_function, we SHOULD actually stash the cuda state here.  Unfortunately,
@@ -125,6 +126,7 @@ class CheckpointFunction(torch.autograd.Function):
         with torch.random.fork_rng(devices=rng_devices, enabled=ctx.preserve_rng_state):
             if ctx.preserve_rng_state:
                 torch.set_rng_state(ctx.fwd_cpu_state)
+                torch.hpu.set_rng_state(ctx.fwd_hpu_state)
             detached_inputs = detach_variable(tuple(inputs))
             with torch.enable_grad(), torch.autocast(**ctx.hpu_autocast_kwargs), torch.cpu.amp.autocast(
                 **ctx.cpu_autocast_kwargs

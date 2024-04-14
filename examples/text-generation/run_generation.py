@@ -270,6 +270,8 @@ def setup_parser(parser):
         args.limit_hpu_graphs = False
 
     args.quant_config = os.getenv("QUANT_CONFIG", "")
+    if args.quant_config and args.int4:
+        raise RuntimeError("Setting both quant_config and int4 is unsupported. ")
     return args
 
 

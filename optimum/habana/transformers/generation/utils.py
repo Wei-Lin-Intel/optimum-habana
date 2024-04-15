@@ -1834,6 +1834,9 @@ class GaudiGenerationMixin(GenerationMixin):
             cur_len = token_idx.item()
 
         sample_first = True
+        model_kwargs["pad_done"] = False
+        model_kwargs["lazy_mode"] = lazy_mode
+
         # auto-regressive generation
         while True:
             if lazy_mode:
@@ -1857,7 +1860,6 @@ class GaudiGenerationMixin(GenerationMixin):
                 )
 
             # prepare model inputs
-            model_kwargs["lazy_mode"] = lazy_mode
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
             hpu_graphs_kwargs = self._get_hpu_graphs_kwargs(model_kwargs)
@@ -1963,6 +1965,21 @@ class GaudiGenerationMixin(GenerationMixin):
 
             if this_peer_finished and not synced_gpus:
                 break
+
+            if not model_kwargs.get("pad_done", False) and not model_kwargs.get("reuse_cache", False) \
+                and bucket_internal:
+                # Pad the returned pask key values tensors from prefill phase forward run to maximum length
+                # before starting the decode phase.
+                self._pad_past_key_values(model_kwargs)
+                model_kwargs["pad_done"] = True
+
+        if model_kwargs.get("use_hpu_graphs", False) and model_kwargs.get("limit_hpu_graphs", False) \
+            and not model_kwargs.get("reuse_cache", False) and bucket_internal:
+            # Clear HPU graphs input tensors of the decode phase after the full generation while loop
+            print("CLEAR HPU GRAPH INPUTS OF DECODE PHASE")
+            self.clear_inputs()
+            # Delete past key value tensors
+            self._remove_past_key_values(model_kwargs)
 
         hb_profer.stop()
         if streamer is not None:

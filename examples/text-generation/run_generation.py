@@ -222,7 +222,7 @@ def setup_parser(parser):
     )
 
     parser.add_argument("--fp8", action="store_true", help="Enable Quantization to fp8")
-    parser.add_argument("--int4", action="store_true", help="Enable Quantization to int4")
+    parser.add_argument("--gptq", action="store_true", help="Enable Quantization to 4 bit with AutoGPTQ")
     parser.add_argument(
         "--use_flash_attention",
         action="store_true",
@@ -270,8 +270,8 @@ def setup_parser(parser):
         args.limit_hpu_graphs = False
 
     args.quant_config = os.getenv("QUANT_CONFIG", "")
-    if args.quant_config and args.int4:
-        raise RuntimeError("Setting both quant_config and int4 is unsupported. ")
+    if args.quant_config and args.gptq:
+        raise RuntimeError("Setting both quant_config and gptq is unsupported. ")
     return args
 
 

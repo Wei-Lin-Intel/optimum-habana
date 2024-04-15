@@ -180,7 +180,7 @@ class GaudiLlamaAttention(LlamaAttention):
         self.norm_factor = 1.0 / math.sqrt(self.head_dim)
 
     def get_k_proj_weight(self):
-        """ int4 quantization in GPTQ replaces the k_proj.weight with qweight. """
+        """ 4bit quantization in GPTQ replaces the k_proj.weight with qweight. """
         if hasattr(self.k_proj, 'qweight'):
             return self.k_proj.qweight
         return self.k_proj.weight

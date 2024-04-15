@@ -166,7 +166,7 @@ def setup_model(args, model_dtype, model_kwargs, logger):
 
     if args.peft_model is not None:
         model = peft_model(args, model_dtype, logger, **model_kwargs)
-    elif args.int4:
+    elif args.gptq:
         from transformers import GPTQConfig
         quantization_config = GPTQConfig(bits=4, disable_exllama=True)
         model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path, torch_dtype=model_dtype, quantization_config=quantization_config, **model_kwargs)

@@ -48,6 +48,7 @@ from .models import (
     GaudiMistralAttention,
     GaudiMistralDecoderLayer,
     GaudiMistralForCausalLM,
+    GaudiMistralMLP,
     GaudiMistralModel,
     GaudiMixtralForCausalLM,
     GaudiMptForCausalLM,
@@ -330,6 +331,7 @@ def adapt_transformers_to_gaudi():
     transformers.models.mistral.modeling_mistral.MistralAttention = GaudiMistralAttention
     transformers.models.mistral.modeling_mistral.MistralDecoderLayer = GaudiMistralDecoderLayer
     transformers.models.mistral.modeling_mistral.MistralModel = GaudiMistralModel
+    transformers.models.mistral.modeling_mistral.MistralMLP = GaudiMistralMLP
     transformers.models.mistral.modeling_mistral.MistralRMSNorm.forward = gaudi_mistral_rmsnorm_forward
 
     # Optimization for phi on Gaudi

@@ -23,6 +23,7 @@ import math
 import warnings
 from typing import List, Optional, Tuple, Union
 
+import habana_frameworks.torch.core as htcore
 import torch
 from torch import nn
 from torch.nn import CrossEntropyLoss
@@ -40,11 +41,13 @@ from transformers.models.mistral.modeling_mistral import (
     apply_rotary_pos_emb,
 )
 from transformers.utils import logging
+
 from optimum.habana.transformers.models.modeling_all_models import KVCache
+
 from ...modeling_attn_mask_utils import (
     _gaudi_prepare_4d_causal_attention_mask,
 )
-import habana_frameworks.torch.core as htcore
+
 
 try:
     from habana_frameworks.torch.hpex.kernels import RotaryPosEmbeddingHelperV2 as FusedRoPE
@@ -143,7 +146,7 @@ class GaudiMistralAttention(MistralAttention):
         self.v_cache = KVCache()
         self.matmul_qk = Matmul()
         self.matmul_av = Matmul()
-        # TODO: replace these two 
+        # TODO: replace these two
         #self.past_key = None
         #self.past_value = None
         self.layer_idx = layer_idx
@@ -170,7 +173,7 @@ class GaudiMistralAttention(MistralAttention):
         self.reorder(self.v_cache.cache, beam_idx, seq_length, head_dim)
         return (self.k_cache.cache.shape, self.v_cache.cache.shape)
 
-    def forward(
+    def pre_attn_forward(
         self,
         hidden_states: torch.Tensor,
         attention_mask: Optional[torch.Tensor] = None,
@@ -301,6 +304,27 @@ class GaudiMistralAttention(MistralAttention):
 
         return attn_output, attn_weights, past_key_value
 
+    def attention_all_reduce(self, attn_output):
+        if hasattr(self.o_proj, "all_reduce"):
+             self.o_proj.all_reduce(attn_output)
+
+    def post_attn_forward(self, attn_output):
+        if hasattr(self.o_proj, "post_all_reduce"):
+            self.o_proj.post_all_reduce(attn_output)
+        return attn_output
+
+class GaudiMistralMLP(MistralMLP):
+    def pre_mlp_forward(self, x):
+        return self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
+
+    def mlp_all_reduce(self, x):
+        if hasattr(self.down_proj, "all_reduce"):
+            self.down_proj.all_reduce(x)
+
+    def post_mlp_forward(self, x):
+        if hasattr(self.down_proj, "post_all_reduce"):
+            return self.down_proj.post_all_reduce(x)
+        return x
 
 class GaudiMistralDecoderLayer(MistralDecoderLayer):
     def __init__(self, config: MistralConfig, layer_idx: int):
@@ -309,7 +333,7 @@ class GaudiMistralDecoderLayer(MistralDecoderLayer):
 
         self.self_attn = GaudiMistralAttention(config, layer_idx)
 
-        self.mlp = MistralMLP(config)
+        self.mlp = GaudiMistralMLP(config)
         self.input_layernorm = MistralRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.post_attention_layernorm = MistralRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
@@ -349,6 +373,7 @@ class GaudiMistralDecoderLayer(MistralDecoderLayer):
 
         residual = hidden_states
 
+        '''
         hidden_states = self.input_layernorm(hidden_states)
 
         # Self Attention
@@ -372,6 +397,25 @@ class GaudiMistralDecoderLayer(MistralDecoderLayer):
         hidden_states = self.post_attention_layernorm(hidden_states)
         hidden_states = self.mlp(hidden_states)
         hidden_states = residual + hidden_states
+        '''
+
+        hidden_states, self_attn_weights, present_key_value = self.pre_attn(
+            hidden_states=hidden_states,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_value=past_key_value,
+            output_attentions=output_attentions,
+            use_cache=use_cache,
+            token_idx=token_idx,
+            reuse_cache=reuse_cache,
+            cache_idx=cache_idx,
+            attn_softmax_bf16=attn_softmax_bf16,
+            use_fused_rope=use_fused_rope,
+        )
+        self.self_attn.attention_all_reduce(hidden_states)
+        hidden_states, residual = self.post_attn_pre_mlp(hidden_states, residual)
+        self.mlp.mlp_all_reduce(hidden_states)
+        hidden_states = self.post_mlp(hidden_states, residual)
 
         outputs = (hidden_states,)
 
@@ -383,6 +427,67 @@ class GaudiMistralDecoderLayer(MistralDecoderLayer):
 
         return outputs
 
+    def pre_attn(
+        self,
+        hidden_states: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_value: Optional[Tuple[torch.Tensor]] = None,
+        output_attentions: Optional[bool] = False,
+        use_cache: Optional[bool] = False,
+        token_idx: Optional[torch.Tensor] = None,
+        attn_softmax_bf16: Optional[bool] = False,
+        reuse_cache: Optional[bool] = False,
+        cache_idx: int = None,
+        use_fused_rope: Optional[bool] = True,
+    ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
+        hidden_states = self.input_layernorm(hidden_states)
+        hidden_states, attn_weights, present_key_value = self.self_attn.pre_attn_forward(
+            hidden_states=hidden_states,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_value=past_key_value,
+            output_attentions=output_attentions,
+            use_cache=use_cache,
+            token_idx=token_idx,
+            reuse_cache=reuse_cache,
+            cache_idx=cache_idx,
+            attn_softmax_bf16=attn_softmax_bf16,
+            use_fused_rope=use_fused_rope,
+        )
+        return hidden_states, attn_weights, present_key_value
+
+    def post_attn_pre_mlp(self, hidden_states, residual):
+        hidden_states = self.self_attn.post_attn_forward(hidden_states)
+
+        '''
+        if self.training:
+            hidden_states = hidden_states + residual
+            residual = hidden_states
+        else:
+            residual.add_(hidden_states)
+            hidden_states = residual
+        '''
+        hidden_states = hidden_states + residual
+        residual = hidden_states
+
+        hidden_states = self.post_attention_layernorm(hidden_states)
+
+        hidden_states = self.mlp.pre_mlp_forward(hidden_states)
+        return hidden_states, residual
+
+    def post_mlp(self, hidden_states, residual):
+        hidden_states = self.mlp.post_mlp_forward(hidden_states)
+
+        '''
+        if self.training:
+            hidden_states = hidden_states + residual
+        else:
+            residual.add_(hidden_states)
+            hidden_states = residual
+        '''
+        hidden_states = hidden_states + residual
+        return hidden_states
 
 class GaudiMistralModel(MistralModel):
     def allocate_kv_cache(self, batch_size, max_seq_len, inp_seq_len):

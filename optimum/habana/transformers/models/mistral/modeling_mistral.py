@@ -190,6 +190,8 @@ class GaudiMistralAttention(MistralAttention):
         use_fused_rope: Optional[bool] = True,
         cache_idx: Optional[int] = None,
         use_flash_attention: Optional[bool] = False,
+        flash_attention_recompute: Optional[bool] = False,
+        flash_attention_causal_mask: Optional[bool] = False,
         **kwargs,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
         """
@@ -199,6 +201,8 @@ class GaudiMistralAttention(MistralAttention):
          - add new args reuse_cache
          - add new args cache_idx
          - add new args use_flash_attention
+         - add new arg flash_attention_recompute
+         - add new arg flash_attention_causal_mask
         """
         if "padding_mask" in kwargs:
             warnings.warn(
@@ -273,10 +277,16 @@ class GaudiMistralAttention(MistralAttention):
                     )
             else:
                 # first token
-                with ht.sdp_kernel(enable_recompute=False):
-                    attn_output = FusedSDPA.apply(query_states, key_states, value_states, None, 0.0, True, None)
+                if flash_attention_causal_mask:
+                    # causal masking on first token requires inputs to be of the same length
+                    with ht.sdp_kernel(enable_recompute=flash_attention_recompute):
+                        attn_output = FusedSDPA.apply(query_states, key_states, value_states, None, 0.0, True, None)
+                else:
+                    with ht.sdp_kernel(enable_recompute=flash_attention_recompute):
+                        attn_output = FusedSDPA.apply(
+                            query_states, key_states, value_states, attention_mask, 0.0, False, None
+                        )
         else:
-
             attn_weights = self.matmul_qk(query_states, key_states.transpose(-2, -1)) / math.sqrt(self.head_dim)
 
             if attn_weights.size() not in [
@@ -356,8 +366,10 @@ class GaudiMistralDecoderLayer(MistralDecoderLayer):
         attn_softmax_bf16: Optional[bool] = False,
         reuse_cache: Optional[bool] = False,
         use_fused_rope: Optional[bool] = True,
-        use_flash_attention: Optional[bool] = False,
         cache_idx: Optional[int] = None,
+        use_flash_attention: Optional[bool] = False,
+        flash_attention_recompute: Optional[bool] = False,
+        flash_attention_causal_mask: Optional[bool] = False,
         **kwargs,
     ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
         """
@@ -389,6 +401,8 @@ class GaudiMistralDecoderLayer(MistralDecoderLayer):
             use_fused_rope=use_fused_rope,
             cache_idx=cache_idx,
             use_flash_attention=use_flash_attention,
+            flash_attention_recompute=flash_attention_recompute,
+            flash_attention_causal_mask=flash_attention_causal_mask,
         )
         hidden_states = residual + hidden_states
 
@@ -435,6 +449,8 @@ class GaudiMistralModel(MistralModel):
         use_fused_rope: Optional[bool] = True,
         lazy_mode: Optional[bool] = True,
         use_flash_attention: Optional[bool] = False,
+        flash_attention_recompute: Optional[bool] = False,
+        flash_attention_causal_mask: Optional[bool] = False,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
         """
         Copied from MistralModel.forward: https://github.com/huggingface/transformers/blob/v4.34.1/src/transformers/models/mistral/modeling_mistral.py
@@ -543,6 +559,8 @@ class GaudiMistralModel(MistralModel):
                     None,
                     use_fused_rope,
                     use_flash_attention,
+                    flash_attention_recompute,
+                    flash_attention_causal_mask,
                 )
             else:
                 layer_outputs = decoder_layer(
@@ -558,6 +576,8 @@ class GaudiMistralModel(MistralModel):
                     attn_softmax_bf16=attn_softmax_bf16,
                     use_fused_rope=use_fused_rope,
                     use_flash_attention=use_flash_attention,
+                    flash_attention_recompute=flash_attention_recompute,
+                    flash_attention_causal_mask=flash_attention_causal_mask,
                 )
 
             hidden_states = layer_outputs[0]
@@ -621,6 +641,8 @@ class GaudiMistralForCausalLM(MistralForCausalLM):
         use_fused_rope: Optional[bool] = True,
         lazy_mode: Optional[bool] = True,
         use_flash_attention: Optional[bool] = False,
+        flash_attention_recompute: Optional[bool] = False,
+        flash_attention_causal_mask: Optional[bool] = False,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         """
         Inherits from MistralForCausalLM: https://github.com/huggingface/transformers/blob/v4.34.1/src/transformers/models/mistral/modeling_mistral.py
@@ -652,6 +674,8 @@ class GaudiMistralForCausalLM(MistralForCausalLM):
             use_fused_rope=use_fused_rope,
             lazy_mode=lazy_mode,
             use_flash_attention=use_flash_attention,
+            flash_attention_recompute=flash_attention_recompute,
+            flash_attention_causal_mask=flash_attention_causal_mask,
         )
         hidden_states = outputs[0]
         _, seq_len, _ = hidden_states.shape
@@ -764,6 +788,8 @@ class GaudiMistralForCausalLM(MistralForCausalLM):
                 "attn_softmax_bf16": kwargs.get("attn_softmax_bf16"),
                 "lazy_mode": kwargs.get("lazy_mode"),
                 "use_flash_attention": kwargs.get("use_flash_attention"),
+                "flash_attention_recompute": kwargs.get("flash_attention_recompute"),
+                "flash_attention_causal_mask": kwargs.get("flash_attention_causal_mask"),
             }
         )
         return model_inputs

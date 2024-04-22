@@ -20,9 +20,6 @@ def gaudi_MambaForCausalLM_prepare_inputs_for_generation(
     ):
         token_idx = kwargs.get("token_idx", None)
         token_idx_cpu = kwargs.get("token_idx_cpu", None)
-        print("libin debug prepare input ", token_idx)
-        # only last token for inputs_ids if the state is passed along.
-        #import pdb;pdb.set_trace()
         if cache_params is not None:
             if token_idx is None:
                 input_ids = input_ids[:, -1].unsqueeze(-1)

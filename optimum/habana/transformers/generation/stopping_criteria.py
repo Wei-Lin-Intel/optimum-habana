@@ -48,11 +48,10 @@ def gaudi_MaxNewTokensCriteria_call(self, input_ids: torch.LongTensor, scores: t
 def gaudi_StoppingCriteriaList_call(self, input_ids: torch.LongTensor, scores: torch.FloatTensor, **kwargs) -> torch.BoolTensor:
     # # from https://github.com/huggingface/transformers/blob/v4.39.2/src/transformers/generation/stopping_criteria.py
     token_idx = kwargs.get("token_idx", None)
-    if token_idx is not None:
-        is_done = torch.full((1,), 0, device=input_ids.device)
+    if token_idx is not None: #TODO: check device
+        is_done = torch.full((1,), 0) #, device=input_ids.device)
     else:
-        is_done = torch.full((input_ids.shape[0],), 0, device=input_ids.device)
+        is_done = torch.full((input_ids.shape[0],), 0) #, device=input_ids.device)
     for criteria in self:
         is_done = is_done | criteria(input_ids, scores, **kwargs)
     return is_done
-    

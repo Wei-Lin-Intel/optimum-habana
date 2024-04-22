@@ -260,68 +260,46 @@ class GaudiLlamaAttention(nn.Module):
         self.reorder(self.v_cache.cache, beam_idx, seq_length, head_dim)
         return (self.k_cache.cache.shape, self.v_cache.cache.shape)
 
-    def pre_attn_forward(
+    def post_sdpa_(
         self,
-        hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_value: Optional[Cache] = None,
-        output_attentions: bool = False,
-        use_cache: bool = False,
-        token_idx: Optional[torch.Tensor] = None,
-        attn_softmax_bf16: Optional[bool] = False,
-        reuse_cache: Optional[bool] = False,
-        use_flash_attention: Optional[bool] = False,
-        flash_attention_recompute: Optional[bool] = False,
-        flash_attention_causal_mask: Optional[bool] = False,
-        cache_idx: int = None,
-        use_fused_rope: Optional[bool] = True,
-        **kwargs,
-    ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
-        """
-        Copied from LlamaAttention.forward: https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llama.py
-        The only differences are:
-        - add new args token_idx
-        - optimize KV cache
-        - add new args attn_softmax_bf16
-        - add new args reuse_cache
-        - add new args use_flash_attention
-        - add new arg flash_attention_recompute
-        - add new arg flash_attention_causal_mask
-        """
-        if "padding_mask" in kwargs:
-            warnings.warn(
-                "Passing `padding_mask` is deprecated and will be removed in v4.37. Please make sure use `attention_mask` instead.`"
+        attn_output,
+        bsz,
+        q_len,
+    ):
+        if attn_output.size() != (bsz, self.num_heads, q_len, self.head_dim):
+            raise ValueError(
+                f"`attn_output` should be of size {(bsz, self.num_heads, q_len, self.head_dim)}, but is"
+                f" {attn_output.size()}"
             )
 
-        bsz, q_len, _ = hidden_states.size()
+        attn_output = attn_output.transpose(1, 2).contiguous()
 
-        if self.config.pretraining_tp > 1:
-            key_value_slicing = (self.num_key_value_heads * self.head_dim) // self.config.pretraining_tp
-            query_slices = self.q_proj.weight.split(
-                (self.num_heads * self.head_dim) // self.config.pretraining_tp, dim=0
-            )
-            key_slices = self.k_proj.weight.split(key_value_slicing, dim=0)
-            value_slices = self.v_proj.weight.split(key_value_slicing, dim=0)
+        attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
 
-            query_states = [F.linear(hidden_states, query_slices[i]) for i in range(self.config.pretraining_tp)]
-            query_states = torch.cat(query_states, dim=-1)
+        attn_output = self.o_proj(attn_output)
+        return attn_output
 
-            key_states = [F.linear(hidden_states, key_slices[i]) for i in range(self.config.pretraining_tp)]
-            key_states = torch.cat(key_states, dim=-1)
-
-            value_states = [F.linear(hidden_states, value_slices[i]) for i in range(self.config.pretraining_tp)]
-            value_states = torch.cat(value_states, dim=-1)
-
-        else:
-            qkv_states = self.qkv_proj(hidden_states)
-            query_states, key_states, value_states = torch.split(
-                qkv_states, [self.dim1, self.dim2, self.dim2], dim=-1
-            )
-            # query_states = self.q_proj(hidden_states)
-            # key_states = self.k_proj(hidden_states)
-            # value_states = self.v_proj(hidden_states)
-
+    def pre_sdpa_(
+        self,
+        hidden_states,
+        bsz,
+        q_len,
+        token_idx,
+        use_cache,
+        reuse_cache,
+        position_ids,
+        cache_idx,
+        use_fused_rope,
+        past_key_value,
+        attention_mask,
+        use_flash_attention,
+        flash_attention_recompute,
+        flash_attention_causal_mask,
+    ):
+        qkv_states = self.qkv_proj(hidden_states)
+        query_states, key_states, value_states = torch.split(
+            qkv_states, [self.dim1, self.dim2, self.dim2], dim=-1
+        )
         query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
         # TODO: update when auto mp params is enabled in DeepSpeed (cf. https://github.com/HabanaAI/DeepSpeed/blob/94309c7b5dfc1a69858f5c9f25737b2f81a332a5/deepspeed/module_inject/replace_module.py#L440)
         key_states = key_states.view(bsz, q_len, -1, self.head_dim).transpose(1, 2)
@@ -372,89 +350,33 @@ class GaudiLlamaAttention(nn.Module):
         else:
             past_key_value = None
 
+        return query_states, key_states, value_states
+
+    def sdpa_(
+        self,
+        query_states: torch.Tensor,
+        key_states: torch.Tensor,
+        value_states: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        past_key_value: Optional[Cache] = None,
+        use_flash_attention: Optional[bool] = False,
+        flash_attention_recompute: Optional[bool] = False,
+        flash_attention_causal_mask: Optional[bool] = False,
+    ):
         if use_flash_attention and FusedSDPA:
             import habana_frameworks.torch.hpu as ht
-
-            if q_len == 1:
-                # next token
-                with ht.sdp_kernel(enable_recompute=False):
+            # first token
+            if flash_attention_causal_mask:
+                global fast_softmax_mode
+                # causal masking on first token requires inputs to be of the same lenght
+                with ht.sdp_kernel(enable_recompute=flash_attention_recompute):
+                    attn_output = FusedSDPA.apply(query_states, key_states, value_states, None, 0.0, True, None, fast_softmax_mode)
+            else:
+                with ht.sdp_kernel(enable_recompute=flash_attention_recompute):
                     attn_output = FusedSDPA.apply(
                         query_states, key_states, value_states, attention_mask, 0.0, False, None
                     )
-            else:
-                # first token
-                if flash_attention_causal_mask:
-                    global fast_softmax_mode
-                    # causal masking on first token requires inputs to be of the same lenght
-                    with ht.sdp_kernel(enable_recompute=flash_attention_recompute):
-                        attn_output = FusedSDPA.apply(query_states, key_states, value_states, None, 0.0, True, None, fast_softmax_mode)
-                else:
-                    with ht.sdp_kernel(enable_recompute=flash_attention_recompute):
-                        attn_output = FusedSDPA.apply(
-                            query_states, key_states, value_states, attention_mask, 0.0, False, None
-                        )
-
-        else:
-            query_states, key_states, value_states, attention_mask = gaudi_llama_repeat_kv(
-                query_states, key_states, value_states, attention_mask, self.num_key_value_groups
-            )
-
-            attn_weights = self.matmul_qk(query_states, key_states.transpose(-2, -1)) * self.norm_factor
-
-            if attn_weights.size() != (bsz, self.num_heads, q_len, kv_seq_len) and attn_weights.size() != (
-                bsz,
-                self.num_key_value_heads,
-                self.num_key_value_groups,
-                q_len,
-                kv_seq_len,
-            ):
-                raise ValueError(
-                    f"Attention weights should be of size {(bsz, self.num_heads, q_len, kv_seq_len)} or"
-                    f" {(bsz, self.num_key_value_heads, self.num_key_value_groups, q_len, kv_seq_len)}, but is"
-                    f" {attn_weights.size()}"
-                )
-
-            if attention_mask is not None:
-                if attention_mask.size() != (bsz, 1, q_len, kv_seq_len) and attention_mask.size() != (
-                    bsz,
-                    1,
-                    1,
-                    q_len,
-                    kv_seq_len,
-                ):
-                    raise ValueError(
-                        f"Attention mask should be of size {(bsz, 1, q_len, kv_seq_len)} or {(bsz, 1, 1, q_len, kv_seq_len)},"
-                        f" but is {attention_mask.size()}"
-                    )
-                attn_weights = attn_weights + attention_mask
-
-            if attn_softmax_bf16:
-                attn_weights = torch.nn.functional.softmax(attn_weights, dim=-1, dtype=query_states.dtype)
-            else:
-                # upcast attention to fp32
-                attn_weights = torch.nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(
-                    query_states.dtype
-                )
-            attn_weights = torch.nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)
-            attn_output = self.matmul_av(attn_weights, value_states)
-            attn_output = attn_output.reshape(bsz, -1, q_len, self.head_dim)
-
-        if attn_output.size() != (bsz, self.num_heads, q_len, self.head_dim):
-            raise ValueError(
-                f"`attn_output` should be of size {(bsz, self.num_heads, q_len, self.head_dim)}, but is"
-                f" {attn_output.size()}"
-            )
-
-        attn_output = attn_output.transpose(1, 2).contiguous()
-
-        attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
-
-        attn_output = self.o_proj(attn_output)
-
-        if not output_attentions:
-            attn_weights = None
-
-        return attn_output, attn_weights, past_key_value
+        return attn_output, None, past_key_value
 
     def attention_all_reduce(self, attn_output):
         if hasattr(self.o_proj, "all_reduce"):
@@ -555,75 +477,50 @@ class GaudiLlamaDecoderLayer(LlamaDecoderLayer):
             )
 
         residual = hidden_states
-        output_pre_attn, self_attn_weights, present_key_value = self.pre_attn(
-            hidden_states,
+
+        query_states, key_states, value_states,bsz,q_len = self._gradient_checkpointing_func(
+        # query_states, key_states, value_states,bsz,q_len = self.pre_sdpa(
+                    self.pre_sdpa.__call__,
+                    hidden_states,
+                    token_idx,
+                    use_cache,
+                    reuse_cache,
+                    position_ids,
+                    cache_idx,
+                    use_fused_rope,
+                    past_key_value,
+                    attention_mask,
+                    use_flash_attention,
+                    flash_attention_recompute,
+                    flash_attention_causal_mask,
+                    )
+
+        output_pre_attn, self_attn_weights, present_key_value = self.sdpa(
+            query_states,
+            key_states,
+            value_states,
             attention_mask,
-            position_ids,
             past_key_value,
-            output_attentions,
-            use_cache,
-            token_idx,
-            attn_softmax_bf16,
-            reuse_cache,
-            use_flash_attention=use_flash_attention,
-            flash_attention_recompute=flash_attention_recompute,
-            flash_attention_causal_mask=flash_attention_causal_mask,
-            cache_idx=cache_idx,
-            use_fused_rope=use_fused_rope,
-            **kwargs,
-        )
-        self.self_attn.attention_all_reduce(output_pre_attn)
-        output_post_attn_pre_mlp, residual_mlp = self.post_attn_pre_mlp(output_pre_attn, residual)
-        self.mlp.mlp_all_reduce(output_post_attn_pre_mlp)
-        output_post_mlp = self.post_mlp(output_post_attn_pre_mlp, residual_mlp)
-
-        outputs = (output_post_mlp,)
-
-        if output_attentions:
-            outputs += (self_attn_weights,)
-        if use_cache:
-            outputs += (present_key_value,)
-
-        return outputs
-
-    def pre_attn(
-        self,
-        hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_value: Optional[Tuple[torch.Tensor]] = None,
-        output_attentions: Optional[bool] = False,
-        use_cache: Optional[bool] = False,
-        token_idx: Optional[torch.Tensor] = None,
-        attn_softmax_bf16: Optional[bool] = False,
-        reuse_cache: Optional[bool] = False,
-        use_flash_attention: Optional[bool] = False,
-        flash_attention_recompute: Optional[bool] = False,
-        flash_attention_causal_mask: Optional[bool] = False,
-        cache_idx: int = None,
-        use_fused_rope: Optional[bool] = True,
-    ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
-        hidden_states = self.input_layernorm(hidden_states)
-        output_attn, attn_weights, present_key_value = self.self_attn.pre_attn_forward(
-            hidden_states,
-            attention_mask,
-            position_ids,
-            past_key_value,
-            output_attentions,
-            use_cache,
-            token_idx,
-            attn_softmax_bf16,
-            reuse_cache,
             use_flash_attention,
             flash_attention_recompute,
             flash_attention_causal_mask,
-            cache_idx=cache_idx,
-            use_fused_rope=use_fused_rope,
+            )
+        
+        output_pre_attn  = self.post_sdpa(
+            output_pre_attn,
+            bsz,
+            q_len,
         )
-        return output_attn, attn_weights, present_key_value
+        self.self_attn.attention_all_reduce(output_pre_attn)
+        output_post_attn = self.self_attn.post_attn_forward(output_pre_attn)
+        
+        return self._gradient_checkpointing_func(
+            self.fused_all.__call__,
+            output_post_attn,                  
+            bsz,
+            q_len,residual)
 
-    def post_attn_pre_mlp(self, input, residual):
-        output_post_attn = self.self_attn.post_attn_forward(input)
+    def post_attn_pre_mlp(self, output_post_attn, residual):
 
         hidden_states = residual + output_post_attn
         residual = hidden_states
@@ -634,10 +531,93 @@ class GaudiLlamaDecoderLayer(LlamaDecoderLayer):
         return hidden_states, residual
 
     def post_mlp(self, input, residual):
+        self.mlp.mlp_all_reduce(input)
         output_post_mlp = self.mlp.post_mlp_forward(input)
         output = output_post_mlp + residual
         return output
 
+
+    def pre_sdpa(self,hidden_states,
+        token_idx,
+        use_cache,
+        reuse_cache,
+        position_ids,
+        cache_idx,
+        use_fused_rope,
+        past_key_value,
+        attention_mask,
+        use_flash_attention,
+        flash_attention_recompute,
+        flash_attention_causal_mask, ):
+        
+        hidden_states = self.input_layernorm(
+            hidden_states,
+            )
+
+        bsz, q_len, _  = hidden_states.size()
+
+        query_states, key_states, value_states = self.self_attn.pre_sdpa_(
+            hidden_states,
+            bsz,
+            q_len,
+            token_idx,
+            use_cache,
+            reuse_cache,
+            position_ids,
+            cache_idx,
+            use_fused_rope,
+            past_key_value,
+            attention_mask,
+            use_flash_attention,
+            flash_attention_recompute,
+            flash_attention_causal_mask, )
+
+        return query_states, key_states, value_states, bsz, q_len
+    
+        # output_pre_attn, self_attn_weights, present_key_value = self.self_attn.sdpa_(
+        #     query_states,
+        #     key_states,
+        #     value_states,
+        #     attention_mask,
+        #     past_key_value,
+        #     use_flash_attention,
+        #     flash_attention_recompute,
+        #     flash_attention_causal_mask,
+        #     )
+        # return output_pre_attn, self_attn_weights, present_key_value, bsz, q_len
+
+    def sdpa(self,query_states, key_states, value_states,attention_mask,
+            past_key_value,
+            use_flash_attention,
+            flash_attention_recompute,
+            flash_attention_causal_mask,): 
+        return self.self_attn.sdpa_(
+            query_states,
+            key_states,
+            value_states,
+            attention_mask,
+            past_key_value,
+            use_flash_attention,
+            flash_attention_recompute,
+            flash_attention_causal_mask,)
+    
+    def post_sdpa(self,output_pre_attn,bsz,q_len,):
+        return self.self_attn.post_sdpa_(output_pre_attn,bsz,q_len,)
+
+    def fused_all(self,
+            output_pre_attn,                  
+            bsz,
+            q_len,residual):
+
+        output_post_attn_pre_mlp, residual_mlp  = self.post_attn_pre_mlp(
+                    output_pre_attn,
+                    residual,
+                )
+        output_post_mlp = self.post_mlp(
+                    output_post_attn_pre_mlp,
+                    residual_mlp,
+                )
+        return (output_post_mlp,)
 
 class GaudiLlamaModel(LlamaModel):
     def __init__(self, config: LlamaConfig):
@@ -754,7 +734,7 @@ class GaudiLlamaModel(LlamaModel):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
-            if self.gradient_checkpointing and self.training:
+            if False:
                 layer_outputs = self._gradient_checkpointing_func(
                     decoder_layer.__call__,
                     hidden_states,
@@ -771,6 +751,7 @@ class GaudiLlamaModel(LlamaModel):
                     use_fused_rope,
                 )
             else:
+                decoder_layer._gradient_checkpointing_func = self._gradient_checkpointing_func
                 layer_outputs = decoder_layer(
                     hidden_states,
                     attention_mask=attention_mask,

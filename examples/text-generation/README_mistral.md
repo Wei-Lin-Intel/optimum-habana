@@ -115,5 +115,6 @@ QUANT_CONFIG=./quantization_config/maxabs_measure.json python run_lm_eval.py \
 --use_kv_cache \
 --reuse_cache \
 --bf16 \
---batch_size 1
+--batch_size 1 \
+--fp8
 ```

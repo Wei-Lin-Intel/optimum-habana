@@ -46,6 +46,14 @@ except ImportError:
     print("Not using HPU fused scaled dot-product attention kernel.")
     FusedSDPA = None
 
+try:
+    from habana_frameworks.torch.hpex.experimental.transformer_engine.distributed import activation_checkpointing
+    has_activation_checkpointing_module = True
+
+except ImportError:
+    warnings.warn(f"Warning! Failed to import TE activation_checkpointing")
+    has_activation_checkpointing_module = False
+
 fast_softmax_mode = 'None'
 
 def update(prev, cur, dim, idx, inp_seq_len):
@@ -478,6 +486,8 @@ class GaudiLlamaDecoderLayer(LlamaDecoderLayer):
 
         residual = hidden_states
 
+        self.pre_sdpa = activation_checkpointing()(self.pre_sdpa)
+
         query_states, key_states, value_states,bsz,q_len = self._gradient_checkpointing_func(
         # query_states, key_states, value_states,bsz,q_len = self.pre_sdpa(
                     self.pre_sdpa.__call__,
@@ -513,6 +523,8 @@ class GaudiLlamaDecoderLayer(LlamaDecoderLayer):
         )
         self.self_attn.attention_all_reduce(output_pre_attn)
         output_post_attn = self.self_attn.post_attn_forward(output_pre_attn)
+
+        self.fused_all = activation_checkpointing()(self.fused_all)
         
         return self._gradient_checkpointing_func(
             self.fused_all.__call__,

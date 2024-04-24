@@ -94,6 +94,13 @@ if is_fp8_available():
 
 logger = get_logger(__name__)
 
+def set_fp8_context(model, fp8_recipe_handler):
+    for _, module in model.named_children():
+        if isinstance(module, te.Linear):
+            SwitchableForwardMaker.convert(module, fp8_recipe_handler)
+        else:
+            set_fp8_context(module, fp8_recipe_handler)
+
 class SwitchableForwardMaker:
     def __init__(self, module, fp8_recipe_handler, use_activation_checkpointing=False):
         self.original_forward = module.forward
@@ -256,7 +263,7 @@ class GaudiAccelerator(Accelerator):
 
         if self.fp8_recipe_handler is None and self.state.is_fp8_enabled:
             self.fp8_recipe_handler = te.recipe.DelayedScaling(
-                fp8_format=te.recipe.Format.E5M2,
+                fp8_format=te.recipe.Format.HYBRID,
                 margin=0,
                 interval=16,
                 amax_history_len=1,
@@ -707,9 +714,7 @@ class GaudiAccelerator(Accelerator):
             self.deepspeed_engine_wrapped = DeepSpeedEngineWrapper(engine)
 
             if self.state.is_fp8_enabled:
-                for _layer in engine.module.base_model.model.model.layers:
-                    SwitchableForwardMaker.convert(_layer, self.fp8_recipe_handler, use_activation_checkpointing=engine.module.is_gradient_checkpointing)
-                SwitchableForwardMaker.convert(engine.module.base_model.model.lm_head, self.fp8_recipe_handler)
+                set_fp8_context(engine, self.fp8_recipe_handler)
 
             self._models.append(engine)
             if optimizer is not None:

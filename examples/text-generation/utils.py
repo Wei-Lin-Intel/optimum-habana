@@ -170,6 +170,9 @@ def setup_model(args, model_dtype, model_kwargs, logger):
         from transformers import GPTQConfig
         quantization_config = GPTQConfig(bits=4, disable_exllama=True)
         model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path, torch_dtype=model_dtype, quantization_config=quantization_config, **model_kwargs)
+        for name, mod in model.named_modules():
+            if mod.has_attribute("preprocessing"):
+                mod.preprocessing()
     else:
         model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path, torch_dtype=model_dtype, **model_kwargs)
     if args.quant_config:

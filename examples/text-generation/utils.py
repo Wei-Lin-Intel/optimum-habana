@@ -171,8 +171,8 @@ def setup_model(args, model_dtype, model_kwargs, logger):
         quantization_config = GPTQConfig(bits=4, disable_exllama=True)
         model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path, torch_dtype=model_dtype, quantization_config=quantization_config, **model_kwargs)
         def run_preprocessing(model):
-            for name, mod in model.named_modules():
-                if mod.has_attribute("preprocessing"):
+            for name, mod in model.named_children():
+                if hasattr(mod, "preprocessing"):
                     mod.preprocessing()
                 run_preprocessing(mod)
         run_preprocessing(model)

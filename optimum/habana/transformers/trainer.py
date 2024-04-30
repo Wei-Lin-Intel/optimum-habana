@@ -96,6 +96,7 @@ from ..utils import (
     speed_metrics,
     to_device_dtype,
 )
+
 from .gaudi_configuration import GAUDI_CONFIG_NAME, GaudiConfig
 from .integrations.deepspeed import deepspeed_init
 from .trainer_utils import convert_into_dtypes, get_dtype
@@ -122,6 +123,8 @@ if is_accelerate_available():
         load_fsdp_optimizer,
         save_fsdp_optimizer,
     )
+
+import habana_frameworks.torch.hpex.experimental.transformer_engine as te
 
 if TYPE_CHECKING:
     import optuna
@@ -1498,18 +1501,19 @@ class GaudiTrainer(Trainer):
         model.train()
         inputs = self._prepare_inputs(inputs)
 
-        with self.compute_loss_context_manager():
-            loss = self.compute_loss(model, inputs)
+        with te.fp8_autocast(enabled=True, fp8_recipe=self.accelerator.fp8_recipe_handler):
+            with self.compute_loss_context_manager():
+                loss = self.compute_loss(model, inputs)
 
-        if self.args.n_gpu > 1:
-            loss = loss.mean()  # mean() to average on multi-gpu parallel training
+            if self.args.n_gpu > 1:
+                loss = loss.mean()  # mean() to average on multi-gpu parallel training
 
-        if self.args.use_lazy_mode and self.args.pipelining_fwd_bwd:
-            self.htcore.mark_step()
+            if self.args.use_lazy_mode and self.args.pipelining_fwd_bwd:
+                self.htcore.mark_step()
 
-        self.accelerator.backward(loss)
+            self.accelerator.backward(loss)
 
-        return loss.detach() / self.args.gradient_accumulation_steps
+            return loss.detach() / self.args.gradient_accumulation_steps
 
     def save_model(self, output_dir: Optional[str] = None, _internal_call: bool = False):
         """

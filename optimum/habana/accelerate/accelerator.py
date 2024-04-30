@@ -97,7 +97,7 @@ logger = get_logger(__name__)
 class SwitchableForwardMaker:
     def __init__(self, module, fp8_recipe_handler, use_activation_checkpointing=False):
         self.original_forward = module.forward
-        self.fp8_forward = te.fp8_autocast(enabled=True, fp8_recipe=fp8_recipe_handler)(module.forward)
+        self.fp8_forward = module.forward
         if use_activation_checkpointing:
             self.fp8_forward = activation_checkpointing()(self.fp8_forward)
         self.module = module

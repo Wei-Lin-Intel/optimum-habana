@@ -56,7 +56,7 @@ python run_qa.py \
   --throughput_warmup_steps 3 \
   --bf16
 ```
-
+NOTE: To use eager mode with torch.compile enabled, just set `--use_lazy_mode False` and add `--torch_compile` and `--torch_compile_backend hpu_backend`.
 
 ### Multi-card Training
 
@@ -83,7 +83,7 @@ python ../gaudi_spawn.py \
     --throughput_warmup_steps 3 \
     --bf16
 ```
-
+NOTE: To use eager mode with torch.compile enabled, just set `--use_lazy_mode False` and add `--torch_compile` and `--torch_compile_backend hpu_backend`.
 
 ### Using DeepSpeed
 
@@ -110,6 +110,7 @@ python ../gaudi_spawn.py \
     --throughput_warmup_steps 3 \
     --deepspeed path_to_my_deepspeed_config
 ```
+NOTE: To use eager mode with torch.compile enabled, just set `--use_lazy_mode False` and add `--torch_compile` and `--torch_compile_backend hpu_backend`.
 
 You can look at the [documentation](https://huggingface.co/docs/optimum/habana/usage_guides/deepspeed) for more information about how to use DeepSpeed in Optimum Habana.
 Here is a DeepSpeed configuration you can use to train your models on Gaudi:

@@ -278,14 +278,6 @@ class GaudiMistralAttention(MistralAttention):
                         attn_output = FusedSDPA.apply(
                             query_states, key_states, value_states, attention_mask, 0.0, False, None
                         )
-        elif FusedSDPA and not self.training and q_len == key_states.size(-2) and q_len > 8192:
-            # support long sequences exceeding 8192
-            # for shorter sequences, do not use fusedSDPA(due to perf degradation)
-            import habana_frameworks.torch.hpu as ht
-
-            use_recompute = True if os.getenv("QUANT_CONFIG", "") else False
-            with ht.sdp_kernel(enable_recompute=use_recompute):
-                attn_output = FusedSDPA.apply(query_states, key_states, value_states, attention_mask, 0.0, False, None)
         else:
             # repeat k/v heads if n_kv_heads < n_heads
             query_states, key_states, value_states, attention_mask = gaudi_mistral_repeat_kv(

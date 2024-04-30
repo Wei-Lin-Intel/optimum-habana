@@ -62,48 +62,12 @@ except ImportError:
     print("Not using HPU fused kernel for RMSNorm")
     FusedRMSNorm = None
 
-'''
-class KVCache(torch.nn.Module):
-    def __init__(self):
-        super(KVCache, self).__init__()
-        self.cache = None
-        self.inp_seq_len = -1
+try:
+    from habana_frameworks.torch.hpex.kernels import FusedSDPA
+except ImportError:
+    print("Not using HPU fused scaled dot-product attention kernel.")
+    FusedSDPA = None
 
-    def allocate(self, inp_seq_len, dtype, device, shape):
-        if self.cache is None or self.cache.shape != shape:
-            self.inp_seq_len = inp_seq_len
-            self.cache = torch.zeros(shape, dtype=dtype, device=device)
-        else:
-            assert (
-                self.inp_seq_len == inp_seq_len
-            ), f"inp_seq_len must be the same. self.inp_seq_len:{self.inp_seq_len} inp_seq_len:{inp_seq_len}"
-            self.cache.fill_(0)
-
-    def update(self, prev, cur, dim, idx, inp_seq_len):
-        orig_cur = cur
-        if prev.shape == cur.shape:
-            prev.copy_(cur)
-            return orig_cur
-        if cur.shape[2] > 1 and cur.shape[2] <= prev.shape[2]:
-            # Initialize
-            prev[:, :, :inp_seq_len, :].copy_(cur)
-            return orig_cur
-        assert cur.shape[2] == 1, f"Cannot update kv-cache. Unsupported shapes. prev:{prev.shape} cur:{cur.shape}"
-        if idx is not None:
-            prev.index_copy_(dim, idx - 1, cur)
-            return prev
-        else:
-            return torch.cat((prev, cur), dim=dim)
-
-    def get_shape(self):
-        if self.cache is None:
-            return None
-        return self.cache.shape
-
-    def forward(self, cur, dim, idx):
-        return self.update(self.cache, cur, dim, idx, self.inp_seq_len)
-
-'''
 class Matmul(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -190,6 +154,7 @@ class GaudiMistralAttention(MistralAttention):
         self.matmul_qk = Matmul()
         self.matmul_av = Matmul()
         self.inp_seq_len = -1
+        self.norm_factor = 1.0 / math.sqrt(self.head_dim)
 
     def allocate_kv_cache(self, batch_size, max_seq_len, inp_seq_len):
         cache_shape = (batch_size, self.num_key_value_heads, max_seq_len, self.head_dim)
@@ -225,6 +190,9 @@ class GaudiMistralAttention(MistralAttention):
         cache_idx: Optional[int] = None,
         attn_softmax_bf16: Optional[bool] = False,
         use_fused_rope: Optional[bool] = True,
+        use_flash_attention: Optional[bool] = False,
+        flash_attention_recompute: Optional[bool] = False,
+        flash_attention_causal_mask: Optional[bool] = False,
         **kwargs,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
         """
@@ -291,39 +259,67 @@ class GaudiMistralAttention(MistralAttention):
         else:
             past_key_value = None
 
-        # repeat k/v heads if n_kv_heads < n_heads
-        query_states, key_states, value_states, attention_mask = gaudi_mistral_repeat_kv(
-            query_states, key_states, value_states, attention_mask, self.num_key_value_groups
-        )
-        attn_weights = self.matmul_qk(query_states, key_states.transpose(-2, -1)) / math.sqrt(self.head_dim)
+        if use_flash_attention and FusedSDPA:
+            import habana_frameworks.torch.hpu as ht
+            if q_len == 1:
+                # next token
+                with ht.sdp_kernel(enable_recompute=False):
+                    attn_output = FusedSDPA.apply(
+                        query_states, key_states, value_states, attention_mask, 0.0, False, None
+                    )
+            else:
+                # first token
+                if flash_attention_causal_mask:
+                    # causal masking on first token requires inputs to be of the same length
+                    with ht.sdp_kernel(enable_recompute=flash_attention_recompute):
+                        attn_output = FusedSDPA.apply(query_states, key_states, value_states, None, 0.0, True, None)
+                else:
+                    with ht.sdp_kernel(enable_recompute=flash_attention_recompute):
+                        attn_output = FusedSDPA.apply(
+                            query_states, key_states, value_states, attention_mask, 0.0, False, None
+                        )
+        elif FusedSDPA and not self.training and q_len == key_states.size(-2) and q_len > 8192:
+            # support long sequences exceeding 8192
+            # for shorter sequences, do not use fusedSDPA(due to perf degradation)
+            import habana_frameworks.torch.hpu as ht
 
-        if attn_weights.size() not in [
-            (bsz, self.num_heads, q_len, kv_seq_len),
-            (bsz, self.num_key_value_heads, self.num_key_value_groups, q_len, kv_seq_len),
-        ]:
-            raise ValueError(
-                f"Attention weights should be of size {(bsz, self.num_heads, q_len, kv_seq_len)} or"
-                f" {(bsz, self.num_key_value_heads, self.num_key_value_groups, q_len, kv_seq_len)}, but is"
-                f" {attn_weights.size()}"
+            use_recompute = True if os.getenv("QUANT_CONFIG", "") else False
+            with ht.sdp_kernel(enable_recompute=use_recompute):
+                attn_output = FusedSDPA.apply(query_states, key_states, value_states, attention_mask, 0.0, False, None)
+        else:
+            # repeat k/v heads if n_kv_heads < n_heads
+            query_states, key_states, value_states, attention_mask = gaudi_mistral_repeat_kv(
+                query_states, key_states, value_states, attention_mask, self.num_key_value_groups
             )
+            attn_weights = self.matmul_qk(query_states, key_states.transpose(-2, -1)) / math.sqrt(self.head_dim)
 
-        if attention_mask is not None:
-            if attention_mask.size() not in [(bsz, 1, q_len, kv_seq_len), (bsz, 1, 1, q_len, kv_seq_len)]:
+            if attn_weights.size() not in [
+                (bsz, self.num_heads, q_len, kv_seq_len),
+                (bsz, self.num_key_value_heads, self.num_key_value_groups, q_len, kv_seq_len),
+            ]:
                 raise ValueError(
-                    f"Attention mask should be of size {(bsz, 1, q_len, kv_seq_len)} or {(bsz, 1, 1, q_len, kv_seq_len)},"
-                    f" but is {attention_mask.size()}"
+                    f"Attention weights should be of size {(bsz, self.num_heads, q_len, kv_seq_len)} or"
+                    f" {(bsz, self.num_key_value_heads, self.num_key_value_groups, q_len, kv_seq_len)}, but is"
+                    f" {attn_weights.size()}"
                 )
 
-            attn_weights = attn_weights + attention_mask
+            if attention_mask is not None:
+                if attention_mask.size() not in [(bsz, 1, q_len, kv_seq_len), (bsz, 1, 1, q_len, kv_seq_len)]:
+                    raise ValueError(
+                        f"Attention mask should be of size {(bsz, 1, q_len, kv_seq_len)} or {(bsz, 1, 1, q_len, kv_seq_len)},"
+                        f" but is {attention_mask.size()}"
+                    )
 
-        if attn_softmax_bf16:
-            attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=query_states.dtype)
-        else:
-            # upcast attention to fp32
-            attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
-        attn_weights = nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)
-        attn_output = self.matmul_av(attn_weights, value_states)
-        attn_output = attn_output.reshape(bsz, -1, q_len, self.head_dim)
+                attn_weights = attn_weights + attention_mask
+
+            if attn_softmax_bf16:
+                attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=query_states.dtype)
+            else:
+                # upcast attention to fp32
+                attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+            attn_weights = nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)
+            attn_output = self.matmul_av(attn_weights, value_states)
+            attn_output = attn_output.reshape(bsz, -1, q_len, self.head_dim)
 
         if attn_output.size() != (bsz, self.num_heads, q_len, self.head_dim):
             raise ValueError(
@@ -375,6 +371,9 @@ class GaudiMistralDecoderLayer(MistralDecoderLayer):
         cache_idx: Optional[int] = None,
         attn_softmax_bf16: Optional[bool] = False,
         use_fused_rope: Optional[bool] = True,
+        use_flash_attention: Optional[bool] = False,
+        flash_attention_recompute: Optional[bool] = False,
+        flash_attention_causal_mask: Optional[bool] = False,
         **kwargs,
     ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
         """
@@ -399,6 +398,9 @@ class GaudiMistralDecoderLayer(MistralDecoderLayer):
             cache_idx=cache_idx,
             attn_softmax_bf16=attn_softmax_bf16,
             use_fused_rope=use_fused_rope,
+            use_flash_attention=use_flash_attention,
+            flash_attention_recompute=flash_attention_recompute,
+            flash_attention_causal_mask=flash_attention_causal_mask,
         )
         hidden_states = residual + hidden_states
 
@@ -444,6 +446,9 @@ class GaudiMistralModel(MistralModel):
         attn_softmax_bf16: Optional[bool] = False,
         use_fused_rope: Optional[bool] = True,
         lazy_mode: Optional[bool] = True,
+        use_flash_attention: Optional[bool] = False,
+        flash_attention_recompute: Optional[bool] = False,
+        flash_attention_causal_mask: Optional[bool] = False,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
         """
         Copied from MistralModel.forward: https://github.com/huggingface/transformers/blob/v4.34.1/src/transformers/models/mistral/modeling_mistral.py
@@ -552,6 +557,9 @@ class GaudiMistralModel(MistralModel):
                     use_cache,
                     None,
                     use_fused_rope,
+                    use_flash_attention,
+                    flash_attention_recompute,
+                    flash_attention_causal_mask,
                 )
             else:
                 layer_outputs = decoder_layer(
@@ -566,6 +574,9 @@ class GaudiMistralModel(MistralModel):
                     cache_idx=cache_idx,
                     attn_softmax_bf16=attn_softmax_bf16,
                     use_fused_rope=use_fused_rope,
+                    use_flash_attention=use_flash_attention,
+                    flash_attention_recompute=flash_attention_recompute,
+                    flash_attention_causal_mask=flash_attention_causal_mask,
                 )
 
             hidden_states = layer_outputs[0]
@@ -628,6 +639,9 @@ class GaudiMistralForCausalLM(MistralForCausalLM):
         attn_softmax_bf16: Optional[bool] = False,
         use_fused_rope: Optional[bool] = True,
         lazy_mode: Optional[bool] = True,
+        use_flash_attention: Optional[bool] = False,
+        flash_attention_recompute: Optional[bool] = False,
+        flash_attention_causal_mask: Optional[bool] = False,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         """
         Inherits from MistralForCausalLM: https://github.com/huggingface/transformers/blob/v4.34.1/src/transformers/models/mistral/modeling_mistral.py
@@ -658,6 +672,10 @@ class GaudiMistralForCausalLM(MistralForCausalLM):
             attn_softmax_bf16=attn_softmax_bf16,
             use_fused_rope=use_fused_rope,
             lazy_mode=lazy_mode,
+            use_flash_attention=use_flash_attention,
+            flash_attention_recompute=flash_attention_recompute,
+            flash_attention_causal_mask=flash_attention_causal_mask,
+
         )
         hidden_states = outputs[0]
         _, seq_len, _ = hidden_states.shape
@@ -769,6 +787,9 @@ class GaudiMistralForCausalLM(MistralForCausalLM):
                 "cache_idx": kwargs.get("cache_idx"),
                 "attn_softmax_bf16": kwargs.get("attn_softmax_bf16"),
                 "lazy_mode": kwargs.get("lazy_mode"),
+                "use_flash_attention": kwargs.get("use_flash_attention"),
+                "flash_attention_recompute": kwargs.get("flash_attention_recompute"),
+                "flash_attention_causal_mask": kwargs.get("flash_attention_causal_mask"),
             }
         )
         return model_inputs

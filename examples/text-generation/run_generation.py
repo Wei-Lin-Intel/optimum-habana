@@ -322,31 +322,31 @@ def main():
 
         def generate(input_tokens, size=None, reduce_recompile=False):
             """Generates sequences from the input sentences and returns them."""
+            with torch.no_grad():
+                t0 = time.perf_counter()
+                print(f"Step4+ starting time is {t0*1000}", flush=True)
+                if size is not None:
+                    input_tokens = adjust_batch(input_tokens, size)
 
-            t0 = time.perf_counter()
-            print(f"Step4+ starting time is {t0*1000}", flush=True)
-            if size is not None:
-                input_tokens = adjust_batch(input_tokens, size)
+                if not reduce_recompile:
+                    # Move inputs to target device(s)
+                    for t in input_tokens:
+                        if torch.is_tensor(input_tokens[t]):
+                            input_tokens[t] = input_tokens[t].to(args.device)
 
-            if not reduce_recompile:
-                # Move inputs to target device(s)
-                for t in input_tokens:
-                    if torch.is_tensor(input_tokens[t]):
-                        input_tokens[t] = input_tokens[t].to(args.device)
-
-            outputs = model.generate(
-                **input_tokens,
-                generation_config=generation_config,
-                lazy_mode=use_lazy_mode,
-                hpu_graphs=args.use_hpu_graphs,
-                profiling_steps=args.profiling_steps,
-                profiling_warmup_steps=args.profiling_warmup_steps,
-            ).cpu()
-            outputs = outputs.tolist()
-            for i in range(len(outputs)):
-                outputs[i] = outputs[i][args.max_input_tokens:]
-            duration = time.perf_counter() - t0
-            print(f"Total E2E time of this batch is {duration:.3f}s", flush=True)
+                outputs = model.generate(
+                    **input_tokens,
+                    generation_config=generation_config,
+                    lazy_mode=use_lazy_mode,
+                    hpu_graphs=args.use_hpu_graphs,
+                    profiling_steps=args.profiling_steps,
+                    profiling_warmup_steps=args.profiling_warmup_steps,
+                ).cpu()
+                outputs = outputs.tolist()
+                for i in range(len(outputs)):
+                    outputs[i] = outputs[i][args.max_input_tokens:]
+                duration = time.perf_counter() - t0
+                print(f"Total E2E time of this batch is {duration:.3f}s", flush=True)
             return outputs
 
         from optimum.habana.utils import HabanaProfile
@@ -515,39 +515,40 @@ def main():
         def generate(size=None, reduce_recompile=False):
             """Generates sequences from the input sentences and returns them."""
 
-            t0 = time.perf_counter()
-            print(f"Step4+ starting time is {t0*1000}", flush=True)
-            # Tokenization
-            if args.max_input_tokens > 0:
-                input_tokens = tokenizer.batch_encode_plus(
-                    input_sentences,
-                    return_tensors="pt",
-                    padding="max_length",
-                    max_length=args.max_input_tokens,
-                    truncation=True,
-                )
-            else:
-                input_tokens = tokenizer.batch_encode_plus(input_sentences, return_tensors="pt", padding=True)
+            with torch.no_grad():
+                t0 = time.perf_counter()
+                print(f"Step4+ starting time is {t0*1000}", flush=True)
+                # Tokenization
+                if args.max_input_tokens > 0:
+                    input_tokens = tokenizer.batch_encode_plus(
+                        input_sentences,
+                        return_tensors="pt",
+                        padding="max_length",
+                        max_length=args.max_input_tokens,
+                        truncation=True,
+                    )
+                else:
+                    input_tokens = tokenizer.batch_encode_plus(input_sentences, return_tensors="pt", padding=True)
 
-            if size is not None:
-                input_tokens = adjust_batch(input_tokens, size)
-            if not reduce_recompile:
-                # Move inputs to target device(s)
-                for t in input_tokens:
-                    if torch.is_tensor(input_tokens[t]):
-                        input_tokens[t] = input_tokens[t].to(args.device)
+                if size is not None:
+                    input_tokens = adjust_batch(input_tokens, size)
+                if not reduce_recompile:
+                    # Move inputs to target device(s)
+                    for t in input_tokens:
+                        if torch.is_tensor(input_tokens[t]):
+                            input_tokens[t] = input_tokens[t].to(args.device)
 
-            output_tokens = model.generate(
-                **input_tokens,
-                generation_config=generation_config,
-                lazy_mode=use_lazy_mode,
-                hpu_graphs=args.use_hpu_graphs,
-                profiling_steps=args.profiling_steps,
-                profiling_warmup_steps=args.profiling_warmup_steps,
-            ).cpu()
-            outputs = tokenizer.batch_decode(output_tokens, skip_special_tokens=True)
-            duration = time.perf_counter() - t0
-            print(f"Total E2E time of this iteration is {duration:.3f}s", flush=True)
+                output_tokens = model.generate(
+                    **input_tokens,
+                    generation_config=generation_config,
+                    lazy_mode=use_lazy_mode,
+                    hpu_graphs=args.use_hpu_graphs,
+                    profiling_steps=args.profiling_steps,
+                    profiling_warmup_steps=args.profiling_warmup_steps,
+                ).cpu()
+                outputs = tokenizer.batch_decode(output_tokens, skip_special_tokens=True)
+                duration = time.perf_counter() - t0
+                print(f"Total E2E time of this iteration is {duration:.3f}s", flush=True)
             return outputs
 
         from optimum.habana.utils import HabanaProfile
@@ -714,20 +715,21 @@ def main():
         dataloader = DataLoader(raw_dataset, batch_size=args.batch_size, collate_fn=collate_fn)
 
         def generate_dataset(batch):
-            prompt = tokenizer.batch_decode(batch["input_ids"], skip_special_tokens=True)
-            # Move inputs to target device(s)
-            for t in batch:
-                if torch.is_tensor(batch[t]):
-                    batch[t] = batch[t].to(args.device)
-            # Generate new sequences
-            outputs = model.generate(
-                **batch,
-                generation_config=generation_config,
-                lazy_mode=use_lazy_mode,
-                hpu_graphs=args.use_hpu_graphs,
-                profiling_steps=args.profiling_steps,
-                profiling_warmup_steps=args.profiling_warmup_steps,
-            ).cpu()
+            with torch.no_grad():
+                prompt = tokenizer.batch_decode(batch["input_ids"], skip_special_tokens=True)
+                # Move inputs to target device(s)
+                for t in batch:
+                    if torch.is_tensor(batch[t]):
+                        batch[t] = batch[t].to(args.device)
+                # Generate new sequences
+                outputs = model.generate(
+                    **batch,
+                    generation_config=generation_config,
+                    lazy_mode=use_lazy_mode,
+                    hpu_graphs=args.use_hpu_graphs,
+                    profiling_steps=args.profiling_steps,
+                    profiling_warmup_steps=args.profiling_warmup_steps,
+                ).cpu()
             return prompt, outputs
 
         # warmup

@@ -352,6 +352,8 @@ class GaudiGenerationMixin(GenerationMixin):
         model_kwargs["first_token"] = False
         if not model_kwargs.get("pad_done", False):
             # update past_key_values
+        if not model_kwargs.get("pad_done", False):
+            # update past_key_values
             model_kwargs["past_key_values"] = self._extract_past_from_model_output(
                 outputs, standardize_cache_format=standardize_cache_format
             )

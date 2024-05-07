@@ -1,3 +1,4 @@
+
 # coding=utf-8
 # Copyright 2022 The HuggingFace Inc. team. All rights reserved.
 #
@@ -12,7 +13,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-""" Testing suite for the PyTorch Swin model. """
+"""Testing suite for the PyTorch Swin model."""
 
 import collections
 import inspect
@@ -22,6 +23,7 @@ from transformers import SwinConfig
 from transformers.testing_utils import require_torch, require_vision, slow
 from transformers.utils import cached_property, is_torch_available, is_vision_available
 
+from ...test_backbone_common import BackboneTesterMixin
 from optimum.habana.transformers.modeling_utils import adapt_transformers_to_gaudi
 
 from ...test_configuration_common import ConfigTester
@@ -507,3 +509,13 @@ class SwinModelIntegrationTest(unittest.TestCase):
         self.assertEqual(outputs.logits.shape, expected_shape)
         expected_slice = torch.tensor([-0.0948, -0.6454, -0.0921]).to(torch_device)
         self.assertTrue(torch.allclose(outputs.logits[0, :3], expected_slice, atol=1e-4))
+
+
+@require_torch
+class SwinBackboneTest(unittest.TestCase, BackboneTesterMixin):
+    all_model_classes = (SwinBackbone,) if is_torch_available() else ()
+    config_class = SwinConfig
+
+    def setUp(self):
+        self.model_tester = SwinModelTester(self)
+

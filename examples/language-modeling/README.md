@@ -157,7 +157,7 @@ This example has been validated with the following DeepSpeed ZeRO-2 config: http
 
 ## RoBERTa/BERT/DistilBERT and masked language modeling
 
-The following examples fine-tune RoBERTa on WikiText-2 with eager mode and torch.compile enabled. Here too, we're using the raw WikiText-2. The loss is different as BERT/RoBERTa have a bidirectional mechanism; we're therefore using the same loss that was used during their pre-training: masked language modeling.
+The following examples fine-tune RoBERTa on WikiText-2. Here too, we're using the raw WikiText-2. The loss is different as BERT/RoBERTa have a bidirectional mechanism; we're therefore using the same loss that was used during their pre-training: masked language modeling.
 Following the RoBERTa paper, we use dynamic masking rather than static masking. The model may, therefore,
 converge slightly slower (over-fitting takes more epochs).
 
@@ -165,7 +165,7 @@ converge slightly slower (over-fitting takes more epochs).
 ### Single-card Training
 
 ```bash
-PT_HPU_LAZY_MODE=0 PT_ENABLE_INT64_SUPPORT=1 python run_mlm.py \
+python run_mlm.py \
     --model_name_or_path roberta-base \
     --dataset_name wikitext \
     --dataset_config_name wikitext-2-raw-v1 \
@@ -175,19 +175,17 @@ PT_HPU_LAZY_MODE=0 PT_ENABLE_INT64_SUPPORT=1 python run_mlm.py \
     --do_eval \
     --output_dir /tmp/test-mlm \
     --use_habana \
-    --use_lazy_mode False \
-    --torch_compile \
-    --torch_compile_backend hpu_backend \
+    --use_lazy_mode \
     --use_hpu_graphs_for_inference \
     --gaudi_config_name Habana/roberta-base \
     --throughput_warmup_steps 3 \
     --bf16
 ```
 
-To run on your own training and validation files with eager mode and torch.compile enabled, use the following command :
+To run on your own training and validation files, use the following command:
 
 ```bash
-PT_HPU_LAZY_MODE=0 PT_ENABLE_INT64_SUPPORT=1 python run_mlm.py \
+python run_mlm.py \
     --model_name_or_path roberta-base \
     --train_file path_to_train_file \
     --validation_file path_to_validation_file \
@@ -197,9 +195,7 @@ PT_HPU_LAZY_MODE=0 PT_ENABLE_INT64_SUPPORT=1 python run_mlm.py \
     --do_eval \
     --output_dir /tmp/test-mlm \
     --use_habana \
-    --use_lazy_mode False \
-    --torch_compile \
-    --torch_compile_backend hpu_backend \
+    --use_lazy_mode \
     --use_hpu_graphs_for_inference \
     --gaudi_config_name Habana/roberta-base \
     --throughput_warmup_steps 3 \
@@ -215,7 +211,7 @@ concatenates all texts and then splits them into blocks of the same length).
 ### Multi-card Training
 
 ```bash
-PT_HPU_LAZY_MODE=0 PT_ENABLE_INT64_SUPPORT=1 python ../gaudi_spawn.py \
+python ../gaudi_spawn.py \
     --world_size 8 --use_mpi run_mlm.py \
     --model_name_or_path roberta-base \
     --dataset_name wikitext \
@@ -226,15 +222,15 @@ PT_HPU_LAZY_MODE=0 PT_ENABLE_INT64_SUPPORT=1 python ../gaudi_spawn.py \
     --do_eval \
     --output_dir /tmp/test-mlm \
     --use_habana \
-    --use_lazy_mode False \
-    --torch_compile \
-    --torch_compile_backend hpu_backend \
+    --use_lazy_mode \
     --use_hpu_graphs_for_inference \
     --gaudi_config_name Habana/roberta-base \
     --throughput_warmup_steps 3 \
     --bf16
 ```
-
+**Note:** To use the RoBERTa-Large model in eager mode with torch.compile enabled,  
+a) Set the following environment variables `PT_HPU_LAZY_MODE=0` and `PT_ENABLE_INT64_SUPPORT=1`.  
+b) Run the above commands with `--model_name_or_path roberta-large`, `--use_lazy_mode False` and add `--torch_compile` and `--torch_compile_backend hpu_backend` flags.
 
 ## Pretraining
 

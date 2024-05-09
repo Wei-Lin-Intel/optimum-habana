@@ -57,6 +57,7 @@ python run_qa.py \
   --bf16
 ```
 
+
 ### Multi-card Training
 
 Here is how you would fine-tune the BERT large model (with whole word masking) on the SQuAD dataset using the `run_qa` script, with 8 HPUs:
@@ -82,6 +83,7 @@ python ../gaudi_spawn.py \
     --throughput_warmup_steps 3 \
     --bf16
 ```
+
 
 ### Using DeepSpeed
 
@@ -151,10 +153,6 @@ python run_qa.py \
   --use_hpu_graphs_for_inference \
   --bf16
 ```
-
-**Note:** To use eager mode with torch.compile enabled in the above commands,  
-a) Set the following environment variables `PT_HPU_LAZY_MODE=0` and `PT_ENABLE_INT64_SUPPORT=1`.  
-b) Run the above command with `--use_lazy_mode False` and add `--torch_compile` and `--torch_compile_backend hpu_backend` flags.
 
 
 ## Recommended Hyperparameters for Mixed Precision

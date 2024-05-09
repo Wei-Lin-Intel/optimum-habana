@@ -56,9 +56,6 @@ python run_qa.py \
   --throughput_warmup_steps 3 \
   --bf16
 ```
-**Note:** To use eager mode with torch.compile enabled,  
-a) Set the following environment variables `PT_HPU_LAZY_MODE=0` and `PT_ENABLE_INT64_SUPPORT=1`.  
-b) Run the above command with `--use_lazy_mode False` and add `--torch_compile` and `--torch_compile_backend hpu_backend` flags.
 
 ### Multi-card Training
 
@@ -85,9 +82,6 @@ python ../gaudi_spawn.py \
     --throughput_warmup_steps 3 \
     --bf16
 ```
-**Note:** To use eager mode with torch.compile enabled,  
-a) Set the following environment variables `PT_HPU_LAZY_MODE=0` and `PT_ENABLE_INT64_SUPPORT=1`.  
-b) Run the above command with `--use_lazy_mode False` and add `--torch_compile` and `--torch_compile_backend hpu_backend` flags.
 
 ### Using DeepSpeed
 
@@ -114,9 +108,6 @@ python ../gaudi_spawn.py \
     --throughput_warmup_steps 3 \
     --deepspeed path_to_my_deepspeed_config
 ```
-**Note:** To use eager mode with torch.compile enabled,  
-a) Set the following environment variables `PT_HPU_LAZY_MODE=0` and `PT_ENABLE_INT64_SUPPORT=1`.  
-b) Run the above command with `--use_lazy_mode False` and add `--torch_compile` and `--torch_compile_backend hpu_backend` flags.
 
 You can look at the [documentation](https://huggingface.co/docs/optimum/habana/usage_guides/deepspeed) for more information about how to use DeepSpeed in Optimum Habana.
 Here is a DeepSpeed configuration you can use to train your models on Gaudi:
@@ -160,6 +151,10 @@ python run_qa.py \
   --use_hpu_graphs_for_inference \
   --bf16
 ```
+
+**Note:** To use eager mode with torch.compile enabled in the above commands,  
+a) Set the following environment variables `PT_HPU_LAZY_MODE=0` and `PT_ENABLE_INT64_SUPPORT=1`.  
+b) Run the above command with `--use_lazy_mode False` and add `--torch_compile` and `--torch_compile_backend hpu_backend` flags.
 
 
 ## Recommended Hyperparameters for Mixed Precision

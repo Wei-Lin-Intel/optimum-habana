@@ -228,7 +228,9 @@ python ../gaudi_spawn.py \
     --throughput_warmup_steps 3 \
     --bf16
 ```
-**Note:** RoBERTa-Large model is enabled with torch.compile by applying the following changes to your command,  
+
+## Training in torch.compile mode 
+RoBERTa-Large model training in [torch.compile](pytorch.org/tutorials/intermediate/torch_compile_tutorial.html) mode is enabled by applying the following changes to your command,  
 a) Set the following environment variables `PT_HPU_LAZY_MODE=0` and `PT_ENABLE_INT64_SUPPORT=1`.  
 b) Run the above commands with `--model_name_or_path roberta-large`, `--use_lazy_mode False` and add `--torch_compile` and `--torch_compile_backend hpu_backend` flags.
 

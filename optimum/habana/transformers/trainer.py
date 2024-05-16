@@ -92,7 +92,7 @@ from transformers.utils import (
 from optimum.utils import logging
 
 from ..accelerate import GaudiAccelerator
-from ..accelerate.utils import GaudiDistributedType
+from ..accelerate.utils import GaudiDistributedType, FP8ContextWrapper
 from ..utils import (
     HabanaProfile,
     get_hpu_memory_stats,
@@ -668,6 +668,8 @@ class GaudiTrainer(Trainer):
                 transformers.modeling_utils.checkpoint = lazy_mode_checkpointing
 
             self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=gradient_checkpointing_kwargs)
+            if self.accelerator.state.is_fp8_enabled:
+                FP8ContextWrapper.gradient_checkpointing_wrap(self.model)
         else:
             # Hack because `RegressionModel` in test_trainer.py doesn't have `gradient_checkpointing_disable`
             if hasattr(self.model, "gradient_checkpointing_disable"):
@@ -1504,6 +1506,10 @@ class GaudiTrainer(Trainer):
         else:
             ctx_manager = contextlib.nullcontext()
 
+        # Merge autocast context and FP8 autocast context if FP8 is enabled.
+        if self.accelerator.state.is_fp8_enabled and self.model.training:
+            ctx_manager = FP8ContextWrapper(ctx_manager, self.accelerator.fp8_recipe_handler)
+
         return ctx_manager
 
     def training_step(self, model: torch.nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]]) -> torch.Tensor:
@@ -1536,7 +1542,11 @@ class GaudiTrainer(Trainer):
         if self.args.use_lazy_mode and self.args.pipelining_fwd_bwd:
             self.htcore.mark_step()
 
-        self.accelerator.backward(loss)
+        if self.accelerator.state.is_fp8_enabled and self.args.gradient_checkpointing:
+            with FP8ContextWrapper.create_fp8_context(self.accelerator.fp8_recipe_handler):
+                self.accelerator.backward(loss)
+        else:
+            self.accelerator.backward(loss)
 
         return loss.detach() / self.args.gradient_accumulation_steps
 
@@ -2271,6 +2281,7 @@ class GaudiTrainer(Trainer):
         self.accelerator = GaudiAccelerator(
             deepspeed_plugin=self.args.deepspeed_plugin,
             gradient_accumulation_plugin=gradient_accumulation_plugin,
+            fp8_config=self.args.fp8_config,
             distribution_strategy=self.args.distribution_strategy,
             **self.args.accelerator_config.to_dict(),
         )

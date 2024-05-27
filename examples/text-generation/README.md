@@ -358,15 +358,15 @@ QUANT_CONFIG=./quantization_config/maxabs_quant.json python ../gaudi_spawn.py \
 
 ### Running FP8 models on single device
 
-Some bf16 models doesn't fit on one card due to hpu memory limitation, but in fp8 precision they do fit.
+Some bf16 models don't fit on one card due to hpu memory limitation, but in fp8 precision they do fit.
 As measurement is being calculated in bf16 precision, to be able to run fp8 model on single card you should use `unify_measurements` script.
-More information on usage of the unifier script can be found in fp8 Habana docs mentioned above.
+More information on usage of the unifier script can be found in fp8 Habana docs: https://docs.habana.ai/en/latest/PyTorch/Inference_on_PyTorch/Inference_Using_FP8.html
 
 ### CPU memory reduction on single card
 
-Some models can fit on HPU RAM but can't fit on the CPU RAM.
-When we run a model on single card and don't use deepspeed the '--disk_offload' flag allows to offload weights to disk during model quantization in HQT. When this flag is mentioned, during the quantization process, each weight first is offloaded from disk to CPU RAM, when quantized and finally brought to HPU RAM. This way not all the model is on the CPU RAM but only one weight each time.
-The usage of the flag is just to add it to the script.
+Some models can fit on HPU DRAM but can't fit on the CPU RAM.
+When we run a model on single card and don't use deepspeed the `--disk_offload` flag allows to offload weights to disk during model quantization in HQT. When this flag is mentioned, during the quantization process, each weight first is offloaded from disk to CPU RAM, when quantized and finally brought to HPU DRAM. This way not all the model is on the CPU RAM but only one weight each time.
+To enable this weights offload mechanism, add `--disk_offload` flag to the topology command line.
 
 ### Using Habana Flash Attention
 

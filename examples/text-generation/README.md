@@ -365,7 +365,7 @@ More information on usage of the unifier script can be found in fp8 Habana docs:
 ### CPU memory reduction on single card
 
 Some models can fit on HPU DRAM but can't fit on the CPU RAM.
-When we run a model on single card and don't use deepspeed the `--disk_offload` flag allows to offload weights to disk during model quantization in HQT. When this flag is mentioned, during the quantization process, each weight first is loaded from disk to CPU RAM, when quantized and finally brought to HPU DRAM. This way not all the model is on the CPU RAM but only one weight each time.
+When we run a model on single card and don't use deepspeed the `--disk_offload` flag allows to offload weights to disk during model quantization in HQT. When this flag is mentioned, during the quantization process, each weight first is loaded from disk to CPU RAM, when brought to HPU DRAM and quantized there. This way not all the model is on the CPU RAM but only one weight each time.
 To enable this weights offload mechanism, add `--disk_offload` flag to the topology command line.
 
 ### Using Habana Flash Attention

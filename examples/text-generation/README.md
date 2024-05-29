@@ -142,7 +142,7 @@ python run_generation.py \
  --use_kv_cache \
  --batch_size 1 \
  --max_new_tokens 128 \
- --do_sample 
+ --do_sample
 ```
 
 To run Falcon-40B inference on 8 Gaudi2 cards, use the following command:

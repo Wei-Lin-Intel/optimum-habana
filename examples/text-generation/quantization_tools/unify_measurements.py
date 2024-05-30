@@ -1,9 +1,12 @@
+import argparse
 import json
 import os
 import sys
-import argparse
+
 import numpy as np
+
 from ..utils.logger import logger
+
 
 def find_measurement_path(measurement, measurements_dir_path, scales, group_size):
     measurment_card = measurement + '_' + str(group_size)
@@ -62,7 +65,8 @@ def unify_measurements(measurement_group, measurements_dir_path, output_path, gr
         # iterate over all the measurment group and take the maximum for each tensor and its channel
         if scales:
             for measurement_json in measurements_jsons:
-                max_inputs[0] = max(measurement_json[node_name]["inputs"][0], max_inputs[0])
+                for i in range(0, len(max_inputs)):
+                    max_inputs[i] = max(measurement_json[node_name]["inputs"][i], max_inputs[i])
                 if max_outputs is not None:
                     max_outputs = max(measurement_json[node_name]["outputs"], max_outputs)
                 if max_weight is not None:
@@ -81,7 +85,8 @@ def unify_measurements(measurement_group, measurements_dir_path, output_path, gr
 
         # update the maximum in the unified json
         if scales:
-            unified_json['Nodes'][node_name]["inputs"][0] = max_inputs[0]
+            for i in range(0, len(max_inputs)):
+                unified_json["Nodes"][node_name]["inputs"][i] = max_inputs[i]
             if max_outputs is not None:
                 unified_json['Nodes'][node_name]["outputs"] = max_outputs
             if max_weight is not None:
@@ -156,3 +161,4 @@ def main(args):
 
 if __name__ == '__main__':
     main(sys.argv[1:])
+

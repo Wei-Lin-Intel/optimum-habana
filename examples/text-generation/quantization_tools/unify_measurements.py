@@ -5,8 +5,6 @@ import sys
 
 import numpy as np
 
-from ..utils.logger import logger
-
 
 def find_measurement_path(measurement, measurements_dir_path, scales, group_size):
     measurment_card = measurement + '_' + str(group_size)
@@ -157,7 +155,7 @@ def main(args):
         unify_measurements(group, measurements_path, output_path, num_jsons_drange, len(groups), group_index, scales=False)
         unify_measurements(group, measurements_path, output_path, num_jsons_scales, len(groups), group_index, scales=True)
 
-    logger.info("finished measurement unifier script")
+    print("finished measurement unifier script")
 
 if __name__ == '__main__':
     main(sys.argv[1:])

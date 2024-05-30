@@ -126,7 +126,8 @@ def setup_env(args):
         and args.bucket_internal:
         # Based upon above conditions and below env variable,
         # we can call HPU graphs clear_inputs().
-        os.environ.setdefault("PT_HPUGRAPH_DISABLE_TENSOR_CACHE", "1")
+        #os.environ.setdefault("PT_HPUGRAPH_DISABLE_TENSOR_CACHE", "1")
+        pass
 
     # Tweak generation so that it runs faster on Gaudi
     from optimum.habana.transformers.modeling_utils import adapt_transformers_to_gaudi

@@ -165,14 +165,19 @@ def get_torch_compiled_model(model):
     return model
 
 
-def setup_quantization(model, args):
+def setup_quantization(model, args=None):
     if os.getenv("USE_INC", ""):
         from neural_compressor.torch import FP8QuantConfig, convert, prepare
-        config = FP8QuantConfig.from_json_file(args.quant_config)
-        if config.calibrate:
-            model = prepare(model, config)
-        elif config.quantize:
+        if args:
+            config = FP8QuantConfig.from_json_file(args.quant_config)
+        else:
+            # one-step quantization mode, calibration was done quantize the model
+            return convert(model)
+
+        if config.quantize:
             model = convert(model, config)
+        else:
+            model = prepare(model, config)
     else:
         import habana_quantization_toolkit
         habana_quantization_toolkit.prep_model(model)

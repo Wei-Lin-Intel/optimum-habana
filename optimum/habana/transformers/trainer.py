@@ -35,6 +35,7 @@ from accelerate.data_loader import SeedableRandomSampler
 from accelerate.utils import DistributedDataParallelKwargs, GradientAccumulationPlugin, save_fsdp_model
 from huggingface_hub import upload_folder
 from torch.utils.data import DataLoader, Dataset, RandomSampler
+from transformers.trainer_pt_utils import ShardSampler
 from transformers import Trainer
 from transformers.data.data_collator import DataCollator
 from transformers.debug_utils import DebugOption, DebugUnderflowOverflow
@@ -295,19 +296,23 @@ class GaudiTrainer(Trainer):
             )
 
         else:
-            num_samples = len(self.train_dataset)
-            if (
-                not self.args.dataloader_drop_last
-                and len(self.train_dataset) % self.args.per_device_train_batch_size != 0
-                and self.args.parallel_mode != ParallelMode.DISTRIBUTED
-            ):
-                # Make the total number of samples divisible by the batch size in lazy mode if needed
-                num_samples += (
-                    self.args.per_device_train_batch_size
-                    - len(self.train_dataset) % self.args.per_device_train_batch_size
-                )
-            return RandomSampler(self.train_dataset, num_samples=num_samples)
-
+            # num_samples = len(self.train_dataset)
+            # if (
+            #     not self.args.dataloader_drop_last
+            #     and len(self.train_dataset) % self.args.per_device_train_batch_size != 0
+            #     and self.args.parallel_mode != ParallelMode.DISTRIBUTED
+            # ):
+            #     # Make the total number of samples divisible by the batch size in lazy mode if needed
+            #     num_samples += (
+            #         self.args.per_device_train_batch_size
+            #         - len(self.train_dataset) % self.args.per_device_train_batch_size
+            #     )
+            return ShardSampler(
+                self.train_dataset, 
+                batch_size=self.args.per_device_eval_batch_size,
+                num_processes=self.args.world_size,
+                process_index=self.args.process_index,
+            )
     def create_optimizer(self):
         """
         Setup the optimizer.

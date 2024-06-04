@@ -91,7 +91,9 @@ deepspeed --num_nodes 1 --num_gpus 8 --master_addr 127.0.0.1 --master_port 60008
 --bucket_size 512
 ```
 
-Make sure `num_key_value_heads` in your model config should be divided by the # of HPUs. 
+Make sure `num_key_value_heads` in your model config should be divided by the # of HPUs.
+
+For DeepSpeed inference on Qwen models larger than 72B with large batch size (>=64), it is recommended to use `bucket_size=512` for the inference, otherwise OOM issue may occur. For single card inference, `bucket_size=256` should work for most of the cases.
 
 Currently Gaudi2 only supports BF16 and FP8 inference in this repo.Here is an example on the FP8 benchmark using the unit scale (scale = 1.0):
 

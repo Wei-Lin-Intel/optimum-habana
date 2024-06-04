@@ -55,6 +55,11 @@ from .models import (
     GaudiOPTForCausalLM,
     GaudiOPTLearnedPositionalEmbedding,
     GaudiPhiForCausalLM,
+    GaudiQwen2ForCausalLM,
+    GaudiQwen2Model,
+    GaudiQwen2Attention,
+    GaudiQwen2MLP,
+    GaudiQwen2DecoderLayer,
     _gaudi_wav2vec2_compute_mask_indices,
     _gaudi_wav2vec2_mask_hidden_states,
     gaudi_albert_forward,
@@ -118,6 +123,7 @@ from .models import (
     gaudi_phi_attention_forward,
     gaudi_phi_decoder_layer_forward,
     gaudi_phi_model_forward,
+    gaudi_qwen2_rmsnorm_forward,
     gaudi_rot_matmul,
     gaudi_rot_vec_mul,
     gaudi_SpeechT5Attention_forward,
@@ -367,3 +373,11 @@ def adapt_transformers_to_gaudi():
     transformers.models.speecht5.modeling_speecht5.SpeechT5SpeechDecoderPrenet.forward = (
         gaudi_SpeechT5SpeechDecoderPrenet_forward
     )
+
+    # Optimization for qwen2 on Gaudi
+    transformers.models.qwen2.modeling_qwen2.Qwen2ForCausalLM = GaudiQwen2ForCausalLM
+    transformers.models.qwen2.modeling_qwen2.Qwen2Model = GaudiQwen2Model
+    transformers.models.qwen2.modeling_qwen2.Qwen2Attention = GaudiQwen2Attention
+    transformers.models.qwen2.modeling_qwen2.Qwen2MLP = GaudiQwen2MLP
+    transformers.models.qwen2.modeling_qwen2.Qwen2DecoderLayer = GaudiQwen2DecoderLayer
+    transformers.models.qwen2.modeling_qwen2.Qwen2RMSNorm.forward = gaudi_qwen2_rmsnorm_forward

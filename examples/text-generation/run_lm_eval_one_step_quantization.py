@@ -17,7 +17,6 @@
 # Copyright (C) 2020-2021 Habana Labs, Ltd. an Intel Company
 ###############################################################################
 
-import json
 import logging
 import os
 import time
@@ -26,7 +25,7 @@ import lm_eval.evaluator
 import lm_eval.tasks
 import torch
 from utils import initialize_model, finalize_quantization, setup_quantization
-from habana_model_adapter import setup_lm_eval_parser, HabanaModelAdapter, print_results
+from lm_eval_utils import HabanaModelAdapter, setup_lm_eval_parser, print_results
 
 from optimum.habana.utils import get_hpu_memory_stats
 

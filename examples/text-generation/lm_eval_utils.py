@@ -18,7 +18,6 @@
 ###############################################################################
 
 import argparse
-import logging
 import os
 import json
 
@@ -32,8 +31,6 @@ from optimum.habana.utils import get_hpu_memory_stats
 
 
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-logger = logging.getLogger(__name__)
-
 
 def setup_lm_eval_parser():
     parser = argparse.ArgumentParser(

@@ -276,6 +276,7 @@ def main():
     parser = argparse.ArgumentParser()
     args = setup_parser(parser)
     model, tokenizer, generation_config = initialize_model(args, logger)
+    generation_config.ignore_eos = True
 
     use_lazy_mode = True
     if args.torch_compile and model.config.model_type == "llama":

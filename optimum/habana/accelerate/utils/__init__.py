@@ -1,6 +1,7 @@
 from .dataclasses import (
     GaudiDistributedType,
     GaudiDynamoBackend,
+    GaudiFP8RecipeKwargs,
     GaudiFullyShardedDataParallelPlugin,
     GaudiTorchDynamoPlugin,
 )

@@ -668,6 +668,8 @@ class GaudiTrainer(Trainer):
                 transformers.modeling_utils.checkpoint = lazy_mode_checkpointing
 
             self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=gradient_checkpointing_kwargs)
+
+            # Wrap `_gradient_checkpointing_func` in the model with `transformer_engine` `activation_checkpointing` context.
             if self.accelerator.state.is_fp8_enabled:
                 FP8ContextWrapper.gradient_checkpointing_wrap(self.model)
         else:
@@ -1506,7 +1508,8 @@ class GaudiTrainer(Trainer):
         else:
             ctx_manager = contextlib.nullcontext()
 
-        # Merge autocast context and FP8 autocast context if FP8 is enabled.
+        # Merge autocast context and `fp8_autocast` context if FP8 is enabled.
+        # Currently FP8 is enabled only for training.
         if self.accelerator.state.is_fp8_enabled and self.model.training:
             ctx_manager = FP8ContextWrapper(ctx_manager, self.accelerator.fp8_recipe_handler)
 
@@ -1543,6 +1546,10 @@ class GaudiTrainer(Trainer):
             self.htcore.mark_step()
 
         if self.accelerator.state.is_fp8_enabled and self.args.gradient_checkpointing:
+            # The precision used in backward pass should be same as the one used in forward pass.
+            # However when training with gradient_checkpointing and FP8 precision, recompute forward
+            # in backward does not automatically run with FP8 precision. In order to handle this,
+            # the backward is run in `fp8_autocast` context
             with FP8ContextWrapper.create_fp8_context(self.accelerator.fp8_recipe_handler):
                 self.accelerator.backward(loss)
         else:
@@ -2281,7 +2288,6 @@ class GaudiTrainer(Trainer):
         self.accelerator = GaudiAccelerator(
             deepspeed_plugin=self.args.deepspeed_plugin,
             gradient_accumulation_plugin=gradient_accumulation_plugin,
-            fp8_config=self.args.fp8_config,
             distribution_strategy=self.args.distribution_strategy,
             **self.args.accelerator_config.to_dict(),
         )

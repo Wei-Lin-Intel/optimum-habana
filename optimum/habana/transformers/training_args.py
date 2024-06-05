@@ -298,16 +298,6 @@ class GaudiTrainingArguments(TrainingArguments):
         metadata={"help": "Whether to use fp8 for training."},
     )
 
-    fp8_config: Optional[Union[dict, str]] = field(
-        default=None,
-        metadata={
-            "help": (
-                "Config to be used with FP8. The value is either a "
-                "fp8 json config file (e.g., `fp8_config.json`) or an already loaded json file as `dict`."
-            )
-        },
-    )
-
     def __post_init__(self):
         if self.use_hpu_graphs:
             warnings.warn(
@@ -745,10 +735,6 @@ class GaudiTrainingArguments(TrainingArguments):
                 ),
                 FutureWarning,
             )
-
-        if self.fp8:
-            if self.fp8_config is not None:
-                self.fp8_config = eval(self.fp8_config)
 
     def __str__(self):
         self_as_dict = asdict(self)

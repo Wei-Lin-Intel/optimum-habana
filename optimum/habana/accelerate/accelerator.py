@@ -37,7 +37,6 @@ from accelerate.utils import (
     DeepSpeedPlugin,
     DistributedDataParallelKwargs,
     DistributedType,
-    FP8RecipeKwargs,
     GradientAccumulationPlugin,
     GradScalerKwargs,
     InitProcessGroupKwargs,
@@ -73,6 +72,7 @@ from .state import GaudiAcceleratorState, GaudiPartialState
 from .utils import (
     GaudiDistributedType,
     GaudiDynamoBackend,
+    GaudiFP8RecipeKwargs,
     GaudiFullyShardedDataParallelPlugin,
     GaudiTorchDynamoPlugin,
     convert_model,
@@ -110,7 +110,6 @@ class GaudiAccelerator(Accelerator):
         dynamo_backend: GaudiDynamoBackend | str | None = None,
         distribution_strategy: str = None,
         force_autocast: bool = False,
-        fp8_config: dict = None
     ):
         self.trackers = []
         if project_config is not None:
@@ -199,9 +198,9 @@ class GaudiAccelerator(Accelerator):
                         raise ValueError("You can only pass one `InitProcessGroupKwargs` in `kwargs_handler`.")
                     else:
                         self.init_handler = handler
-                elif isinstance(handler, FP8RecipeKwargs):
+                elif isinstance(handler, GaudiFP8RecipeKwargs):
                     if self.fp8_recipe_handler is not None:
-                        raise ValueError("You can only pass one `FP8RecipeKwargs` in `kwargs_handler`.")
+                        raise ValueError("You can only pass one `GaudiFP8RecipeKwargs` in `kwargs_handler`.")
                     else:
                         self.fp8_recipe_handler = handler
                 elif isinstance(handler, AutocastKwargs):
@@ -222,8 +221,10 @@ class GaudiAccelerator(Accelerator):
             **kwargs,
         )
 
-        if self.fp8_recipe_handler is None and self.state.is_fp8_enabled:
-            self.fp8_recipe_handler = get_fp8_recipe(fp8_config)
+        if self.state.is_fp8_enabled:
+            if self.fp8_recipe_handler is None:
+                self.fp8_recipe_handler = GaudiFP8RecipeKwargs()
+            self.fp8_recipe_handler = get_fp8_recipe(self.fp8_recipe_handler)
 
         trackers = filter_trackers(log_with, self.logging_dir)
         if len(trackers) < 1 and log_with is not None:

@@ -15,8 +15,6 @@
 
 import functools
 import torch
-from peft.tuners.lora.layer import Linear as PEFTLinear
-from optimum.habana.peft.layer import LoRALinear
 
 try:
     import habana_frameworks.torch.hpex.experimental.transformer_engine as te
@@ -33,15 +31,14 @@ def is_fp8_available():
 
 def _convert_model(model, to_transformer_engine=True, _convert_linear=True):
     """
-    Recursively converts the linear and layernorm layers of a model to their `transformers_engine` counterpart.
+    Recursively converts the linear layer of a model to their `transformers_engine` counterpart.
     """
     if not is_fp8_available():
         raise ImportError("Using `convert_model` requires transformer_engine to be installed.")
     for name, module in model.named_children():
-        if type(module) == PEFTLinear and to_transformer_engine and _convert_linear:
-            LoRALinear.replace_forward(module)
-        if isinstance(module, torch.nn.Linear) and not type(module) == PEFTLinear and to_transformer_engine and _convert_linear:
+        if isinstance(module, torch.nn.Linear) and to_transformer_engine and _convert_linear:
             has_bias = module.bias is not None
+            # Initializing TE linear without weights and biases and shallow copying them from the original module.
             te_module = te.Linear(
                 module.in_features, module.out_features, bias=has_bias, params_dtype=module.weight.dtype, skip_weight_param_allocation=True
             )
@@ -77,29 +74,32 @@ def has_transformer_engine_layers(model):
     return False
 
 def convert_model(model):
+    """
+    Converts torch.nn.Linear modules to `transformers_engine` Linear modules.
+    Adapted from: https://github.com/huggingface/accelerate/blob/v0.27.2/src/accelerate/accelerator.py#L1303
+    """
     if not has_transformer_engine_layers(model):
         with torch.no_grad():
             _convert_model(model)
         model._converted_to_transformer_engine = True
     return model
 
-def get_fp8_format(fp8_format):
-    if fp8_format == "E5M2":
-        return te.recipe.Format.E5M2
-    elif fp8_format == "HYBRID":
-        return te.recipe.Format.HYBRID
-    else:
-        raise ValueError
-
-def get_fp8_recipe(fp8_config):
-    fp8_config = dict(fp8_config) if fp8_config is not None else {}
-    if "fp8_format" in fp8_config:
-        fp8_config['fp8_format'] = get_fp8_format(fp8_config['fp8_format'])
-    fp8_recipe_handler = te.recipe.DelayedScaling(**fp8_config)
+def get_fp8_recipe(fp8_recipe_handler):
+    """
+    Creates transformer engine FP8 recipe object.
+    Adapted from: https://github.com/huggingface/accelerate/blob/v0.27.2/src/accelerate/accelerator.py#L1309
+    """
+    kwargs = fp8_recipe_handler.to_dict() if fp8_recipe_handler is not None else {}
+    if "fp8_format" in kwargs:
+        kwargs["fp8_format"] = getattr(te.recipe.Format, kwargs["fp8_format"])
+    fp8_recipe_handler = te.recipe.DelayedScaling(**kwargs)
     fp8_recipe_handler.backend = "TE"
     return fp8_recipe_handler
 
 class FP8ContextWrapper:
+    """
+    Helper class for FP8 context related operations.
+    """
     def __init__(self, ctx, fp8_recipe):
         self.ctx = ctx
         self.fp8_ctx = self.create_fp8_context(fp8_recipe)
@@ -116,8 +116,8 @@ class FP8ContextWrapper:
     def create_fp8_context(fp8_recipe):
         return te.fp8_autocast(enabled=True, fp8_recipe=fp8_recipe)
 
-    # _gradient_checkpointing_func always takes the function to be recomputed as the first argument. The function
-    # below wraps this first argument with transformer_engine activation_checkpointing context.
+    # `_gradient_checkpointing_func` always takes the function to be recomputed as the first argument. The function
+    # below wraps this first argument with `transformer_engine` `activation_checkpointing` context.
     @staticmethod
     def _gradient_checkpointing_wrap(func, *args, **kwargs):
         _args = list(args)

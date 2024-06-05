@@ -1,0 +1,7 @@
+{
+    "method": "HOOKS",
+    "observer": "maxabs",
+    "allowlist": {"types": [], "names":  []},
+    "blocklist": {"types": [], "names":  []},
+    "dump_stats_path": "./hqt_output/one_step",
+}

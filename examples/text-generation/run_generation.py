@@ -381,6 +381,7 @@ def main():
                 hpu_graphs=args.use_hpu_graphs,
                 profiling_steps=args.profiling_steps,
                 profiling_warmup_steps=args.profiling_warmup_steps,
+                profiling_record_shapes=args.profiling_record_shapes,
             ).cpu()
             outputs = outputs.tolist()
             for i in range(len(outputs)):

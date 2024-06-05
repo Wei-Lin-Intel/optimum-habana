@@ -394,6 +394,7 @@ def peft_model(args, model_dtype, logger, **model_kwargs):
         model.__class__.generate = gaudi_generate
         model.__class__.prepare_inputs_for_generation = gaudi_prepare_inputs_for_generation
         return model
+    return model
 
 
 def setup_tokenizer(args, model, assistant_model):

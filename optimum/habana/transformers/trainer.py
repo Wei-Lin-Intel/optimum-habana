@@ -1789,6 +1789,8 @@ class GaudiTrainer(Trainer):
         observed_num_examples = 0
         # Main evaluation loop
         for step, inputs in enumerate(dataloader):
+            if os.environ.get("TP_MODEL_PARAM_DUMP_ENABLE",'0') == '1':
+                tp_probe_tensors_iteration_start(model, args.device, None, None, self.trainMetaData.ParamsDump, False) 
             if self.args.throughput_warmup_steps > 0 and not self.is_in_train and step == self.args.throughput_warmup_steps:
                 self.start_time_after_warmup = time.time()
             # Update the observed num examples
@@ -1880,6 +1882,10 @@ class GaudiTrainer(Trainer):
             # Added mark step here to avoid graph recompile
             if args.use_lazy_mode:
                 self.htcore.mark_step()
+
+            if os.environ.get("TP_MODEL_PARAM_DUMP_ENABLE",'0') == '1':
+                tp_probe_tensors_iteration_end(model, args.device, loss, loss.item(), self.trainMetaData.ParamsDump, False)
+                self.trainMetaData.increment_train_step()
 
         # After all calls to `.gather_function`, reset to `gather_for_metrics`:
         self.gather_function = self.accelerator.gather_for_metrics

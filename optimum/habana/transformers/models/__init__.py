@@ -50,6 +50,7 @@ from .falcon import (
     GaudiFalconMLP,
     GaudiFalconModel,
     gaudi_falcon_linear_forward,
+    gaudi_falcon_linear_forward,
 )
 from .gemma import (
     GaudiGemmaDecoderLayer,

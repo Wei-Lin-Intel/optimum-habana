@@ -5,4 +5,5 @@ from .modeling_falcon import (
     GaudiFalconMLP,
     GaudiFalconModel,
     gaudi_falcon_linear_forward,
+    gaudi_falcon_linear_forward,
 )

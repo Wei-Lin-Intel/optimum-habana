@@ -18,6 +18,8 @@ limitations under the License.
 
 This guidance is used to perform the inference and finetune (including lora) benchmark on Gaudi2 for Qwen1.5 and the future release with the same model type in HuggingFace [this link](https://https://github.com/huggingface/transformers/tree/v4.38-release/src/transformers/models/qwen2). The SFT script is adopted from the official Qwen1.5 [repo](https://github.com/QwenLM/Qwen1.5/tree/main/examples/sft).
 
+2022/06/06 Update: The full optimization of Qwen1.5 / Qwen2 on Gaudi2 has been supported by the official [optimum-habana](https://github.com/huggingface/optimum-habana/commit/a89a2421aa25f671aaad1c71909fdfd6177fac5c). You may refer this PR for more details.
+
 
 ## Requirements
 

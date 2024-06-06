@@ -51,7 +51,7 @@ def _convert_model(model, to_transformer_engine=True, _convert_linear=True):
         elif isinstance(module, te.Linear) and not to_transformer_engine and _convert_linear:
             has_bias = module.bias is not None
             new_module = torch.nn.Linear(
-                module.in_features, module.out_features, bias=has_bias, params_dtype=module.weight.dtype
+                module.in_features, module.out_features, bias=has_bias, dtype=module.weight.dtype, device=module.weight.device
             )
             new_module.weight.copy_(module.weight)
             if has_bias:

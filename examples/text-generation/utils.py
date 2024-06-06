@@ -96,16 +96,20 @@ def setup_distributed(args):
     args.global_rank = int(os.getenv("RANK", "0"))
 
 
+def setup_inference(args, model):
+    import habana_frameworks.torch.core as htcore
+
+    print("Initializing inference mode")
+    htcore.hpu_initialize(model, mark_only_scales_as_const=True)
+    return model
+
 def setup_const_serialization(const_serialization_path):
     import uuid
-
     const_serialization_path = os.path.join(const_serialization_path + uuid.uuid4().hex)
     os.makedirs(const_serialization_path)
     from habana_frameworks.torch.hpu import enable_const_section_serialization
-
     print("Serializing const params to {}".format(const_serialization_path))
-    enable_const_section_serialization(const_serialization_path, False, True)
-
+    enable_const_section_serialization(const_serialization_path, True)
 
 def setup_env(args):
     # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
@@ -161,6 +165,30 @@ def get_torch_compiled_model(model):
     return model
 
 
+def setup_quantization(model, args):
+    if os.getenv("USE_INC", ""):
+        from neural_compressor.torch import FP8QuantConfig, convert, prepare
+        config = FP8QuantConfig.from_json_file(args.quant_config)
+        if config.calibrate:
+            model = prepare(model, config)
+        elif config.quantize:
+            model = convert(model, config)
+    else:
+        import habana_quantization_toolkit
+        habana_quantization_toolkit.prep_model(model)
+
+    return model
+
+
+def finalize_quantization(model):
+    if os.getenv("USE_INC", ""):
+        from neural_compressor.torch import finalize_calibration
+        finalize_calibration(model)
+    else:
+        import habana_quantization_toolkit
+        habana_quantization_toolkit.finish_measurements(model)
+
+
 def setup_model(args, model_dtype, model_kwargs, logger):
     logger.info("Single-device run.")
 
@@ -172,15 +200,14 @@ def setup_model(args, model_dtype, model_kwargs, logger):
         max_memory = {"cpu": "10GiB"}
         device_map = infer_auto_device_map(model, max_memory=max_memory, dtype=model_dtype)
         model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path, device_map=device_map, offload_folder="/tmp/offload_folder/", offload_state_dict=True, torch_dtype=model_dtype, **model_kwargs)  
-    else: 
+    else:
         if args.peft_model is not None:
             model = peft_model(args, model_dtype, logger, **model_kwargs)
         else:
             model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path, torch_dtype=model_dtype, **model_kwargs)
     if args.quant_config:
-        import habana_quantization_toolkit
+        model = setup_quantization(model, args)
 
-        habana_quantization_toolkit.prep_model(model)
     model = model.eval().to(args.device)
 
     if args.use_hpu_graphs:
@@ -253,9 +280,7 @@ def setup_distributed_model(args, model_dtype, model_kwargs, logger):
         patch_scoped_linear_all_reduce(model)
 
     if args.quant_config:
-        import habana_quantization_toolkit
-
-        habana_quantization_toolkit.prep_model(model)
+        model = setup_quantization(model, args)
 
     if args.torch_compile and model.config.model_type == "llama":
         model = get_torch_compiled_model(model)
@@ -301,7 +326,10 @@ def peft_model(args, model_dtype, logger, **model_kwargs):
         model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path, torch_dtype=model_dtype, **model_kwargs)
         model = PeftModel.from_pretrained(model, args.peft_model, torch_dtype=model_dtype, **model_kwargs)
 
-    return model.merge_and_unload()
+    model = model.merge_and_unload()
+    if model_dtype == torch.bfloat16:
+        model = model.to(torch.bfloat16)
+    return model
 
 
 def setup_tokenizer(args, model):
@@ -401,12 +429,7 @@ def initialize_model(args, logger):
     if args.const_serialization_path:
         setup_const_serialization(args.const_serialization_path)
     if args.quant_config:
-        import habana_frameworks.torch.core as htcore
-
-        print("Initializing inference mode")
-        const_marking = os.getenv("ENABLE_CONST_MARKING", "True")
-        if const_marking == "True":
-            htcore.hpu_initialize(model)
+        model = setup_inference(args, model)
     init_end = time.perf_counter()
     logger.info(f"Args: {args}")
     logger.info(f"device: {args.device}, n_hpu: {args.world_size}, bf16: {model_dtype == torch.bfloat16}")

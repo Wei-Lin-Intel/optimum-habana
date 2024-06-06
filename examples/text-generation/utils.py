@@ -100,14 +100,12 @@ def setup_inference(args, model):
     import habana_frameworks.torch.core as htcore
 
     print("Initializing inference mode")
-    const_marking = os.getenv("ENABLE_CONST_MARKING", "True")
-    if const_marking == "True":
-        htcore.hpu_initialize(model)
+    htcore.hpu_initialize(model, mark_only_scales_as_const=True)
     return model
 
 def setup_const_serialization(const_serialization_path):
     import uuid
-    const_serialization_path = os.path.join(const_serialization_path  + uuid.uuid4().hex)
+    const_serialization_path = os.path.join(const_serialization_path + uuid.uuid4().hex)
     os.makedirs(const_serialization_path)
     from habana_frameworks.torch.hpu import enable_const_section_serialization
     print("Serializing const params to {}".format(const_serialization_path))
@@ -128,6 +126,12 @@ def setup_env(args):
         os.environ.setdefault("PT_HPU_LAZY_ACC_PAR_MODE", "0")
         os.environ.setdefault("PT_HPU_ENABLE_LAZY_COLLECTIVES", "true")
 
+    if args.use_hpu_graphs and args.limit_hpu_graphs and not args.reuse_cache \
+        and args.bucket_internal:
+        # Based upon above conditions and below env variable,
+        # we can call HPU graphs clear_inputs().
+        os.environ.setdefault("PT_HPUGRAPH_DISABLE_TENSOR_CACHE", "1")
+
     # Tweak generation so that it runs faster on Gaudi
     from optimum.habana.transformers.modeling_utils import adapt_transformers_to_gaudi
 
@@ -138,7 +142,7 @@ def setup_device(args):
     if args.device == "hpu":
         import habana_frameworks.torch.core as htcore
 
-        if args.fp8:
+        if args.quant_config:
             htcore.hpu_set_env()
     return torch.device(args.device)
 
@@ -157,25 +161,57 @@ def patch_scoped_linear_all_reduce(model):
 
 
 def get_torch_compiled_model(model):
-    model.model = torch.compile(model.model, backend="aot_hpu_inference_backend")
+    model.model = torch.compile(model.model, backend="hpu_backend", options={"keep_input_mutations": True})
     return model
+
+
+def setup_quantization(model, args):
+    if os.getenv("USE_INC", ""):
+        from neural_compressor.torch import FP8QuantConfig, convert, prepare
+        config = FP8QuantConfig.from_json_file(args.quant_config)
+        if config.calibrate:
+            model = prepare(model, config)
+        elif config.quantize:
+            model = convert(model, config)
+    else:
+        import habana_quantization_toolkit
+        habana_quantization_toolkit.prep_model(model)
+
+    return model
+
+
+def finalize_quantization(model):
+    if os.getenv("USE_INC", ""):
+        from neural_compressor.torch import finalize_calibration
+        finalize_calibration(model)
+    else:
+        import habana_quantization_toolkit
+        habana_quantization_toolkit.finish_measurements(model)
 
 
 def setup_model(args, model_dtype, model_kwargs, logger):
     logger.info("Single-device run.")
 
-    if args.peft_model is not None:
-        model = peft_model(args, model_dtype, logger, **model_kwargs)
+    if args.disk_offload:
+        from accelerate import infer_auto_device_map, init_empty_weights
+        config = AutoConfig.from_pretrained(args.model_name_or_path)
+        with init_empty_weights():
+            model = AutoModelForCausalLM.from_config(config)
+        max_memory = {"cpu": "10GiB"}
+        device_map = infer_auto_device_map(model, max_memory=max_memory, dtype=model_dtype)
+        model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path, device_map=device_map, offload_folder="/tmp/offload_folder/", offload_state_dict=True, torch_dtype=model_dtype, **model_kwargs)  
     elif args.gptq:
         from transformers import GPTQConfig
         quantization_config = GPTQConfig(bits=4, use_exllama=False)
         model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path, torch_dtype=model_dtype, quantization_config=quantization_config, **model_kwargs)
     else:
-        model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path, torch_dtype=model_dtype, **model_kwargs)
+        if args.peft_model is not None:
+            model = peft_model(args, model_dtype, logger, **model_kwargs)
+        else:
+            model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path, torch_dtype=model_dtype, **model_kwargs)
     if args.quant_config:
-        import habana_quantization_toolkit
+        model = setup_quantization(model, args)
 
-        habana_quantization_toolkit.prep_model(model)
     model = model.eval().to(args.device)
 
     if args.use_hpu_graphs:
@@ -248,9 +284,7 @@ def setup_distributed_model(args, model_dtype, model_kwargs, logger):
         patch_scoped_linear_all_reduce(model)
 
     if args.quant_config:
-        import habana_quantization_toolkit
-
-        habana_quantization_toolkit.prep_model(model)
+        model = setup_quantization(model, args)
 
     if args.torch_compile and model.config.model_type == "llama":
         model = get_torch_compiled_model(model)
@@ -296,7 +330,10 @@ def peft_model(args, model_dtype, logger, **model_kwargs):
         model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path, torch_dtype=model_dtype, **model_kwargs)
         model = PeftModel.from_pretrained(model, args.peft_model, torch_dtype=model_dtype, **model_kwargs)
 
-    return model.merge_and_unload()
+    model = model.merge_and_unload()
+    if model_dtype == torch.bfloat16:
+        model = model.to(torch.bfloat16)
+    return model
 
 
 def setup_tokenizer(args, model):
@@ -359,11 +396,14 @@ def setup_generation_config(args, model, tokenizer):
     generation_config.use_flash_attention = args.use_flash_attention
     generation_config.flash_attention_recompute = args.flash_attention_recompute
     generation_config.flash_attention_causal_mask = args.flash_attention_causal_mask
+    generation_config.flash_attention_fast_softmax = args.flash_attention_fast_softmax
     return generation_config
 
 
 def initialize_model(args, logger):
     init_start = time.perf_counter()
+    if args.batch_size == 1 and args.limit_hpu_graphs:
+        args.limit_hpu_graphs = False
     setup_distributed(args)
     override_prints(args.global_rank == 0 or args.verbose_workers, logger)
     setup_env(args)
@@ -371,7 +411,7 @@ def initialize_model(args, logger):
     set_seed(args.seed)
     get_repo_root(args.model_name_or_path, local_rank=args.local_rank, token=args.token)
     use_deepspeed = args.world_size > 0
-    if use_deepspeed or args.bf16 or args.fp8:
+    if use_deepspeed or args.bf16:
         model_dtype = torch.bfloat16
     else:
         model_dtype = torch.float
@@ -381,9 +421,6 @@ def initialize_model(args, logger):
         "revision": args.model_revision,
         "token": args.token,
     }
-    if args.disk_offload:
-        model_kwargs["device_map"] = "auto"
-        model_kwargs["offload_folder"] = "/tmp/offload_folder/"
 
     model = (
         setup_model(args, model_dtype, model_kwargs, logger)
@@ -395,7 +432,7 @@ def initialize_model(args, logger):
 
     if args.const_serialization_path:
         setup_const_serialization(args.const_serialization_path)
-    if args.fp8:
+    if args.quant_config:
         model = setup_inference(args, model)
     init_end = time.perf_counter()
     logger.info(f"Args: {args}")

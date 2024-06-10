@@ -96,7 +96,7 @@ from transformers.utils import (
 from optimum.utils import logging
 
 from ..accelerate import GaudiAccelerator
-from ..accelerate.utils import GaudiDistributedType, FP8ContextWrapper
+from ..accelerate.utils import FP8ContextWrapper, GaudiDistributedType, GaudiFP8RecipeKwargs
 from ..utils import (
     HabanaProfile,
     get_hpu_memory_stats,
@@ -1557,6 +1557,7 @@ class GaudiTrainer(Trainer):
             self.htcore.mark_step()
 
         if _is_peft_model(self.model) and self.model.peft_type == PeftType.ADALORA:
+            assert not (self.accelerator.state.is_fp8_enabled and self.args.gradient_checkpointing), "FP8 precision with gradient_checkpointing is currently not supported with PeftType.ADALORA"
             if self.is_deepspeed_enabled and not is_deepspeed_zero3_enabled():
                 self.accelerator.deepspeed_engine_wrapped.engine.backward(loss)
                 self.model.base_model.update_and_allocate(self.state.global_step)
@@ -2302,11 +2303,13 @@ class GaudiTrainer(Trainer):
         grad_acc_kwargs = {"num_steps": self.args.gradient_accumulation_steps}
         grad_acc_kwargs["sync_with_dataloader"] = False
         gradient_accumulation_plugin = GradientAccumulationPlugin(**grad_acc_kwargs)
+        kwargs_handlers = [GaudiFP8RecipeKwargs()]
 
         # create accelerator object
         self.accelerator = GaudiAccelerator(
             deepspeed_plugin=self.args.deepspeed_plugin,
             gradient_accumulation_plugin=gradient_accumulation_plugin,
+            kwargs_handlers=kwargs_handlers,
             distribution_strategy=self.args.distribution_strategy,
             **self.args.accelerator_config.to_dict(),
         )

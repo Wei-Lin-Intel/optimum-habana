@@ -116,10 +116,12 @@ class FP8ContextWrapper:
     def create_fp8_context(fp8_recipe):
         return te.fp8_autocast(enabled=True, fp8_recipe=fp8_recipe)
 
-    # `_gradient_checkpointing_func` always takes the function to be recomputed as the first argument. The function
-    # below wraps this first argument with `transformer_engine` `activation_checkpointing` context.
     @staticmethod
     def _gradient_checkpointing_wrap(func, *args, **kwargs):
+        '''
+        `_gradient_checkpointing_func` always takes the function to be recomputed as the first argument. The function
+        below wraps this first argument with `transformer_engine`'s `activation_checkpointing` context.
+        '''
         _args = list(args)
         _args[0] = activation_checkpointing()(_args[0])
         args = tuple(_args)
@@ -128,6 +130,10 @@ class FP8ContextWrapper:
 
     @staticmethod
     def gradient_checkpointing_wrap(model):
+        '''
+        Wrap `_gradient_checkpointing_func` in the model with `transformer_engine`'s `activation_checkpointing` context.
+        This context is used to signal the `transformer_engine` modules whether they have been called with activation checkpointing enabled or not.
+        '''
         if hasattr(model, "gradient_checkpointing") and model.gradient_checkpointing:
             model._gradient_checkpointing_func = functools.partial(FP8ContextWrapper._gradient_checkpointing_wrap, model._gradient_checkpointing_func)
             return

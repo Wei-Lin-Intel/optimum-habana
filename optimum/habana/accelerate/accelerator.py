@@ -224,6 +224,8 @@ class GaudiAccelerator(Accelerator):
         if self.state.is_fp8_enabled:
             if self.fp8_recipe_handler is None:
                 self.fp8_recipe_handler = GaudiFP8RecipeKwargs()
+            # Handling FP8 recipe creation in init since both `prepare_model` and `_prepare_deepspeed` require it.
+            # (Base accelerator handles this in `prepare_model` function)
             self.fp8_recipe_handler = get_fp8_recipe(self.fp8_recipe_handler)
 
         trackers = filter_trackers(log_with, self.logging_dir)
@@ -657,7 +659,6 @@ class GaudiAccelerator(Accelerator):
                     result[i] = scheduler
             # pointing for deepspeed_engine_wrapped.backward()
             self.deepspeed_engine_wrapped = DeepSpeedEngineWrapper(engine)
-
             self._models.append(engine)
             if optimizer is not None:
                 self._optimizers.append(optimizer)

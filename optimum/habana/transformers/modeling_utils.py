@@ -49,6 +49,9 @@ from .models import (
     GaudiMistralDecoderLayer,
     GaudiMistralForCausalLM,
     GaudiMistralModel,
+    GaudiMixtralAttention,
+    GaudiMixtralDecoderLayer,
+    GaudiMixtralModel,
     GaudiMixtralForCausalLM,
     GaudiMptForCausalLM,
     GaudiMptModel,
@@ -109,10 +112,7 @@ from .models import (
     gaudi_invert_attention_mask,
     gaudi_llama_rmsnorm_forward,
     gaudi_mistral_rmsnorm_forward,
-    gaudi_mixtral_attention_forward,
     gaudi_mixtral_block_sparse_moe_forward,
-    gaudi_mixtral_decoder_layer_forward,
-    gaudi_mixtral_model_forward,
     gaudi_mixtral_rmsnorm_forward,
     gaudi_mpt_attention_forward,
     gaudi_mpt_block_forward,
@@ -358,11 +358,11 @@ def adapt_transformers_to_gaudi():
     transformers.models.blip.BlipForConditionalGeneration.generate = gaudi_BlipForConditionalGeneration_generate
 
     # Optimization for mixtral on Gaudi
+    transformers.models.mixtral.modeling_mixtral.MixtralAttention = GaudiMixtralAttention
+    transformers.models.mixtral.modeling_mixtral.MixtralDecoderLayer = GaudiMixtralDecoderLayer
+    transformers.models.mixtral.modeling_mixtral.MixtralModel = GaudiMixtralModel
     transformers.models.mixtral.modeling_mixtral.MixtralForCausalLM = GaudiMixtralForCausalLM
-    transformers.models.mixtral.modeling_mixtral.MixtralModel.forward = gaudi_mixtral_model_forward
-    transformers.models.mixtral.modeling_mixtral.MixtralAttention.forward = gaudi_mixtral_attention_forward
     transformers.models.mixtral.modeling_mixtral.MixtralSparseMoeBlock.forward = gaudi_mixtral_block_sparse_moe_forward
-    transformers.models.mixtral.modeling_mixtral.MixtralDecoderLayer.forward = gaudi_mixtral_decoder_layer_forward
     transformers.models.mixtral.modeling_mixtral.MixtralRMSNorm.forward = gaudi_mixtral_rmsnorm_forward
 
     # Optimization for speecht5 on Gaudi
@@ -374,7 +374,7 @@ def adapt_transformers_to_gaudi():
         gaudi_SpeechT5SpeechDecoderPrenet_forward
     )
 
-    # Optimization for qwen2 on Gaudi
+    # Optimization for qwen2 generation on Gaudi
     transformers.models.qwen2.modeling_qwen2.Qwen2ForCausalLM = GaudiQwen2ForCausalLM
     transformers.models.qwen2.modeling_qwen2.Qwen2Model = GaudiQwen2Model
     transformers.models.qwen2.modeling_qwen2.Qwen2Attention = GaudiQwen2Attention

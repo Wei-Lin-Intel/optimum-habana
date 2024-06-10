@@ -294,29 +294,23 @@ QUANT_CONFIG=./quantization_config/maxabs_quant.json python ../gaudi_spawn.py \
 --fp8
 ```
 
-Here is an example to measure the tensor quantization statistics on Mixtral-8x7B with 1 card:
+Here is an example to use unit quantization method on Mixtral-8x7B with 8 cards:
 ```bash
-QUANT_CONFIG=./quantization_config/maxabs_measure.json python run_generation.py \
---model_name_or_path mistralai/Mixtral-8x7B-v0.1 \
+QUANT_CONFIG=./quantization_config/unit_scale_quant.json python ../gaudi_spawn.py \
+--use_deepspeed --world_size 8 run_generation.py --model_name_or_path mistralai/Mixtral-8x7B-v0.1 \
 --use_hpu_graphs \
 --use_kv_cache \
---limit_hpu_graphs \
---bucket_size 128 \
+--reuse_cache \
+--trim_logits \
+--attn_softmax_bf16 \
+--max_input_tokens 128 \
 --max_new_tokens 128 \
---batch_size 1 \
---bf16
-```
-
-Here is an example to quantize the model based on previous measurements for Mixtral-8x7B with 1 card:
-```bash
-QUANT_CONFIG=./quantization_config/maxabs_quant_mixtral.json python run_generation.py \
---model_name_or_path mistralai/Mixtral-8x7B-v0.1 \
---use_hpu_graphs \
---use_kv_cache \
+--batch_size 1024 \
 --limit_hpu_graphs \
 --bucket_size 128 \
---max_new_tokens 2048 \
---batch_size 16 \
+--bucket_internal \
+--n_iterations 2 \
+--warmup 2 \
 --bf16 \
 --fp8
 ```
@@ -376,6 +370,27 @@ python ../gaudi_spawn.py --use_deepspeed --world_size 8 run_generation.py \
 --flash_attention_causal_mask \
 --book_source
 ```
+
+Here is an example to perform BF16 benchmark on Mixtral-8x7B with 8 cards and `SDPA`:
+```bash
+python ../gaudi_spawn.py --use_deepspeed --world_size 8 run_generation.py \
+--model_name_or_path mistralai/Mixtral-8x7B-v0.1 \
+--use_hpu_graphs \
+--use_kv_cache \
+--reuse_cache \
+--trim_logits \
+--use_flash_attention \
+--max_input_tokens 128 \
+--max_new_tokens 128 \
+--batch_size 1024 \
+--limit_hpu_graphs \
+--bucket_size 128 \
+--bucket_internal \
+--n_iterations 2 \
+--warmup 2 \
+--bf16
+```
+Currently the `flash_attention_causal_mask` does not work for the Mixtral MoE benchmark.
 
 For more details see [documentation](https://docs.habana.ai/en/latest/PyTorch/Model_Optimization_PyTorch/Optimization_in_PyTorch_Models.html#using-fused-sdpa).
 

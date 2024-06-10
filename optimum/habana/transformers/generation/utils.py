@@ -77,6 +77,9 @@ MODELS_OPTIMIZED_WITH_STATIC_SHAPES = [
     "phi",
     "mixtral",
     "blip_text_model",
+    "chatglm",
+    "baichuan",
+    "qwen",
     "qwen2",
 ]
 
@@ -341,7 +344,7 @@ class GaudiGenerationMixin(GenerationMixin):
                         else:
                             assert False
                     elif model_kwargs["past_key_values"][0][0].dim() == 4:
-                        return (0, 0, 0, pad_amount)  # llama, falcon, qwen2
+                        return (0, 0, 0, pad_amount)  # llama, falcon, baichuan, chatglm2, qwen1, qwen2
                     else:
                         assert False, "Unknown case, please handle, or dont use bucketing"
 
@@ -354,7 +357,8 @@ class GaudiGenerationMixin(GenerationMixin):
                         # create_pad_arg handles them on a per-model basis
                         # This is a necessary (but not sufficient) condition: what ever dimension we are padding, should be a multiple of bucket_size
                         # This check is added in case we get a new model with a new kv-cache structure, and we attempt to pad some wrong dimension
-                        assert model_kwargs["past_key_values"][i][j].shape[-(len(pad_tuple) // 2)] % bucket_size == 0
+                        # This check is confict with ChatGLM2 ptuning
+                        # assert model_kwargs["past_key_values"][i][j].shape[-(len(pad_tuple) // 2)] % bucket_size == 0
                         tmp_lst[j] = torch.nn.functional.pad(
                             model_kwargs["past_key_values"][i][j], pad_tuple, value=pad_token_id
                         )
@@ -585,9 +589,13 @@ class GaudiGenerationMixin(GenerationMixin):
             assert self.config.model_type in [
                 "llama",
                 "mistral",
+                "mixtral",
                 "falcon",
+                "baichuan",
+                "chatglm",
+                "qwen",
                 "qwen2",
-            ], "reuse_cache only supported by llama, mistral, falcon and qwen2 at the moment"
+            ], "reuse_cache only supported by llama, mistral, mixtral, falcon and some local Chinese LLMs at the moment"
             if not generation_config.bucket_internal:
                 assert (
                     generation_config.bucket_size <= 0
@@ -734,15 +742,19 @@ class GaudiGenerationMixin(GenerationMixin):
             calculated_max_length = input_ids.shape[-1]
             if not generation_config.static_shapes and generation_config.max_new_tokens is not None:
                 calculated_max_length = input_ids.shape[-1] + generation_config.max_new_tokens
+            pre_seq_len = 0
+            if hasattr(generation_config, "pre_seq_len") and generation_config.pre_seq_len > 0:
+                pre_seq_len = generation_config.pre_seq_len
+                calculated_max_length = calculated_max_length + pre_seq_len
             if generation_config.use_cache and generation_config.reuse_cache:
                 bs, _ = input_ids.shape
                 if not is_greedy_or_beam_and_bucket:
                     unwrap_deepspeed_model(self).allocate_kv_cache(
-                        bs * generation_config.num_beams, calculated_max_length, token_idx
+                        bs * generation_config.num_beams, calculated_max_length, token_idx + pre_seq_len
                     )
                     model_kwargs["kv_cache_len"] = calculated_max_length
 
-            if self.config.model_type in ["llama", "falcon", "qwen2"]:
+            if self.config.model_type in ["llama", "falcon", "qwen", "qwen2", "mixtral"]:
                 if self.config.max_position_embeddings < calculated_max_length:
                     unwrap_deepspeed_model(self).update_sincos_cache(seq_len=calculated_max_length)
 

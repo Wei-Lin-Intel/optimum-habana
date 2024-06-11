@@ -9,4 +9,5 @@ from .transformer_engine import (
     te_setup_fp8_recipe_handler,
     te_wrap_fp8,
     te_wrap_fp8_forward_convert,
+    FP8ContextWrapper,
 )

@@ -143,3 +143,49 @@ def te_wrap_fp8_forward_convert(model, fp8_recipe_handler):
 
 def te_forward_convert(model, fp8_recipe_handler):
     SwitchableForwardMaker.convert(model, fp8_recipe_handler)
+
+class FP8ContextWrapper:
+    """
+    Helper class for FP8 context related operations.
+    """
+    def __init__(self, ctx, fp8_recipe):
+        self.ctx = ctx
+        self.fp8_ctx = self.create_fp8_context(fp8_recipe)
+
+    def __enter__(self):
+        self.ctx.__enter__()
+        self.fp8_ctx.__enter__()
+
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        self.fp8_ctx.__exit__(exc_type, exc_value, exc_traceback)
+        self.ctx.__exit__(exc_type, exc_value, exc_traceback)
+
+    @staticmethod
+    def create_fp8_context(fp8_recipe):
+        return te.fp8_autocast(enabled=True, fp8_recipe=fp8_recipe)
+
+    @staticmethod
+    def _gradient_checkpointing_wrap(func, *args, **kwargs):
+        '''
+        `_gradient_checkpointing_func` always takes the function to be recomputed as the first argument. The function
+        below wraps this first argument with `transformer_engine`'s `activation_checkpointing` context.
+        '''
+        _args = list(args)
+        _args[0] = te.distributed.activation_checkpointing()(_args[0])
+        args = tuple(_args)
+
+        return func(*args, **kwargs)
+
+    @staticmethod
+    def gradient_checkpointing_wrap(model):
+        '''
+        Wrap `_gradient_checkpointing_func` in the model with `transformer_engine`'s `activation_checkpointing` context.
+        This context is used to signal the `transformer_engine` modules whether they have been called with activation checkpointing enabled or not.
+        '''
+        if hasattr(model, "gradient_checkpointing") and model.gradient_checkpointing:
+            model._gradient_checkpointing_func = functools.partial(FP8ContextWrapper._gradient_checkpointing_wrap, model._gradient_checkpointing_func)
+            return
+
+        for module in model.modules():
+            if hasattr(module, "gradient_checkpointing") and module.gradient_checkpointing:
+                module._gradient_checkpointing_func = functools.partial(FP8ContextWrapper._gradient_checkpointing_wrap, module._gradient_checkpointing_func)

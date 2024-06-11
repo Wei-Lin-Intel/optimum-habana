@@ -28,13 +28,24 @@ Step2, you should install this optimum-habana:
 pip install git+https://github.com/Wei-Lin-Intel/optimum-habana.git@v1.11-release
 ```
 
-Step3, before you install HabanaAI DeepSpeed [DeepSpeed-inference](https://docs.habana.ai/en/latest/PyTorch/DeepSpeed/Inference_Using_DeepSpeed.html), please replace `auto_tp.py` in the folder `deepspeed/module_inject`:
+Step3, you should install DeepSpeed 1.15.1. There are 2 options:
+
+### Option 1
+
+You may use the official HabanaAI DeepSpeed [DeepSpeed-inference](https://docs.habana.ai/en/latest/PyTorch/DeepSpeed/Inference_Using_DeepSpeed.html) by replacing `auto_tp.py` in the folder `deepspeed/module_inject`:
 ```bash
 git clone https://github.com/HabanaAI/DeepSpeed.git -b 1.15.1
 cd DeepSpeed
 cp /your_path/optimum-habana/examples/text-generation/Mixtral/auto_tp.py deepspeed/module_inject
 python3 setup.py bdist_wheel
 cd dist && pip install deepspeed-0.12.4+hpu.synapse.v1.15.1-py3-none-any.whl 
+```
+
+### Option 2
+
+You may also use the locally optimized DeepSpeed [DeepSpeed-local](https://github.com/inkcherry/DeepSpeed_HPU/tree/pre_release_1.15), but it may require the access permission:
+```bash
+pip install git+https://github.com/inkcherry/DeepSpeed_HPU.git@pre_release_1.15
 ```
 
 ## Inference

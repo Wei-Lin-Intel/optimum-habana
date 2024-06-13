@@ -279,6 +279,10 @@ class GaudiLlamaAttention(LlamaAttention):
         self.v_cache = KVCache()
         self.fused_scaled_dot_product_attention = ModuleFusedSDPA(FusedSDPA) if FusedSDPA else None
         if config.fused_qkv:
+            self.num_heads = config.num_attention_heads
+            self.head_dim = config.hidden_size // self.num_heads
+            self.dim1 = self.num_heads * self.head_dim
+            self.dim2 = config.num_key_value_heads * self.head_dim
             self.qkv_proj = F.Linear(
                 self.hidden_size,
                 self.dim1 + 2 * self.dim2,

@@ -42,9 +42,11 @@ except ImportError:
 
 try:
     from habana_frameworks.torch.hpex.kernels import FusedSDPA
+
+    has_fused_sdpa = True
 except ImportError:
     print("Not using HPU fused scaled dot-product attention kernel.")
-    FusedSDPA = None
+    has_fused_sdpa = False
 
 import habana_frameworks.torch.core as htcore
 
@@ -146,8 +148,8 @@ class ModuleFusedSDPA(torch.nn.Module):
         super().__init__()
         self._hpu_kernel_fsdpa = fusedSDPA
 
-    def forward(self, query, key, value, attn_mask, dropout_p, is_casual, scale, softmax_mode):
-        return  self._hpu_kernel_fsdpa.apply(query, key, value, attn_mask, dropout_p, is_casual, scale, softmax_mode)
+    def forward(self, query, key, value, attn_mask, dropout_p, is_casual, scale, softmax_mode, recompute_mode):
+        return  self._hpu_kernel_fsdpa.apply(query, key, value, attn_mask, dropout_p, is_casual, scale, softmax_mode, recompute_mode)
 
 
 class Matmul(torch.nn.Module):
@@ -277,7 +279,7 @@ class GaudiLlamaAttention(LlamaAttention):
         self.matmul_av = Matmul()
         self.k_cache = KVCache()
         self.v_cache = KVCache()
-        self.fused_scaled_dot_product_attention = ModuleFusedSDPA(FusedSDPA) if FusedSDPA else None
+        self.fused_scaled_dot_product_attention = ModuleFusedSDPA(FusedSDPA) if has_fused_sdpa else None
         if config.fused_qkv:
             self.num_heads = config.num_attention_heads
             self.head_dim = config.hidden_size // self.num_heads
@@ -290,10 +292,17 @@ class GaudiLlamaAttention(LlamaAttention):
             )
         self.inp_seq_len = -1
         self.norm_factor = 1.0 / math.sqrt(self.head_dim)
+        self.use_recompute = True if os.getenv("QUANT_CONFIG", "") else False
+
+    def get_k_proj_weight(self):
+        """ 4bit quantization in GPTQ replaces the k_proj.weight with qweight. """
+        if hasattr(self.k_proj, 'qweight'):
+            return self.k_proj.qweight
+        return self.k_proj.weight
 
     def allocate_kv_cache(self, batch_size, max_seq_len, inp_seq_len):
         cache_shape = (batch_size, self.num_key_value_heads, max_seq_len, self.head_dim)
-        device = self.k_proj.weight.device
+        device = self.get_k_proj_weight().device
         dtype = self.config.torch_dtype
         self.k_cache.allocate(inp_seq_len, dtype, device, cache_shape)
         self.v_cache.allocate(inp_seq_len, dtype, device, cache_shape)
@@ -304,7 +313,7 @@ class GaudiLlamaAttention(LlamaAttention):
         # reduce memory consumption and improve performance.
         if seq_len > self.max_position_embeddings:
             self.max_position_embeddings = seq_len
-            _, _ = self.rotary_emb(self.k_proj.weight, seq_len=seq_len)
+            _, _ = self.rotary_emb(self.get_k_proj_weight(), seq_len=seq_len)
 
     def reorder(self, tensor, beam_idx, dim_a, dim_b):
         updated = tensor.index_select(0, beam_idx)
@@ -358,7 +367,7 @@ class GaudiLlamaAttention(LlamaAttention):
             query_slices = self.q_proj.weight.split(
                 (self.num_heads * self.head_dim) // self.config.pretraining_tp, dim=0
             )
-            key_slices = self.k_proj.weight.split(key_value_slicing, dim=0)
+            key_slices = self.get_k_proj_weight().split(key_value_slicing, dim=0)
             value_slices = self.v_proj.weight.split(key_value_slicing, dim=0)
 
             query_states = [F.linear(hidden_states, query_slices[i]) for i in range(self.config.pretraining_tp)]
@@ -429,30 +438,26 @@ class GaudiLlamaAttention(LlamaAttention):
         else:
             past_key_value = None
 
-        if use_flash_attention and FusedSDPA:
+        if use_flash_attention and has_fused_sdpa:
             import habana_frameworks.torch.hpu as ht
             softmax_mode = 'fast' if flash_attention_fast_softmax else 'None'
 
             if q_len == 1:
                 # next token
-                use_recompute = True if os.getenv("QUANT_CONFIG", "") else False
-                with ht.sdp_kernel(enable_recompute=use_recompute):
-                    attn_output = self.fused_scaled_dot_product_attention(
-                        query_states, key_states, value_states, attention_mask, 0.0, False, None, softmax_mode
-                    )
+                attn_output = self.fused_scaled_dot_product_attention(
+                    query_states, key_states, value_states, attention_mask, 0.0, False, None, 'None', self.use_recompute
+                )
             else:
                 # first token
                 if flash_attention_causal_mask:
                     # causal masking on first token requires inputs to be of the same lenght
-                    with ht.sdp_kernel(enable_recompute=flash_attention_recompute):
-                        attn_output = self.fused_scaled_dot_product_attention(
-                            query_states, key_states, value_states, None, 0.0, True, None, softmax_mode
-                        )
+                    attn_output = self.fused_scaled_dot_product_attention(
+                        query_states, key_states, value_states, None, 0.0, True, None, softmax_mode,flash_attention_recompute
+                    )
                 else:
-                    with ht.sdp_kernel(enable_recompute=flash_attention_recompute):
-                        attn_output = self.fused_scaled_dot_product_attention(
-                            query_states, key_states, value_states, attention_mask, 0.0, False, None, softmax_mode
-                        )
+                    attn_output = self.fused_scaled_dot_product_attention(
+                        query_states, key_states, value_states, attention_mask, 0.0, False, None, softmax_mode,flash_attention_recompute
+                    )
 
         else:
             query_states, key_states, value_states, attention_mask = gaudi_llama_repeat_kv(

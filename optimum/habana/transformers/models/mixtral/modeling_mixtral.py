@@ -472,6 +472,7 @@ class GaudiMixtralDecoderLayer(MixtralDecoderLayer):
         output_router_logits: Optional[bool] = False,
         use_cache: Optional[bool] = False,
         token_idx: Optional[torch.Tensor] = None,
+        lazy_mode: Optional[bool] = True,
         reuse_cache: Optional[bool] = False,
         flash_attention_recompute: Optional[bool] = False,
         cache_idx: int = None,
@@ -481,6 +482,7 @@ class GaudiMixtralDecoderLayer(MixtralDecoderLayer):
         Copied from MixtralDecoderLayer.forward: https://github.com/huggingface/transformers/blob/v4.37.0/src/transformers/models/mixtral/modeling_mixtral.py
         The only differences are:
         - add new args token_idx
+        - add new args lazy_mode
         - add new args reuse_cache
         - add new args flash_attention_recompute
         - add new args cache_idx
@@ -489,7 +491,8 @@ class GaudiMixtralDecoderLayer(MixtralDecoderLayer):
             warnings.warn(
                 "Passing `padding_mask` is deprecated and will be removed in v4.37. Please make sure use `attention_mask` instead.`"
             )
-
+        if lazy_mode:
+            htcore.mark_step()
         residual = hidden_states
 
         hidden_states = self.input_layernorm(hidden_states)
@@ -508,12 +511,16 @@ class GaudiMixtralDecoderLayer(MixtralDecoderLayer):
             cache_idx=cache_idx,
         )
         hidden_states = residual + hidden_states
+        if lazy_mode:
+            htcore.mark_step()
 
         # Fully Connected
         residual = hidden_states
         hidden_states = self.post_attention_layernorm(hidden_states)
         hidden_states, router_logits = self.block_sparse_moe(hidden_states)
         hidden_states = residual + hidden_states
+        if lazy_mode:
+            htcore.mark_step()
 
         outputs = (hidden_states,)
 
@@ -550,6 +557,7 @@ class GaudiMixtralModel(MixtralModel):
         output_router_logits: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         token_idx: Optional[torch.Tensor] = None,
+        lazy_mode: Optional[bool] = True,
         reuse_cache: Optional[bool] = False,
         flash_attention_recompute: Optional[bool] = False,
         cache_idx: int = None,
@@ -680,6 +688,7 @@ class GaudiMixtralModel(MixtralModel):
                     output_router_logits=output_router_logits,
                     use_cache=use_cache,
                     token_idx=token_idx,
+                    lazy_mode=lazy_mode,
                     reuse_cache=reuse_cache,
                     flash_attention_recompute=flash_attention_recompute,
                     cache_idx=cache_idx,
@@ -753,6 +762,7 @@ class GaudiMixtralForCausalLM(MixtralForCausalLM):
         output_router_logits: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         token_idx: Optional[torch.Tensor] = None,
+        lazy_mode: Optional[bool] = True,
         reuse_cache: Optional[bool] = None,
         flash_attention_recompute: Optional[bool] = False,
         cache_idx: int = None,
@@ -780,6 +790,7 @@ class GaudiMixtralForCausalLM(MixtralForCausalLM):
             output_router_logits=output_router_logits,
             return_dict=return_dict,
             token_idx=token_idx,
+            lazy_mode=lazy_mode,
             reuse_cache=reuse_cache,
             flash_attention_recompute=flash_attention_recompute,
             cache_idx=cache_idx,
@@ -854,7 +865,7 @@ class GaudiMixtralForCausalLM(MixtralForCausalLM):
                 # some of the inputs are exclusively passed as part of the cache (e.g. when passing input_embeds as
                 # input)
                 if attention_mask is not None and attention_mask.shape[1] > input_ids.shape[1]:
-                    input_ids = input_ids[:, -(attention_mask.shape[1] - past_length) :]
+                    input_ids = input_ids[:, -(attention_mask.shape[1] - past_length):]
                 # 2 - If the past_length is smaller than input_ids', then input_ids holds all input tokens. We can discard
                 # input_ids based on the past_length.
                 elif past_length < input_ids.shape[1]:
@@ -882,7 +893,7 @@ class GaudiMixtralForCausalLM(MixtralForCausalLM):
                 if token_idx is not None:
                     position_ids = torch.index_select(position_ids, 1, token_idx - 1)
                 else:
-                    position_ids = position_ids[:, -input_ids.shape[1] :]
+                    position_ids = position_ids[:, -input_ids.shape[1]:]
 
         # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
         if inputs_embeds is not None and past_key_values is None:
@@ -897,6 +908,7 @@ class GaudiMixtralForCausalLM(MixtralForCausalLM):
                 "use_cache": kwargs.get("use_cache"),
                 "attention_mask": attention_mask,
                 "token_idx": token_idx,
+                "lazy_mode": kwargs.get("lazy_mode"),
                 "reuse_cache": reuse_cache,
                 "flash_attention_recompute": kwargs.get("flash_attention_recompute"),
                 "cache_idx": kwargs.get("cache_idx"),

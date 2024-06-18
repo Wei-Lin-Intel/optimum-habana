@@ -219,11 +219,14 @@ def setup_model(args, model_dtype, model_kwargs, logger):
             model = AutoModelForCausalLM.from_config(config)
         max_memory = {"cpu": "10GiB"}
         device_map = infer_auto_device_map(model, max_memory=max_memory, dtype=model_dtype)
-        model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path, device_map=device_map, offload_folder="/tmp/offload_folder/", offload_state_dict=True, torch_dtype=model_dtype, **model_kwargs)  
+        model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path, device_map=device_map,
+                                                     offload_folder="/tmp/offload_folder/", offload_state_dict=True,
+                                                     torch_dtype=model_dtype, **model_kwargs)
     elif args.gptq:
         from transformers import GPTQConfig
         quantization_config = GPTQConfig(bits=4, use_exllama=False)
-        model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path, torch_dtype=model_dtype, quantization_config=quantization_config, **model_kwargs)
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_name_or_path, torch_dtype=model_dtype, quantization_config=quantization_config, **model_kwargs)
     else:
         if args.assistant_model is not None:
             assistant_model = AutoModelForCausalLM.from_pretrained(
@@ -259,7 +262,7 @@ def setup_model(args, model_dtype, model_kwargs, logger):
         if _is_peft_model(model):
             model.base_model = wrap_in_hpu_graph(model.base_model)
 
-    if args.torch_compile and model.config.model_type == "llama":
+    if args.torch_compile:
         model = get_torch_compiled_model(model)
         # if args.assistant_model is not None:
         #     assistant_model = get_torch_compiled_model(assistant_model)
@@ -336,7 +339,7 @@ def setup_distributed_model(args, model_dtype, model_kwargs, logger):
         if args.assistant_model is not None:
             habana_quantization_toolkit.prep_model(assistant_model)
 
-    if args.torch_compile and model.config.model_type == "llama":
+    if args.torch_compile:
         model = get_torch_compiled_model(model)
         # if args.assistant_model is not None:
         #     assistant_model = get_torch_compiled_model(assistant_model)
@@ -478,6 +481,7 @@ def setup_generation_config(args, model, assistant_model, tokenizer):
 
     return generation_config
 
+
 def exclude_hpu_graph_configs(args):
     # Excluded configs for batch size 1 for hpu graph
     if args.batch_size == 1 and args.limit_hpu_graphs:
@@ -494,6 +498,7 @@ def exclude_hpu_graph_configs(args):
         return True
     else:
         return False
+
 
 def initialize_model(args, logger):
     init_start = time.perf_counter()

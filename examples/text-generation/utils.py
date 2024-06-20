@@ -201,7 +201,7 @@ def get_model_with_observer(args, model, logger):
     logger.info("[pt2e_quant] Inserting observers for measurement.")
 
     QUANTIZER_DTYPES = {'int8': torch.int8, 'fp8_143': torch.float8_e4m3fn, 'fp8_152': torch.float8_e5m2}
-    quant_dtype = QUANTIZER_DTYPES[args.quant_dtype]
+    quant_dtype = QUANTIZER_DTYPES[os.getenv("USE_PT2E_QUANT_DTYPE", "fp8_143")]
 
     quantizer = habana_quantizer()
     quant_config = habana_quant_config_symmetric(quant_dtype)
@@ -257,7 +257,7 @@ def setup_model(args, model_dtype, model_kwargs, logger):
         model = get_torch_compiled_model(model)
 
     # [Experimental] PT2E Quant like flow
-    if args.pt2e_quant and model.config.model_type == "llama":
+    if os.getenv("USE_PT2E_QUANT", "0") == "1" and model.config.model_type == "llama":
         logger.info("[pt2e_quant] Using PT2 Export like flow for measurement / quantization.")
         model = get_model_with_observer(args, model, logger)
 
@@ -326,7 +326,7 @@ def setup_distributed_model(args, model_dtype, model_kwargs, logger):
         model = get_torch_compiled_model(model)
 
     # [Experimental] PT2E Quant like flow
-    if args.pt2e_quant and model.config.model_type == "llama":
+    if os.getenv("USE_PT2E_QUANT", "0") == "1" and model.config.model_type == "llama":
         logger.info("[pt2e_quant] Using PT2 Export like flow for measurement / quantization.")
         model = get_model_with_observer(args, model, logger)
 

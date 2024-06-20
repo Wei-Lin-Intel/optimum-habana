@@ -314,11 +314,13 @@ def setup_parser(parser):
     args = parser.parse_args()
 
     if args.pt2e_quant:
+        os.environ["USE_PT2E_QUANT"] = "1"
         args.torch_compile = False
         args.use_hpu_graphs = False
         if args.quant_dtype not in ['int8', 'fp8_143', 'fp8_152']:
             logger.info("Unsupported quantization data type! Using fp8_143 by default.")
             args.quant_dtype = 'fp8_143'
+        os.environ["USE_PT2E_QUANT_DTYPE"] = args.quant_dtype
 
     if args.torch_compile:
         args.use_hpu_graphs = False

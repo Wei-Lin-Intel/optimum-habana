@@ -31,8 +31,6 @@ logger = logging.get_logger(__name__)
 
 try:
     from habana_frameworks.mediapipe import fn
-    from habana_frameworks.mediapipe.backend.nodes import opnode_tensor_info
-    from habana_frameworks.mediapipe.backend.operator_specs import schema
     from habana_frameworks.mediapipe.media_types import (
         dtype,
         ftype,
@@ -40,11 +38,11 @@ try:
         readerOutType,
     )
     from habana_frameworks.mediapipe.mediapipe import MediaPipe
-    from habana_frameworks.mediapipe.operators.reader_nodes.reader_nodes import media_ext_reader_op_impl
-    from habana_frameworks.mediapipe.operators.reader_nodes.reader_nodes import media_ext_reader_op_tensor_info
     from habana_frameworks.mediapipe.operators.cpu_nodes.cpu_nodes import media_function
-    from habana_frameworks.mediapipe.operators.media_nodes import MediaReaderNode
-    from habana_frameworks.torch.hpu import get_device_name
+    from habana_frameworks.mediapipe.operators.reader_nodes.reader_nodes import (
+        media_ext_reader_op_impl,
+        media_ext_reader_op_tensor_info,
+    )
 except ImportError:
     pass
 
@@ -112,7 +110,7 @@ class ReadImageTextFromDataset(media_ext_reader_op_impl):
         d0 = len(sample["pooled_prompt_embeds"])
         d1 = len(sample["prompt_embeds"])
         d2 = len(sample["prompt_embeds"][0])
-        o = media_ext_reader_op_tensor_info(dtype.FLOAT32, 
+        o = media_ext_reader_op_tensor_info(dtype.FLOAT32,
                 np.array([d2, d1, self.batch_size], dtype=np.uint32), "")
         out_info.append(o)
         o = media_ext_reader_op_tensor_info(

@@ -1734,7 +1734,7 @@ class GaudiGenerationMixin(GenerationMixin):
         bucket_internal = model_kwargs.get("bucket_internal", None)
         reduce_recompile = model_kwargs.get("reduce_recompile", False)
 
-        
+
         if not bucket_internal:
             if bucket_size >= 0:
                 inc = iter(incrementor(bucket_size, cur_len))
@@ -2309,6 +2309,8 @@ class GaudiGenerationMixin(GenerationMixin):
                     time_to_first_token_done = True
                     import habana_frameworks.torch.hpu as torch_hpu
 
+                    torch_hpu.synchronize()
+
             if sample_first:
                 import habana_frameworks.torch.hpu as torch_hpu
 
@@ -2316,7 +2318,7 @@ class GaudiGenerationMixin(GenerationMixin):
                 print(f"First Token time(sample):{time.perf_counter()*1000}")
                 sample_first = False
 
-                    torch_hpu.synchronize()
+                torch_hpu.synchronize()
                 hb_gen_time.step()
 
         if (

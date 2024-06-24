@@ -23,14 +23,14 @@ import json
 import logging
 import math
 import os
+import struct
 import time
 from itertools import cycle
 from pathlib import Path
+
 import pandas as pd
-import struct
-import contextlib
 import torch
-from utils import adjust_batch, count_hpu_graphs, initialize_model, finalize_quantization
+from utils import adjust_batch, count_hpu_graphs, finalize_quantization, initialize_model
 
 from optimum.habana.utils import get_hpu_memory_stats
 
@@ -488,7 +488,7 @@ def main():
                 eos_token_id = 2
                 try:
                     ind_eos = pred.index(eos_token_id)+1
-                except:
+                except: #noqa
                     ind_eos = len(pred)
                 pred = pred[:ind_eos]
                 num_token += len(pred)

@@ -19,8 +19,7 @@ import unittest
 
 import pytest
 from parameterized import parameterized
-
-from transformers import LlamaConfig, is_torch_available, set_seed
+from transformers import LlamaConfig, is_torch_available
 from transformers.testing_utils import (
     require_bitsandbytes,
     require_flash_attn,
@@ -29,7 +28,6 @@ from transformers.testing_utils import (
     require_torch_gpu,
     require_torch_sdpa,
     slow,
-    torch_device,
 )
 
 from optimum.habana.transformers.modeling_utils import adapt_transformers_to_gaudi
@@ -45,7 +43,6 @@ adapt_transformers_to_gaudi()
 
 if is_torch_available():
     import torch
-
     from transformers import (
         CodeLlamaTokenizer,
         LlamaForCausalLM,

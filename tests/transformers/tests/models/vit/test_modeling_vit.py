@@ -15,7 +15,6 @@
 # limitations under the License.
 """Testing suite for the PyTorch ViT model."""
 
-import inspect
 import unittest
 
 from transformers import ViTConfig

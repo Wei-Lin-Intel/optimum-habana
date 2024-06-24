@@ -72,7 +72,6 @@ from .models import (
     GaudiPhiAttention,
     GaudiPhiDecoderLayer,
     GaudiPhiForCausalLM,
-    LlamaConfig,
     GaudiPhiModel,
     GaudiQwen2Attention,
     GaudiQwen2DecoderLayer,

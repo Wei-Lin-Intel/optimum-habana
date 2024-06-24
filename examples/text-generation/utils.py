@@ -242,6 +242,7 @@ def setup_model(args, model_dtype, model_kwargs, logger):
         model = setup_quantization(model, args)
 
         if args.assistant_model is not None:
+            import habana_quantization_toolkit
             habana_quantization_toolkit.quantize_model(assistant_model)
 
     model = model.eval().to(args.device)
@@ -337,6 +338,7 @@ def setup_distributed_model(args, model_dtype, model_kwargs, logger):
     if args.quant_config:
         model = setup_quantization(model, args)
         if args.assistant_model is not None:
+            import habana_quantization_toolkit
             habana_quantization_toolkit.prep_model(assistant_model)
 
     if args.torch_compile:

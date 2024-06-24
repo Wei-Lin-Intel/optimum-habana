@@ -1,9 +1,11 @@
 import argparse
-from transformers import AutoTokenizer
-import nltk
-import evaluate
-import numpy as np
 import json
+
+import evaluate
+import nltk
+import numpy as np
+from transformers import AutoTokenizer
+
 
 ###################### Habana internal code ##################################
 ACC_TARGET = {"rouge1": 44.4312, "rouge2": 22.0352, "rougeL": 28.6162}

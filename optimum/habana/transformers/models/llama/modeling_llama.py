@@ -1,4 +1,3 @@
-
 import math
 import os
 import warnings
@@ -231,7 +230,7 @@ class ModuleFusedSDPA(torch.nn.Module):
         self._hpu_kernel_fsdpa = fusedSDPA
 
     def forward(self, query, key, value, attn_mask, dropout_p, is_casual, scale, softmax_mode):
-        return  self._hpu_kernel_fsdpa.apply(query, key, value, attn_mask, dropout_p, is_casual, scale, softmax_mode)
+        return self._hpu_kernel_fsdpa.apply(query, key, value, attn_mask, dropout_p, is_casual, scale, softmax_mode)
 
 
 class Matmul(torch.nn.Module):
@@ -309,8 +308,8 @@ class GaudiLlamaAttention(LlamaAttention):
         self.norm_factor = 1.0 / math.sqrt(self.head_dim)
 
     def get_k_proj_weight(self):
-        """ 4bit quantization in GPTQ replaces the k_proj.weight with qweight. """
-        if hasattr(self.k_proj, 'qweight'):
+        """4bit quantization in GPTQ replaces the k_proj.weight with qweight."""
+        if hasattr(self.k_proj, "qweight"):
             return self.k_proj.qweight
         return self.k_proj.weight
 

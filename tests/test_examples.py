@@ -252,7 +252,18 @@ class ExampleTestMeta(type):
 
         return False
 
-    def __new__(cls, name, bases, attrs, example_name=None, multi_card=False, deepspeed=False, fsdp=False, fp8=False):
+    def __new__(
+        cls,
+        name,
+        bases,
+        attrs,
+        example_name=None,
+        multi_card=False,
+        deepspeed=False,
+        fsdp=False,
+        torch_compile=False,
+        fp8=False,
+    ):
         distribution = "single_card"
         if multi_card:
             distribution = "multi_card"
@@ -743,12 +754,9 @@ class MultiCardCausalLanguageModelingLORAFSDPCompileExampleTester(
     TASK_NAME = "tatsu-lab/alpaca_fsdpcompile"
     DATASET_NAME = "tatsu-lab/alpaca"
 
+
 class MultiCardCausalLanguageModelingLoRAFP8ExampleTester(
-    ExampleTesterBase,
-    metaclass=ExampleTestMeta,
-    example_name="run_lora_clm",
-    multi_card=True,
-    fp8=True
+    ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_lora_clm", multi_card=True, fp8=True
 ):
     TASK_NAME = "tatsu-lab/alpaca_fp8"
     DATASET_NAME = "tatsu-lab/alpaca"

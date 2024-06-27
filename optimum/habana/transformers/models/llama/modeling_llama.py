@@ -277,7 +277,10 @@ class GaudiLlamaAttention(LlamaAttention):
         self.matmul_av = Matmul()
         self.k_cache = KVCache()
         self.v_cache = KVCache()
-        self.fused_scaled_dot_product_attention = ModuleFusedSDPA(FusedSDPA) if FusedSDPA else None
+        from deepspeed.sequence.layer import DistributedAttention
+        from deepspeed import comm as dist
+        self.fused_scaled_dot_product_attention_loc = ModuleFusedSDPA(FusedSDPA) if FusedSDPA else None
+        self.fused_scaled_dot_product_attention = DistributedAttention(self.fused_scaled_dot_product_attention_loc, dist.get_world_group())
         if config.fused_qkv:
             self.num_heads = config.num_attention_heads
             self.head_dim = config.hidden_size // self.num_heads

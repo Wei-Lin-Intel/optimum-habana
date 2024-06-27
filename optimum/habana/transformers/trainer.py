@@ -1548,6 +1548,13 @@ class GaudiTrainer(Trainer):
         inputs = self._prepare_inputs(inputs)
             #Bhargav
         print(inputs)
+        seq_parallel_world_rank = int(os.environ.get("LOCAL_RANK", -1))
+        print(seq_parallel_world_rank)
+        sub_seq_length = 4096
+        sub_seq_start = seq_parallel_world_rank * sub_seq_length
+        sub_seq_end = (seq_parallel_world_rank + 1) * sub_seq_length
+        inputs['input_ids'] = inputs['input_ids'][:, sub_seq_start:sub_seq_end]
+        inputs['labels'] = inputs['labels'][:, sub_seq_start:sub_seq_end]
             # if get_sequence_parallel_world_size() > 1:
             #     rank = get_sequence_parallel_rank()
             #     src_rank = get_sequence_parallel_src_rank()

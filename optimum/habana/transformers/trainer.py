@@ -1546,6 +1546,75 @@ class GaudiTrainer(Trainer):
         """
         model.train()
         inputs = self._prepare_inputs(inputs)
+            #Bhargav
+        print(inputs)
+            # if get_sequence_parallel_world_size() > 1:
+            #     rank = get_sequence_parallel_rank()
+            #     src_rank = get_sequence_parallel_src_rank()
+            #     group = get_sequence_parallel_group()
+            # else:
+            #     rank = get_tensor_model_parallel_rank()
+            #     src_rank = get_tensor_model_parallel_src_rank()
+            #     group = get_tensor_model_parallel_group()
+
+            # key_size, key_numel, total_numel = _build_key_size_numel_dictionaries(
+            #     keys, data, group=group, rank=rank, src_rank=src_rank)
+
+            # # Pack on rank zero.
+            # if rank == 0:
+            #     # Check that all keys have the same data type.
+            #     # Flatten the data associated with the keys
+            #     flatten_data = torch.cat(
+            #         [data[key].contiguous().view(-1) for key in keys], dim=0).to(get_accelerator().device_name())
+            # else:
+            #     flatten_data = torch.empty(total_numel,
+            #                             device=get_accelerator().current_device_name(),
+            #                             dtype=datatype)
+
+            # # Broadcast
+            # torch.distributed.broadcast(flatten_data, src_rank, group=group)
+
+            # # Unpack
+            # output = {}
+            # offset = 0
+            # for key in keys:
+            #     size = key_size[key]
+            #     numel = key_numel[key]
+            #     output[key] = flatten_data.narrow(0, offset, numel).view(size)
+            #     offset += numel
+            # tokens_ = data_b['text'].long()
+            # labels = tokens_[:, 1:].contiguous()
+            # tokens = tokens_[:, :-1].contiguous()
+            # # Get the masks and postition ids.
+            # skip_mask = args.use_flash_attn or args.use_flash_attn_triton
+            # attention_mask, loss_mask, position_ids = get_ltor_masks_and_position_ids(
+            #     tokens,
+            #     tokenizer.eod,
+            #     args.reset_position_ids,
+            #     args.reset_attention_mask,
+            #     args.eod_mask_loss,
+            #     skip_mask)
+
+            # # For DS's sequence parallel
+            # seq_parallel_world_size = mpu.get_sequence_parallel_world_size()
+            # seq_parallel_world_rank = mpu.get_sequence_parallel_rank()
+
+            # # For Megatron's sequence parallel
+            # if args.sequence_parallel:
+            #     seq_parallel_world_size = mpu.get_tensor_model_parallel_world_size()
+            #     seq_parallel_world_rank = mpu.get_tensor_model_parallel_rank()
+            # seq_length = tokens.size(1)
+
+            # assert seq_length % seq_parallel_world_size == 0
+            # sub_seq_length = seq_length // seq_parallel_world_size
+            # sub_seq_start = seq_parallel_world_rank * sub_seq_length
+            # sub_seq_end = (seq_parallel_world_rank + 1) * sub_seq_length
+
+            # tokens = tokens[:, sub_seq_start:sub_seq_end]
+            # position_ids = position_ids[:, sub_seq_start:sub_seq_end]
+            # # For DS's sequence parallel
+            # if mpu.get_sequence_parallel_world_size() > 1:
+            #     labels = labels[:, sub_seq_start:sub_seq_end]
 
         with self.compute_loss_context_manager():
             loss = self.compute_loss(model, inputs)
@@ -2019,6 +2088,7 @@ class GaudiTrainer(Trainer):
         loss_without_labels = True if len(self.label_names) == 0 and return_loss else False
 
         inputs = self._prepare_inputs(inputs)
+        
         if ignore_keys is None:
             if hasattr(self.model, "config"):
                 ignore_keys = getattr(self.model.config, "keys_to_ignore_at_inference", [])

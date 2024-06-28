@@ -306,6 +306,11 @@ def setup_parser(parser):
         action="store_true",
         help="Whether to enable device map auto. In case no space left on cpu, weights will be offloaded to disk.",
     )
+    parser.add_argument(
+        "--llama_instruct",
+        action="store_true",
+        help="Enable instruction based default promt for llama.",
+    )
     args = parser.parse_args()
 
     if args.torch_compile:
@@ -537,6 +542,27 @@ def main():
                 1342,  # Pride and Prejudice
             ]
             input_sentences = assemble_prompt(prompt_size=args.max_input_tokens, book_path=download_book(book_ids[0]))
+
+        elif args.llama_instruct:
+            messages = [
+                {"role": "system", "content": "You are a pirate chatbot who always responds in pirate speak!"},
+                {"role": "user", "content": "Who are you?"},
+            ]
+
+            instruction = tokenizer.apply_chat_template(
+                messages,
+                add_generation_prompt=True,
+                return_tensors="pt",
+                tokenize=False
+            )
+
+            print(instruction)
+
+            input_sentences = [
+                instruction,
+                ]
+            print(input_sentences)
+
         else:
             input_sentences = [
                 "DeepSpeed is a machine learning framework",

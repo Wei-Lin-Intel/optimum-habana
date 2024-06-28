@@ -561,8 +561,6 @@ def main():
         def generate(size=None, reduce_recompile=False):
             """Generates sequences from the input sentences and returns them."""
 
-            t0 = time.perf_counter()
-            print(f"Step4+ starting time is {t0*1000}", flush=True)
             encode_t0 = time.perf_counter()
             # Tokenization
             if args.max_input_tokens > 0:
@@ -598,8 +596,8 @@ def main():
             first_token_time = iteration_times[0] + encode_duration
             logger.info(f"Time to first token = {first_token_time*1000}ms")
             outputs = tokenizer.batch_decode(output_tokens, skip_special_tokens=True)
-#            duration = time.perf_counter() - t0
-#            print(f"Total E2E time of this iteration is {duration:.3f}s", flush=True)
+            duration = time.perf_counter() - t0
+            print(f"Total E2E time of this iteration is {duration:.3f}s", flush=True)
             return outputs
 
         from optimum.habana.utils import HabanaProfile

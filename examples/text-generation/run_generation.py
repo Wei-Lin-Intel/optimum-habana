@@ -371,7 +371,6 @@ def main():
             """Generates sequences from the input sentences and returns them."""
 
             t0 = time.perf_counter()
-            print(f"Step4+ starting time is {t0*1000}", flush=True)
             if size is not None:
                 input_tokens = adjust_batch(input_tokens, size)
 

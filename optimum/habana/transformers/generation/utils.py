@@ -1617,7 +1617,6 @@ class GaudiGenerationMixin(GenerationMixin):
                 import habana_frameworks.torch.hpu as torch_hpu
 
                 torch_hpu.synchronize()
-                print(f"First Token time(greedy):{time.perf_counter()*1000}")
                 greedy_first = False
 
             if iteration_times is not None:

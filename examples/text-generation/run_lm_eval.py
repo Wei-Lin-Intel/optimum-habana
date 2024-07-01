@@ -27,7 +27,7 @@ import lm_eval.tasks
 import torch
 import torch.nn.functional as F
 from utils import initialize_model, finalize_quantization
-from habana_model_adapter import setup_lm_eval_parser, HabanaModelAdapter, print_results
+from lm_eval_utils import setup_lm_eval_parser, HabanaModelAdapter, print_results
 
 from optimum.habana.utils import get_hpu_memory_stats
 

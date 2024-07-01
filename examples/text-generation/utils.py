@@ -167,9 +167,9 @@ def get_torch_compiled_model(model):
 
 def setup_quantization(model, args=None):
     if os.getenv("USE_INC", ""):
-        from neural_compressor.torch import FP8QuantConfig, convert, prepare
+        from neural_compressor.torch.quantization  import FP8Config, convert, prepare
         if args:
-            config = FP8QuantConfig.from_json_file(args.quant_config)
+            config = FP8Config.from_json_file(args.quant_config)
         else:
             # one-step quantization mode, calibration was done quantize the model
             return convert(model)

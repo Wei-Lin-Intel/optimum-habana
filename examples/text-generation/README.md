@@ -506,13 +506,13 @@ python ../gaudi_spawn.py --use_deepspeed --world_size 8 run_generation.py \
 
 For more details see [documentation](https://docs.habana.ai/en/latest/PyTorch/Model_Optimization_PyTorch/Optimization_in_PyTorch_Models.html#using-fused-sdpa).
 
-### Running with UINT4 using AutoGPTQ
+### Running with UINT4 weight quantization using AutoGPTQ
 
 
-Llama2-7b in UINT4 is enabled using [AutoGPTQ Fork](https://github.com/HabanaAI/AutoGPTQ), which provides quantization capabilities in PyTorch.
+Llama2-7b in UINT4 weight only quantization is enabled using [AutoGPTQ Fork](https://github.com/HabanaAI/AutoGPTQ), which provides quantization capabilities in PyTorch.
 Currently, the support is for UINT4 inference of pre-quantized models only.
 
-You can run a *UINT4 quantized* model using AutoGPTQ with the argument `--gptq`.
+You can run a *UINT4 weight quantized* model using AutoGPTQ with the argument `--gptq`.
 
 Here is an example to run a quantized model on Llama2-7b `TheBloke/Llama-2-7b-Chat-GPTQ`:
 ```bash

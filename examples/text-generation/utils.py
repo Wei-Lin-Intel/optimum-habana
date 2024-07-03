@@ -182,6 +182,7 @@ def patch_scoped_linear_all_reduce(model):
         patch_scoped_linear_all_reduce(module)
 
 
+<<<<<<< HEAD
 def compile_regions(model, **kwargs):
     """
     A standalone function to compile regions of a model.
@@ -225,6 +226,16 @@ def get_torch_compiled_model(model, logger, args):
             "In low performance case, please explicitly specify a module you want to wrap with `torch.compile`"
         )
         model = compile_fn(model, **compile_kwargs)
+=======
+def get_torch_compiled_model(model):
+    if model.config.model_type in ["gpt_bigcode"]:
+        # For gpt_bigcode model_type, model.transformer is used instead of model.model
+        model.transformer = torch.compile(
+            model.transformer, backend="hpu_backend", options={"keep_input_mutations": True}
+        )
+    else:
+        model.model = torch.compile(model.model, backend="hpu_backend", options={"keep_input_mutations": True})
+>>>>>>> d06e8e9d (Fix t.compile for Granite20b   (#282))
     return model
 
 

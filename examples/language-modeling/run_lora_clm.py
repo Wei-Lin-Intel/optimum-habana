@@ -30,7 +30,7 @@ import evaluate
 import torch
 import transformers
 from datasets import load_dataset
-from peft import LoraConfig, TaskType, get_peft_model, tuners
+from peft import AdaLoraConfig, IA3Config, LoraConfig, TaskType, get_peft_model, tuners
 from peft.utils.other import fsdp_auto_wrap_policy
 from transformers import (
     AutoConfig,
@@ -100,12 +100,6 @@ class ModelArguments:
         default="main",
         metadata={"help": "The specific model version to use (can be a branch name, tag name or commit id)."},
     )
-    use_auth_token: bool = field(
-        default=False,
-        metadata={
-            "help": "The `use_auth_token` argument is deprecated and will be removed in v4.34. Please use `token` instead."
-        },
-    )
     trust_remote_code: bool = field(
         default=False,
         metadata={
@@ -134,7 +128,7 @@ class ModelArguments:
         default=False,
         metadata={
             "help": (
-                "Whether to run attention softmax layer in bf16 precision for fine-tuning. The current support is limited to Llama only.",
+                "Whether to run attention softmax layer in bf16 precision for fine-tuning. The current support is limited to Llama only."
             )
         },
     )
@@ -142,7 +136,7 @@ class ModelArguments:
         default=False,
         metadata={
             "help": (
-                "Whether to use Habana flash attention for fine-tuning. The current support is limited to Llama only.",
+                "Whether to use Habana flash attention for fine-tuning. The current support is limited to Llama only."
             )
         },
     )
@@ -151,7 +145,7 @@ class ModelArguments:
         metadata={
             "help": (
                 "Whether to enable recompute in Habana flash attention for fine-tuning."
-                " It is applicable only when use_flash_attention is True.",
+                " It is applicable only when use_flash_attention is True."
             )
         },
     )
@@ -160,16 +154,14 @@ class ModelArguments:
         metadata={
             "help": (
                 "Whether to enable causal mask in Habana flash attention for fine-tuning."
-                " It is applicable only when use_flash_attention is True.",
+                " It is applicable only when use_flash_attention is True."
             )
         },
     )
     use_fused_rope: bool = field(
         default=True,
         metadata={
-            "help": (
-                "Whether to use Habana fused-rope for fine-tuning. The current support is limited to Llama only.",
-            )
+            "help": ("Whether to use Habana fused-rope for fine-tuning. The current support is limited to Llama only.")
         },
     )
     load_meta_device: bool = field(
@@ -289,11 +281,52 @@ class FinetuneArguments:
     )
     lora_target_modules: List[str] = field(
         default_factory=lambda: None,
-        metadata={"help": "Target modules for the LoRA method."},
+        metadata={"help": "Target modules for the LoRA/AdaLoRA method."},
     )
     train_on_inputs: bool = field(
         default=True,
         metadata={"help": "if False, masks out inputs in loss"},
+    )
+    adalora_init_r: int = field(
+        default=12,
+        metadata={"help": "Initial AdaLoRA rank"},
+    )
+    adalora_target_r: int = field(
+        default=4,
+        metadata={"help": "Target AdaLoRA rank"},
+    )
+    adalora_tinit: int = field(
+        default=50,
+        metadata={"help": "Number of warmup steps for AdaLoRA wherein no pruning is performed"},
+    )
+    adalora_tfinal: int = field(
+        default=100,
+        metadata={
+            "help": "Fix the resulting budget distribution and fine-tune the model for tfinal steps when using AdaLoRA"
+        },
+    )
+    adalora_delta_t: int = field(
+        default=10,
+        metadata={"help": "Interval of steps for AdaLoRA to update rank"},
+    )
+    adalora_orth_reg_weight: float = field(
+        default=0.5,
+        metadata={"help": "Orthogonal regularization weight for AdaLoRA"},
+    )
+    peft_type: str = field(
+        default="lora",
+        metadata={
+            "help": ("The PEFT type to use."),
+            "choices": ["lora", "ia3", "adalora"],
+        },
+    )
+    ia3_target_modules: List[str] = field(
+        default_factory=lambda: None,
+        metadata={"help": "Target modules for the IA3 method."},
+    )
+    feedforward_modules: List[str] = field(
+        default_factory=lambda: None,
+        metadata={"help": "Target feedforward modules for the IA3 method."},
     )
 
 
@@ -396,7 +429,6 @@ def main():
     config_kwargs = {
         "cache_dir": model_args.cache_dir,
         "revision": model_args.model_revision,
-        "use_auth_token": True if model_args.use_auth_token else None,
         "trust_remote_code": True if model_args.trust_remote_code else None,
         "use_cache": False if training_args.gradient_checkpointing else model_args.use_cache,
         "token": model_args.token,
@@ -412,7 +444,6 @@ def main():
         "cache_dir": model_args.cache_dir,
         "use_fast": model_args.use_fast_tokenizer,
         "revision": model_args.model_revision,
-        "use_auth_token": True if model_args.use_auth_token else None,
         "token": model_args.token,
     }
     if model_args.tokenizer_name:
@@ -440,7 +471,7 @@ def main():
             data_args.dataset_name,
             data_args.dataset_config_name,
             cache_dir=model_args.cache_dir,
-            use_auth_token=True if model_args.use_auth_token else None,
+            token=model_args.token,
         )
 
         if "validation" not in raw_datasets.keys() and training_args.do_eval:
@@ -449,14 +480,14 @@ def main():
                 data_args.dataset_config_name,
                 split=f"train[:{data_args.validation_split_percentage}%]",
                 cache_dir=model_args.cache_dir,
-                use_auth_token=True if model_args.use_auth_token else None,
+                token=model_args.token,
             )
             raw_datasets["train"] = load_dataset(
                 data_args.dataset_name,
                 data_args.dataset_config_name,
                 split=f"train[{data_args.validation_split_percentage}%:]",
                 cache_dir=model_args.cache_dir,
-                use_auth_token=True if model_args.use_auth_token else None,
+                token=model_args.token,
             )
     else:
         data_files = {}
@@ -477,7 +508,7 @@ def main():
             extension,
             data_files=data_files,
             cache_dir=model_args.cache_dir,
-            use_auth_token=True if model_args.use_auth_token else None,
+            token=model_args.token,
             **dataset_args,
         )
 
@@ -488,7 +519,7 @@ def main():
                 data_files=data_files,
                 split=f"train[:{data_args.validation_split_percentage}%]",
                 cache_dir=model_args.cache_dir,
-                use_auth_token=True if model_args.use_auth_token else None,
+                token=model_args.token,
                 **dataset_args,
             )
             raw_datasets["train"] = load_dataset(
@@ -496,7 +527,7 @@ def main():
                 data_files=data_files,
                 split=f"train[{data_args.validation_split_percentage}%:]",
                 cache_dir=model_args.cache_dir,
-                use_auth_token=True if model_args.use_auth_token else None,
+                token=model_args.token,
                 **dataset_args,
             )
 
@@ -536,7 +567,6 @@ def main():
             config=config,
             cache_dir=model_args.cache_dir,
             revision=model_args.model_revision,
-            use_auth_token=True if model_args.use_auth_token else None,
             trust_remote_code=True if model_args.trust_remote_code else None,
             torch_dtype=model_dtype,
             low_cpu_mem_usage=model_args.low_cpu_mem_usage,
@@ -557,7 +587,7 @@ def main():
             model.generation_config.use_flash_attention = True
             model.generation_config.flash_attention_recompute = model_args.flash_attention_recompute
             model.generation_config.flash_attention_causal_mask = model_args.flash_attention_causal_mask
-        if model_args.use_fused_rope is False:
+        if not model_args.use_fused_rope:
             model.generation_config.use_fused_rope = False
 
     if hasattr(model.generation_config, "pad_token_id") and model.generation_config.pad_token_id is not None:
@@ -684,22 +714,42 @@ def main():
 
     if training_args.do_train or training_args.do_eval:
         # PEFT settings
-        peft_config = LoraConfig(
-            r=finetune_args.lora_rank,
-            lora_alpha=finetune_args.lora_alpha,
-            lora_dropout=finetune_args.lora_dropout,
-            target_modules=finetune_args.lora_target_modules,
-            bias="none",
-            task_type=TaskType.CAUSAL_LM,
-        )
+        if finetune_args.peft_type == "lora":
+            peft_config = LoraConfig(
+                r=finetune_args.lora_rank,
+                lora_alpha=finetune_args.lora_alpha,
+                lora_dropout=finetune_args.lora_dropout,
+                target_modules=finetune_args.lora_target_modules,
+                bias="none",
+                task_type=TaskType.CAUSAL_LM,
+            )
+        elif finetune_args.peft_type == "adalora":
+            peft_config = AdaLoraConfig(
+                init_r=finetune_args.adalora_init_r,
+                target_r=finetune_args.adalora_target_r,
+                tinit=finetune_args.adalora_tinit,
+                tfinal=finetune_args.adalora_tfinal,
+                deltaT=finetune_args.adalora_delta_t,
+                lora_alpha=finetune_args.lora_alpha,
+                lora_dropout=finetune_args.lora_dropout,
+                target_modules=finetune_args.lora_target_modules,
+                orth_reg_weight=finetune_args.adalora_orth_reg_weight,
+                bias="none",
+                task_type=TaskType.CAUSAL_LM,
+            )
+            from optimum.habana.peft.layer import GaudiAdaloraLayerSVDLinearForward
+
+            tuners.adalora.layer.SVDLinear.forward = GaudiAdaloraLayerSVDLinearForward
+        elif finetune_args.peft_type == "ia3":
+            peft_config = IA3Config(
+                target_modules=finetune_args.ia3_target_modules,
+                feedforward_modules=finetune_args.feedforward_modules,
+                task_type=TaskType.CAUSAL_LM,
+            )
         if training_args.gradient_checkpointing:
             model.enable_input_require_grads()
-        if training_args.torch_compile:
-            from optimum.habana.peft.layer import GaudiLoraLayerLinearForward
-
-            tuners.lora.layer.Linear.forward = GaudiLoraLayerLinearForward
         lora_model = get_peft_model(model, peft_config)
-        if training_args.bf16:
+        if training_args.bf16 and finetune_args.peft_type != "ia3":
             lora_model = lora_model.to(torch.bfloat16)
         lora_model.print_trainable_parameters()
         gaudi_config = GaudiConfig()

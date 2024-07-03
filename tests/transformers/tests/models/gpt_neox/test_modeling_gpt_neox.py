@@ -1,4 +1,3 @@
-
 # coding=utf-8
 # Copyright 2022 The HuggingFace Inc. team. All rights reserved.
 #
@@ -356,7 +355,7 @@ class GPTNeoXLanguageGenerationTest(unittest.TestCase):
             # See: https://github.com/huggingface/transformers/pull/24193
             expected_output = "My favorite food is a good old-fashioned, old-fashioned, old-fashioned.\n\nI'm not sure"
 
-            output_ids = model.generate(**inputs, do_sample=False, max_new_tokens=20)
+            output_ids = model.generate(**inputs, do_sample=False, max_new_tokens=20, ignore_eos=True)
             output_str = tokenizer.batch_decode(output_ids)[0]
 
             self.assertEqual(output_str, expected_output)
@@ -370,4 +369,3 @@ class GPTNeoXLanguageGenerationTest(unittest.TestCase):
         input_ids = torch.as_tensor(input_ids)[None].to(torch_device)
         outputs = model(input_ids)["logits"][:, -1][0, :30]
         self.assertTrue(torch.allclose(EXPECTED_LOGITS, outputs, atol=1e-5))
-

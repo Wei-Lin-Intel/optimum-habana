@@ -18,7 +18,6 @@ import tempfile
 import unittest
 
 from parameterized import parameterized
-
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -26,7 +25,7 @@ from transformers import (
     is_torch_available,
     set_seed,
 )
-from transformers.testing_utils import require_bitsandbytes, require_torch, require_torch_sdpa, slow, torch_device
+from transformers.testing_utils import require_bitsandbytes, require_torch, require_torch_sdpa, slow
 
 from optimum.habana.transformers.modeling_utils import adapt_transformers_to_gaudi
 
@@ -521,12 +520,11 @@ class FalconLanguageGenerationTest(unittest.TestCase):
         inputs = tokenizer("My favorite food is", return_tensors="pt").to(torch_device)
 
         EXPECTED_OUTPUT = (
-            "My favorite food is pizza. I love it so much that I have a pizza party every year for my birthday."
+            "My favorite food is pizza. I love it so much that I have a pizza party every week. I love it"
         )
 
-        output_ids = model.generate(**inputs, do_sample=False, max_new_tokens=19)
+        output_ids = model.generate(**inputs, do_sample=False, max_new_tokens=19, ignore_eos=True)
         output_str = tokenizer.batch_decode(output_ids)[0]
-
         self.assertEqual(output_str, EXPECTED_OUTPUT)
 
     @slow

@@ -28,7 +28,7 @@ import lm_eval.tasks
 import torch
 import torch.nn.functional as F
 from run_generation import setup_parser
-from utils import initialize_model, finalize_quantization
+from utils import finalize_quantization, initialize_model
 
 from optimum.habana.utils import get_hpu_memory_stats
 
@@ -75,16 +75,21 @@ class HabanaModelAdapter(lm_eval.base.BaseLM):
         self.options = options
         self._device = args.device
         self.model_inputs = {"use_cache": self.options.use_cache}
-        if self.model.config.model_type in ["llama", "mistral", "falcon"]:
+        if self.model.config.model_type in ["llama", "mistral", "falcon", "phi", "mixtral", "qwen2"]:
             self.model_inputs.update(
                 {
                     "reuse_cache": self.options.reuse_cache,
                 }
             )
-        if self.model.config.model_type in ["llama", "mistral"]:
+        if self.model.config.model_type in ["llama", "mistral", "qwen2", "falcon"]:
+            if self.model.config.model_type != "falcon":
+                self.model_inputs.update(
+                    {
+                        "attn_softmax_bf16": self.options.attn_softmax_bf16,
+                    }
+                )
             self.model_inputs.update(
                 {
-                    "attn_softmax_bf16": self.options.attn_softmax_bf16,
                     "use_flash_attention": self.options.use_flash_attention,
                     "flash_attention_recompute": self.options.flash_attention_recompute,
                     "flash_attention_causal_mask": self.options.flash_attention_causal_mask,
@@ -152,7 +157,7 @@ class HabanaModelAdapter(lm_eval.base.BaseLM):
 
 def main():
     args = setup_lm_eval_parser()
-    model, tokenizer, generation_config = initialize_model(args, logger)
+    model, _, tokenizer, generation_config = initialize_model(args, logger)
 
     lm_tasks = lm_eval.tasks.get_task_dict(args.tasks)
     with torch.no_grad():

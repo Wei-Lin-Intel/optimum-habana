@@ -23,14 +23,14 @@ import json
 import logging
 import math
 import os
+import struct
 import time
 from itertools import cycle
 from pathlib import Path
+
 import pandas as pd
-import struct
-import contextlib
 import torch
-from utils import adjust_batch, count_hpu_graphs, initialize_model, finalize_quantization
+from utils import adjust_batch, count_hpu_graphs, finalize_quantization, initialize_model
 
 from optimum.habana.utils import get_hpu_memory_stats
 
@@ -52,13 +52,12 @@ def setup_parser(parser):
             else:
                 # Flag passed with value -> pattern match and set accordingly
                 value_str = values.lower()
-                if value_str in ('true', '1', 'yes'):
+                if value_str in ("true", "1", "yes"):
                     setattr(namespace, self.dest, True)
-                elif value_str in ('false', '0', 'no'):
+                elif value_str in ("false", "0", "no"):
                     setattr(namespace, self.dest, False)
                 else:
                     raise ValueError(f"Invalid value for {option_string}: {values}")
-
 
     # Arguments management
     parser.add_argument("--device", "-d", type=str, choices=["hpu"], help="Device to run", default="hpu")
@@ -150,6 +149,12 @@ def setup_parser(parser):
         help="Number of steps to capture for profiling.",
     )
     parser.add_argument(
+        "--profiling_record_shapes",
+        default=False,
+        type=bool,
+        help="Record shapes when enabling profiling.",
+    )
+    parser.add_argument(
         "--prompt",
         default=None,
         type=str,
@@ -169,6 +174,12 @@ def setup_parser(parser):
         type=str,
         nargs="+",
         help="Optional argument list of words that must be generated.",
+    )
+    parser.add_argument(
+        "--assistant_model",
+        default=None,
+        type=str,
+        help="Optional argument to give a path to a draft/assistant model for assisted decoding.",
     )
     parser.add_argument(
         "--peft_model",
@@ -245,36 +256,38 @@ def setup_parser(parser):
         help="Preprocess on cpu, and some other optimizations. Useful to prevent recompilations when using dynamic prompts (simulate_dyn_prompt)",
     )
 
+    parser.add_argument("--gptq", action="store_true", help="Enable Quantization to 4 bit with AutoGPTQ")
+
     parser.add_argument(
         "--use_flash_attention",
-        nargs='?',
+        nargs="?",
         const=True,
         default=False,
         action=StoreTrueFalseAction,
-        help="Whether to enable Habana Flash Attention, provided that the model supports it."
+        help="Whether to enable Habana Flash Attention, provided that the model supports it.",
     )
     parser.add_argument(
         "--flash_attention_recompute",
-        nargs='?',
+        nargs="?",
         const=True,
         default=False,
         action=StoreTrueFalseAction,
-        help="Whether to enable Habana Flash Attention in recompute mode on first token generation. This gives an opportunity of splitting graph internally which helps reduce memory consumption."
+        help="Whether to enable Habana Flash Attention in recompute mode on first token generation. This gives an opportunity of splitting graph internally which helps reduce memory consumption.",
     )
     parser.add_argument(
         "--flash_attention_causal_mask",
-        nargs='?',
+        nargs="?",
         const=True,
         default=False,
         action=StoreTrueFalseAction,
-        help="Whether to enable Habana Flash Attention in causal mode on first token generation."
+        help="Whether to enable Habana Flash Attention in causal mode on first token generation.",
     )
     parser.add_argument(
         "--flash_attention_fast_softmax",
-        nargs='?',
+        nargs="?",
         const=None,  # Default value handled post-parsing
         action=StoreTrueFalseAction,
-        help="Whether to enable Habana Flash Attention in fast softmax mode."
+        help="Whether to enable Habana Flash Attention in fast softmax mode.",
     )
     parser.add_argument(
         "--book_source",
@@ -285,6 +298,12 @@ def setup_parser(parser):
         "--torch_compile",
         action="store_true",
         help="Whether to use torch compiled model or not.",
+    )
+    parser.add_argument(
+        "--ignore_eos",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="Whether to ignore eos, set False to disable it",
     )
     parser.add_argument("--temperature", default=1.0, type=float, help="Temperature value for text generation")
     parser.add_argument("--top_p", default=1.0, type=float, help="Top_p value for generating text via sampling")
@@ -299,6 +318,11 @@ def setup_parser(parser):
         action="store_true",
         help="Whether to enable device map auto. In case no space left on cpu, weights will be offloaded to disk.",
     )
+    parser.add_argument(
+        "--trust_remote_code",
+        action="store_true",
+        help="Whether or not to allow for custom models defined on the Hub in their own modeling files.",
+    )
     args = parser.parse_args()
 
     if args.torch_compile:
@@ -311,27 +335,32 @@ def setup_parser(parser):
         args.flash_attention_fast_softmax = args.use_flash_attention
 
     args.quant_config = os.getenv("QUANT_CONFIG", "")
+    if args.quant_config and args.gptq:
+        raise RuntimeError("Setting both quant_config and gptq is unsupported. ")
+
     if args.quant_config == "" and args.disk_offload:
-        print("WARNING: --disk_offload was tested only with fp8, it may not work with full precision. If error raises try to remove the --disk_offload flag.")
+        logger.warning(
+            "`--disk_offload` was tested only with fp8, it may not work with full precision. If error raises try to remove the --disk_offload flag."
+        )
     return args
 
 
 def main():
     parser = argparse.ArgumentParser()
     args = setup_parser(parser)
-    model, tokenizer, generation_config = initialize_model(args, logger)
+    model, assistant_model, tokenizer, generation_config = initialize_model(args, logger)
 
     use_lazy_mode = True
-    if args.torch_compile and model.config.model_type == "llama":
+    if args.torch_compile:
         use_lazy_mode = False
 
     import habana_frameworks.torch.hpu as torch_hpu
+
     if args.dataset_name == "openorca":
         # Benchmark over the prompts below
         def get_ds(args):
             ds = pd.read_pickle(args.dataset)
             return ds
-
 
         def get_input(ds, batch_size):
             queries = []
@@ -340,15 +369,16 @@ def main():
                 end = start + batch_size
                 batch = tok_input[start:end]
                 input_ids = []
-                attention_mask=[]
+                attention_mask = []
                 for query in batch:
-                    input_ids.append(
-                        [0] * (args.max_input_tokens - len(query)) + query)
+                    input_ids.append([0] * (args.max_input_tokens - len(query)) + query)
                     attention_mask.append([0] * (args.max_input_tokens - len(query)) + [1] * len(query))
-                queries.append({
-                    'input_ids': torch.tensor(input_ids, dtype=torch.int32),
-                    'attention_mask': torch.tensor(attention_mask, dtype=torch.int32)
-                })
+                queries.append(
+                    {
+                        "input_ids": torch.tensor(input_ids, dtype=torch.int32),
+                        "attention_mask": torch.tensor(attention_mask, dtype=torch.int32),
+                    }
+                )
             return queries
 
         ds = get_ds(args)
@@ -378,7 +408,7 @@ def main():
             ).cpu()
             outputs = outputs.tolist()
             for i in range(len(outputs)):
-                outputs[i] = outputs[i][args.max_input_tokens:]
+                outputs[i] = outputs[i][args.max_input_tokens :]
             duration = time.perf_counter() - t0
             print(f"Total E2E time of this batch is {duration:.3f}s", flush=True)
             return outputs
@@ -431,7 +461,7 @@ def main():
                     generated = generate(sentence, None, args.reduce_recompile)
                     results.extend(generated)
                     print(f"Generatig batch {b}/{N}")
-                    b +=1
+                    b += 1
         else:
             repeated_prompt_len = cycle(dyn_prompt_lens)
             for i in range(args.n_iterations):
@@ -450,23 +480,21 @@ def main():
             output_dir = Path(args.output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            #TODO dump in hex format
+            # TODO dump in hex format
             acc_file = []
             num_token = 0
             for i, idx in enumerate(ds.index):
                 pred = results[i]
                 eos_token_id = 2
                 try:
-                    ind_eos = pred.index(eos_token_id)+1
-                except:
+                    ind_eos = pred.index(eos_token_id) + 1
+                except:  # noqa
                     ind_eos = len(pred)
                 pred = pred[:ind_eos]
                 num_token += len(pred)
-                acc_file.append({
-                    "seq_id": idx,
-                    "qsl_idx": idx,
-                    "data": bytes(struct.pack('L' * len(pred), *pred)).hex().upper()
-                })
+                acc_file.append(
+                    {"seq_id": idx, "qsl_idx": idx, "data": bytes(struct.pack("L" * len(pred), *pred)).hex().upper()}
+                )
             with open(output_dir / "accuracy.json", "w") as outfile:
                 outfile.write(json.dumps(acc_file))
 
@@ -548,7 +576,7 @@ def main():
 
         def generate(size=None, reduce_recompile=False):
             """Generates sequences from the input sentences and returns them."""
-
+            encode_t0 = time.perf_counter()
             t0 = time.perf_counter()
             print(f"Step4+ starting time is {t0*1000}", flush=True)
             # Tokenization
@@ -562,6 +590,7 @@ def main():
                 )
             else:
                 input_tokens = tokenizer.batch_encode_plus(input_sentences, return_tensors="pt", padding=True)
+            encode_duration = time.perf_counter() - encode_t0
 
             if size is not None:
                 input_tokens = adjust_batch(input_tokens, size)
@@ -570,17 +599,23 @@ def main():
                 for t in input_tokens:
                     if torch.is_tensor(input_tokens[t]):
                         input_tokens[t] = input_tokens[t].to(args.device)
-
+            iteration_times = []
             output_tokens = model.generate(
                 **input_tokens,
                 generation_config=generation_config,
+                assistant_model=assistant_model,
                 lazy_mode=use_lazy_mode,
                 hpu_graphs=args.use_hpu_graphs,
                 profiling_steps=args.profiling_steps,
                 profiling_warmup_steps=args.profiling_warmup_steps,
+                ignore_eos=args.ignore_eos,
+                iteration_times=iteration_times,
+                profiling_record_shapes=args.profiling_record_shapes,
             ).cpu()
             outputs = tokenizer.batch_decode(output_tokens, skip_special_tokens=True)
             duration = time.perf_counter() - t0
+            first_token_time = iteration_times[0] + encode_duration
+            logger.info(f"Time to first token = {first_token_time*1000}ms")
             print(f"Total E2E time of this iteration is {duration:.3f}s", flush=True)
             return outputs
 
@@ -676,7 +711,7 @@ def main():
         from datasets import load_dataset
         from torch.utils.data import DataLoader
 
-        assert args.simulate_dyn_prompt == "", "Both dataset_name and simulate_dyn_prompt are set"
+        assert not args.simulate_dyn_prompt, "Both dataset_name and simulate_dyn_prompt are set"
 
         raw_dataset = load_dataset(args.dataset_name)
         if "test" in raw_dataset:
@@ -761,6 +796,8 @@ def main():
                 hpu_graphs=args.use_hpu_graphs,
                 profiling_steps=args.profiling_steps,
                 profiling_warmup_steps=args.profiling_warmup_steps,
+                ignore_eos=args.ignore_eos,
+                profiling_record_shapes=args.profiling_record_shapes,
             ).cpu()
             return prompt, outputs
 

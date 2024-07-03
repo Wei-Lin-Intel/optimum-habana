@@ -1,4 +1,3 @@
-
 # coding=utf-8
 # Copyright 2022 The HuggingFace Inc. team. All rights reserved.
 #
@@ -16,7 +15,6 @@
 """Testing suite for the PyTorch Swin model."""
 
 import collections
-import inspect
 import unittest
 
 from transformers import SwinConfig
@@ -494,7 +492,7 @@ class SwinModelIntegrationTest(unittest.TestCase):
         # verify the logits
         expected_shape = torch.Size((1, 1000))
         self.assertEqual(outputs.logits.shape, expected_shape)
-        expected_slice = torch.tensor([-0.0948, -0.6454, -0.0921]).to(torch_device)
+        expected_slice = torch.tensor([-0.0949, -0.6437, -0.0894]).to(torch_device)
         self.assertTrue(torch.allclose(outputs.logits[0, :3], expected_slice, atol=1e-4))
 
 

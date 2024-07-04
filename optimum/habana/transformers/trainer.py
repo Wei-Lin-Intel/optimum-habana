@@ -1547,14 +1547,31 @@ class GaudiTrainer(Trainer):
         model.train()
         inputs = self._prepare_inputs(inputs)
             #Bhargav
+        inputs = torch.load('/software/users/scsudhakaran/frameworks/fp8_optimum_habana/data_backup/input_0.pt')
         print(inputs)
         seq_parallel_world_rank = int(os.environ.get("LOCAL_RANK", -1))
         print(seq_parallel_world_rank)
         sub_seq_length = 4096
         sub_seq_start = seq_parallel_world_rank * sub_seq_length
         sub_seq_end = (seq_parallel_world_rank + 1) * sub_seq_length
+
+        sub_seq_start_2 = 1 * sub_seq_length
+        sub_seq_end_2 = (1 + 1) * sub_seq_length
+        inputs_2 = {}
+        inputs_2['input_ids'] = inputs['input_ids'][:, sub_seq_start_2:sub_seq_end_2]
+        inputs_2['labels'] = inputs['labels'][:, sub_seq_start_2:sub_seq_end_2]
         inputs['input_ids'] = inputs['input_ids'][:, sub_seq_start:sub_seq_end]
         inputs['labels'] = inputs['labels'][:, sub_seq_start:sub_seq_end]
+        
+        from deepspeed import comm as dist
+        if seq_parallel_world_rank == 0:
+            
+        else:
+            inputs_2 = torch.empty(total_numel,
+                                   device=get_accelerator().current_device_name(),
+                                   dtype=datatype)
+        torch.distributed.broadcast(inputs_2, 1, group=dist.get_world_group())
+        # torch.distributed.broadcast(flatten_data, 1, group=dist.get_world_group())
             # if get_sequence_parallel_world_size() > 1:
             #     rank = get_sequence_parallel_rank()
             #     src_rank = get_sequence_parallel_src_rank()

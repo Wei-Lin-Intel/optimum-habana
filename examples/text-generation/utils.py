@@ -222,6 +222,14 @@ def setup_model(args, model_dtype, model_kwargs, logger):
         model = AutoModelForCausalLM.from_pretrained(
             args.model_name_or_path, torch_dtype=model_dtype, quantization_config=quantization_config, **model_kwargs
         )
+    elif args.load_cp:
+        from neural_compressor.torch.quantization import load
+        model = load(
+            model_name_or_path=args.model_name_or_path,
+            format="huggingface",
+            device="hpu",
+            **model_kwargs
+        )
     else:
         if args.peft_model is not None:
             model = peft_model(args, model_dtype, logger, **model_kwargs)
@@ -457,6 +465,7 @@ def initialize_model(args, logger):
     model_kwargs = {
         "revision": args.model_revision,
         "token": args.token,
+        "torch_dtype": torch.bfloat16,
     }
 
     model = (

@@ -321,8 +321,12 @@ def setup_parser(parser):
     parser.add_argument(
         "--trust_remote_code",
         action="store_true",
-        help="Whether or not to allow for custom models defined on the Hub in their own modeling files.",
+        help="Whether or not to allow for custom models defined on the Hub in their ownד modeling files.",
     )
+	parser.add_argument(
+        "--load_cp",
+        action="store_true",
+    )דדד
     args = parser.parse_args()
 
     if args.torch_compile:

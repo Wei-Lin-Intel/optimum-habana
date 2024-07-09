@@ -309,7 +309,9 @@ def setup_parser(parser):
     parser.add_argument(
         "--load_cp",
         action="store_true",
+        help="Whether to load model from hugging face checkpoint.",
     )
+
     args = parser.parse_args()
 
     if args.torch_compile:

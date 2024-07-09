@@ -323,6 +323,12 @@ def setup_parser(parser):
         action="store_true",
         help="Whether or not to allow for custom models defined on the Hub in their own modeling files.",
     )
+    parser.add_argument(
+        "--llama_instruct",
+        action="store_true",
+        help="Enable instruction based default promt for llama.",
+    )
+
     args = parser.parse_args()
 
     if args.torch_compile:
@@ -554,6 +560,25 @@ def main():
                 1342,  # Pride and Prejudice
             ]
             input_sentences = assemble_prompt(prompt_size=args.max_input_tokens, book_path=download_book(book_ids[0]))
+        elif args.llama_instruct:
+            messages = [
+                {"role": "system", "content": "You are a pirate chatbot who always responds in pirate speak!"},
+                {"role": "user", "content": "Who are you?"},
+            ]
+
+            instruction = tokenizer.apply_chat_template(
+                messages,
+                add_generation_prompt=True,
+                return_tensors="pt",
+                tokenize=False
+            )
+
+            print(instruction)
+
+            input_sentences = [
+                instruction,
+                ]
+            print(input_sentences)
         else:
             input_sentences = [
                 "DeepSpeed is a machine learning framework",
@@ -616,6 +641,7 @@ def main():
             duration = time.perf_counter() - t0
             first_token_time = iteration_times[0] + encode_duration
             logger.info(f"Time to first token = {first_token_time*1000}ms")
+            logger.info(f"Inter token time = {((duration - first_token_time)/(args.max_new_tokens - 1)) * 1000:.3f}ms")
             print(f"Total E2E time of this iteration is {duration:.3f}s", flush=True)
             return outputs
 

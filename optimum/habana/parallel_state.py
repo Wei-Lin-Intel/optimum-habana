@@ -150,7 +150,11 @@ def initialize_model_parallel(
             )
 
     data_parallel_size: int = world_size // (tensor_model_parallel_size * pipeline_model_parallel_size * sequence_parallel_size)
+    print("Inside")
+    print(data_parallel_size)
     sequence_data_parallel_size: int = sequence_parallel_size * data_parallel_size
+    print("Inside")
+    print(sequence_data_parallel_size)
 
     num_tensor_model_parallel_groups: int = world_size // tensor_model_parallel_size
     num_pipeline_model_parallel_groups: int = world_size // pipeline_model_parallel_size
@@ -375,7 +379,10 @@ def get_sequence_data_parallel_world_size():
     if _SEQUENCE_DATA_PARALLEL_WORLD_SIZE is not None:
         return _SEQUENCE_DATA_PARALLEL_WORLD_SIZE
     return torch.distributed.get_world_size(group=get_sequence_data_parallel_group())
-
+def get_data_parallel_world_size():
+    return get_sequence_data_parallel_world_size()
+def get_data_parallel_group():
+    return get_sequence_data_parallel_group()
 def set_sequence_parallel_rank(rank):
     """Set sequence parallel rank."""
     global _SEQUENCE_PARALLEL_RANK

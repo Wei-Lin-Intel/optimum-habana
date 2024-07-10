@@ -82,6 +82,7 @@ from .utils import (
 logger = get_logger(__name__)
 
 
+from .. import parallel_state
 class GaudiAccelerator(Accelerator):
     """
     Adapted from: https://github.com/huggingface/accelerate/blob/8514c35192ac9762920f1ab052e5cea4c0e46eeb/src/accelerate/accelerator.py#L145
@@ -112,6 +113,10 @@ class GaudiAccelerator(Accelerator):
         force_autocast: bool = False,
     ):
         self.trackers = []
+
+
+        self.mpu = parallel_state
+        parallel_state.initialize_model_parallel(sequence_parallel_size = 2, use_fp8 = False)
         if project_config is not None:
             self.project_configuration = project_config
         else:
@@ -634,8 +639,10 @@ class GaudiAccelerator(Accelerator):
                 # It should be done by the launcher but it does not work for multi-node runs
                 os.environ["DEEPSPEED_USE_HPU"] = "true"
             #BHARGAV
-            from .. import parallel_state
-            kwargs["mpu"] = parallel_state.initialize_model_parallel()
+
+            #self.mpu = parallel_state.initialize_model_parallel(sequence_parallel_size = 2, use_fp8 = False)
+            print("Bhargav", parallel_state)
+            #kwargs["mpu"] =  parallel_state
             engine, optimizer, _, lr_scheduler = deepspeed.initialize(**kwargs)
             # torch.compile should be called if dynamo plugin backend is set and only if the model isn't already compiled.
             if self.state.dynamo_plugin.backend == GaudiDynamoBackend.HPU_BACKEND and not is_compiled_module(kwargs['model']):

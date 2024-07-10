@@ -421,7 +421,7 @@ class GaudiLlamaAttention(LlamaAttention):
         #BHARGAV
         #Get Before and After ROPE
         cos, sin = self.rotary_emb(value_states, seq_len=8192)
-        rank = int(os.environ.get("LOCAL_RANK", -1))
+        rank = parallel_state.get_sequence_parallel_rank()
         if rank==1:
             position_ids = torch.arange(4096,8192, dtype=torch.long, device=query_states.device)
             position_ids = position_ids.unsqueeze(0)

@@ -181,7 +181,7 @@ def get_torch_compiled_model(model):
         not hasattr(model, "model") and not hasattr(model, "transformer")
     ):
         raise ValueError("Cannot automatically select model code for torch.compile")
-    elif hasattr(model, "model"):
+    elif hasattr(model, "transformer"):
         model.transformer = torch.compile(
             model.transformer, backend="hpu_backend", options={"keep_input_mutations": True}
         )

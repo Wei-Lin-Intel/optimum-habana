@@ -666,6 +666,7 @@ class GaudiGenerationMixin(GenerationMixin):
         profiling_steps: Optional[int] = 0,
         iteration_times: Optional[List[float]] = None,
         profiling_record_shapes: Optional[bool] = False,
+        warmup: Optional[bool] = False,
         **kwargs,
     ) -> Union[GenerateOutput, torch.LongTensor]:
         r"""
@@ -1546,6 +1547,7 @@ class GaudiGenerationMixin(GenerationMixin):
         profiling_steps: Optional[int] = 0,
         hb_gen_time: Optional[HabanaGenerationtime] = None,
         profiling_record_shapes: Optional[bool] = False,
+        warmup: Optional[bool] = False,
         **model_kwargs,
     ) -> Union[GenerateNonBeamOutput, torch.LongTensor]:
         r"""
@@ -1883,7 +1885,7 @@ class GaudiGenerationMixin(GenerationMixin):
 
                     torch_hpu.synchronize()
                 hb_gen_time.step()
-            if greedy_first:
+            if greedy_first and not warmup:
                 import habana_frameworks.torch.hpu as torch_hpu
 
                 torch_hpu.synchronize()

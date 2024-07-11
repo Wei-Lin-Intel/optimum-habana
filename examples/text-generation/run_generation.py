@@ -389,7 +389,7 @@ def main():
         ds = get_ds(args)
         input_sentences = get_input(ds, args.batch_size)
 
-        def generate(input_tokens, size=None, reduce_recompile=False):
+        def generate(input_tokens, size=None, reduce_recompile=False, warmup=False):
             """Generates sequences from the input sentences and returns them."""
 
             t0 = time.perf_counter()
@@ -410,6 +410,7 @@ def main():
                 hpu_graphs=args.use_hpu_graphs,
                 profiling_steps=args.profiling_steps,
                 profiling_warmup_steps=args.profiling_warmup_steps,
+                warmup=warmup,
             ).cpu()
             outputs = outputs.tolist()
             for i in range(len(outputs)):
@@ -579,7 +580,7 @@ def main():
         elif args.batch_size < len(input_sentences):
             input_sentences = input_sentences[: args.batch_size]
 
-        def generate(size=None, reduce_recompile=False):
+        def generate(size=None, reduce_recompile=False, warmup=False):
             """Generates sequences from the input sentences and returns them."""
             encode_t0 = time.perf_counter()
             t0 = time.perf_counter()
@@ -616,12 +617,14 @@ def main():
                 ignore_eos=args.ignore_eos,
                 iteration_times=iteration_times,
                 profiling_record_shapes=args.profiling_record_shapes,
+                warmup=warmup,
             ).cpu()
             outputs = tokenizer.batch_decode(output_tokens, skip_special_tokens=True)
-            duration = time.perf_counter() - t0
-            first_token_time = iteration_times[0] + encode_duration
-            logger.info(f"Time to first token = {first_token_time*1000}ms")
-            print(f"Total E2E time of this iteration is {duration:.3f}s", flush=True)
+            if not warmup:
+                duration = time.perf_counter() - t0
+                first_token_time = iteration_times[0] + encode_duration
+                logger.info(f"Time to first token = {first_token_time*1000}ms")
+                print(f"Total E2E time of this iteration is {duration:.3f}s", flush=True)
             return outputs
 
         from optimum.habana.utils import HabanaProfile

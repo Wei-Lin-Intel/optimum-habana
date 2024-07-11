@@ -90,11 +90,12 @@ def write_checkpoints_json(model_name_or_path, local_rank, f, token=None):
     f.flush()
 
 
-def model_on_meta(config):
+def model_on_meta(config, logger):
     """
     Checks if load the model to meta.
     """
-    return config.model_type in ["bloom", "llama", "falcon", "mixtral"]
+    logger.info(f"model_on_meta: {config.model_type=}")
+    return config.model_type in ["bloom", "llama", "falcon", "mixtral", "qwen2"]
 
 
 def get_optimized_model_name(config):

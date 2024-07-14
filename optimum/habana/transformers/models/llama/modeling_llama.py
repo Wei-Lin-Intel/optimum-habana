@@ -50,9 +50,6 @@ except ImportError:
 import habana_frameworks.torch.core as htcore
 
 
-flash_attention_in_fp8 = False
-
-
 def gaudi_llama_rmsnorm_forward(self, hidden_states):
     """
     Copied from LlamaRMSNorm.forward: https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llama.py
@@ -228,19 +225,12 @@ def gaudi_llama_repeat_kv(
 
 #  FusedScaledDotProductAttention
 class ModuleFusedSDPA(torch.nn.Module):
-    def __init__(self, fusedSDPA, scale, attention_dropout, enable_recompute=False):
+    def __init__(self, fusedSDPA):
         super().__init__()
         self._hpu_kernel_fsdpa = fusedSDPA
-        self.scale = scale
-        self.attention_dropout = attention_dropout
-        self.enable_recompute = enable_recompute
 
-    def forward(self, query, key, value, attn_mask, dropout_p, is_causal, scale, fast_softmax_mode):
-        from habana_frameworks.torch.hpex.experimental.transformer_engine import FusedAttention
-        if isinstance(self._hpu_kernel_fsdpa, FusedAttention):
-            return self._hpu_kernel_fsdpa(query, key, value, attn_mask, is_causal, fast_softmax_mode)
-        else:
-            return self._hpu_kernel_fsdpa.apply(query, key, value, attn_mask, dropout_p, is_causal, scale, fast_softmax_mode)
+    def forward(self, query, key, value, attn_mask, dropout_p, is_casual, scale, softmax_mode):
+        return self._hpu_kernel_fsdpa.apply(query, key, value, attn_mask, dropout_p, is_casual, scale, softmax_mode)
 
 
 class Matmul(torch.nn.Module):
@@ -301,6 +291,7 @@ class GaudiLlamaAttention(LlamaAttention):
         self.matmul_av = Matmul()
         self.k_cache = KVCache()
         self.v_cache = KVCache()
+        self.fused_scaled_dot_product_attention = ModuleFusedSDPA(FusedSDPA) if FusedSDPA else None
         if config.fused_qkv:
             self.num_heads = config.num_attention_heads
             self.head_dim = config.hidden_size // self.num_heads
@@ -316,12 +307,6 @@ class GaudiLlamaAttention(LlamaAttention):
             self.v_proj = None
         self.inp_seq_len = -1
         self.norm_factor = 1.0 / math.sqrt(self.head_dim)
-        self.fused_scaled_dot_product_attention = ModuleFusedSDPA(
-            FusedSDPA,
-            scale=self.norm_factor,
-            attention_dropout=self.attention_dropout,
-            enable_recompute=False,
-        ) if FusedSDPA else None
 
     def get_k_proj_weight(self):
         """4bit quantization in GPTQ replaces the k_proj.weight with qweight."""
@@ -499,54 +484,27 @@ class GaudiLlamaAttention(LlamaAttention):
 
             softmax_mode = "fast" if flash_attention_fast_softmax else "None"
 
-            global flash_attention_in_fp8
-            if flash_attention_in_fp8 is True:
-                query_states, key_states, value_states, attention_mask = gaudi_llama_repeat_kv(
-                    query_states,
-                    key_states,
-                    value_states,
-                    attention_mask,
-                    self.num_key_value_groups,
-                )
-
             if q_len == 1:
                 # next token
                 use_recompute = True if os.getenv("QUANT_CONFIG", "") else False
                 with ht.sdp_kernel(enable_recompute=use_recompute):
-                    if flash_attention_in_fp8 is True:
-                        attn_output = self.fused_scaled_dot_product_attention(
-                            query_states, key_states, value_states, attention_mask, 0.0, False, None, softmax_mode
-                        )
-                    else:
-                        attn_output = FusedSDPA.apply(
-                            query_states, key_states, value_states, attention_mask, 0.0, False, None, softmax_mode
-                        )
+                    attn_output = self.fused_scaled_dot_product_attention(
+                        query_states, key_states, value_states, attention_mask, 0.0, False, None, softmax_mode
+                    )
             else:
                 # first token
                 if flash_attention_causal_mask:
                     # causal masking on first token requires inputs to be of the same length
                     with ht.sdp_kernel(enable_recompute=flash_attention_recompute):
-                        if flash_attention_in_fp8 is True:
-                            attn_output = self.fused_scaled_dot_product_attention(
-                                query_states, key_states, value_states, None, 0.0, True, None, softmax_mode
-                            )
-                        else:
-                            attn_output = FusedSDPA.apply(
-                                query_states, key_states, value_states, None, 0.0, True, None, softmax_mode
-                            )
+                        attn_output = self.fused_scaled_dot_product_attention(
+                            query_states, key_states, value_states, None, 0.0, True, None, softmax_mode
+                        )
                 else:
                     with ht.sdp_kernel(enable_recompute=flash_attention_recompute):
-                        if flash_attention_in_fp8 is True:
-                            attn_output = self.fused_scaled_dot_product_attention(
-                                query_states, key_states, value_states, attention_mask, 0.0, False, None, softmax_mode
-                            )
-                        else:
-                            attn_output = FusedSDPA.apply(
-                                query_states, key_states, value_states, attention_mask, 0.0, False, None, softmax_mode
-                            )
+                        attn_output = self.fused_scaled_dot_product_attention(
+                            query_states, key_states, value_states, attention_mask, 0.0, False, None, softmax_mode
+                        )
 
-            if flash_attention_in_fp8 is True:
-                attn_output = attn_output.reshape(bsz, -1, q_len, self.head_dim)
         else:
             query_states, key_states, value_states, attention_mask = gaudi_llama_repeat_kv(
                 query_states, key_states, value_states, attention_mask, self.num_key_value_groups
@@ -1055,10 +1013,6 @@ class GaudiLlamaForCausalLM(LlamaForCausalLM):
         if self.generation_config.use_fused_rope is False:
             global has_fused_rope
             has_fused_rope = False
-
-        if self.generation_config.flash_attention_fp8 is True:
-            global flash_attention_in_fp8
-            flash_attention_in_fp8 = True
 
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
         outputs = self.model(

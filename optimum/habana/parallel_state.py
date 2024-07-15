@@ -341,6 +341,10 @@ def get_model_parallel_group():
     assert _MODEL_PARALLEL_GROUP is not None, 'model parallel group is not initialized'
     return _MODEL_PARALLEL_GROUP
 
+def get_model_parallel_world_size():
+    return None
+def get_model_parallel_rank():
+    return 0
 
 def get_sequence_parallel_group():
     """Get the sequence parallel group the caller rank belongs to."""

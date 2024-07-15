@@ -642,7 +642,7 @@ class GaudiAccelerator(Accelerator):
 
             #self.mpu = parallel_state.initialize_model_parallel(sequence_parallel_size = 2, use_fp8 = False)
             print("Bhargav", parallel_state)
-            #kwargs["mpu"] =  parallel_state
+            kwargs["mpu"] =  parallel_state
             engine, optimizer, _, lr_scheduler = deepspeed.initialize(**kwargs)
             # torch.compile should be called if dynamo plugin backend is set and only if the model isn't already compiled.
             if self.state.dynamo_plugin.backend == GaudiDynamoBackend.HPU_BACKEND and not is_compiled_module(kwargs['model']):

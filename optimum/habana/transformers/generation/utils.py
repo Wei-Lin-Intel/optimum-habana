@@ -1874,6 +1874,13 @@ class GaudiGenerationMixin(GenerationMixin):
                     torch_hpu.synchronize()
                 hb_gen_time.step()
 
+            if greedy_first:
+                import habana_frameworks.torch.hpu as torch_hpu
+
+                torch_hpu.synchronize()
+                print(f"First Token time(greedy):{time.perf_counter()*1000}")
+                greedy_first = False
+
             if (
                 not model_kwargs.get("pad_done", False)
                 and not model_kwargs.get("reuse_cache", False)
@@ -1883,13 +1890,6 @@ class GaudiGenerationMixin(GenerationMixin):
                 # before starting the decode phase.
                 self._pad_past_key_values(model_kwargs)
                 model_kwargs["pad_done"] = True
-
-            if greedy_first:
-                import habana_frameworks.torch.hpu as torch_hpu
-
-                torch_hpu.synchronize()
-                print(f"First Token time(greedy):{time.perf_counter()*1000}")
-                greedy_first = False
 
         if (
             model_kwargs.get("use_hpu_graphs", False)

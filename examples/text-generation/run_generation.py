@@ -323,6 +323,10 @@ def setup_parser(parser):
         action="store_true",
         help="Whether or not to allow for custom models defined on the Hub in their own modeling files.",
     )
+    parser.add_argument(
+        "--load_cp",
+        action="store_true",
+    )
     args = parser.parse_args()
 
     if args.torch_compile:

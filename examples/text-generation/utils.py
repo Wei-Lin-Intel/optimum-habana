@@ -550,6 +550,9 @@ def initialize_model(args, logger):
         "token": args.token,
         "trust_remote_code": args.trust_remote_code,
     }
+    if args.load_cp:
+        model_kwargs["torch_dtype"] = torch.bfloat16
+
     if args.trust_remote_code:
         logger.warning("`trust_remote_code` is set, there is no guarantee this model works properly and it may fail")
 

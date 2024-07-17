@@ -517,7 +517,8 @@ You can run a *UINT4 weight quantized* model using AutoGPTQ by setting the follo
 and by adding the argument `--gptq`.
 
 ***Note:***
-Setting the environment variables is a temporary requirement, and it's done to improve performance.
+Setting the above environment variables improves performance. These variables will be removed in future releases.
+ 
 
 Here is an example to run a quantized model on Llama2-7b `TheBloke/Llama-2-7b-Chat-GPTQ`:
 ```bash

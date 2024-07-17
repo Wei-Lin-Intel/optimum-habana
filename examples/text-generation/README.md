@@ -516,6 +516,9 @@ You can run a *UINT4 weight quantized* model using AutoGPTQ by setting the follo
 `SRAM_SLICER_SHARED_MME_INPUT_EXPANSION_ENABLED=false ENABLE_EXPERIMENTAL_FLAGS=true` before running the command,
 and by adding the argument `--gptq`.
 
+***Note:***
+Setting the environment variables is a temporary requirement, and it's done to improve performance.
+
 Here is an example to run a quantized model on Llama2-7b `TheBloke/Llama-2-7b-Chat-GPTQ`:
 ```bash
 SRAM_SLICER_SHARED_MME_INPUT_EXPANSION_ENABLED=false \

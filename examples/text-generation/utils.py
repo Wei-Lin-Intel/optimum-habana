@@ -239,6 +239,7 @@ def setup_model(args, model_dtype, model_kwargs, logger):
         from transformers import GPTQConfig
 
         quantization_config = GPTQConfig(bits=4, use_exllama=False)
+        model_kwargs["device_map"] = "cpu"
         model = AutoModelForCausalLM.from_pretrained(
             args.model_name_or_path, torch_dtype=model_dtype, quantization_config=quantization_config, **model_kwargs
         )

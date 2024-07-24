@@ -18,7 +18,7 @@ from transformers.models.llama.modeling_llama import (
     apply_rotary_pos_emb,
     logger,
 )
-
+from optimum.habana import parallel_state
 from ...modeling_attn_mask_utils import (
     _gaudi_prepare_4d_causal_attention_mask,
 )
@@ -268,7 +268,6 @@ class GaudiLlamaDynamicNTKScalingRotaryEmbedding(GaudiLlamaRotaryEmbedding):
         self.register_buffer("_cos_cached", emb.cos().to(dtype), persistent=False)
         self.register_buffer("_sin_cached", emb.sin().to(dtype), persistent=False)
 
-
 class GaudiLlamaAttention(LlamaAttention):
     def __init__(self, config: LlamaConfig, layer_idx: Optional[int] = None):
         super().__init__(config, layer_idx)
@@ -280,7 +279,7 @@ class GaudiLlamaAttention(LlamaAttention):
         from deepspeed.sequence.layer import DistributedAttention
         from deepspeed import comm as dist
         self.fused_scaled_dot_product_attention_loc = ModuleFusedSDPA(FusedSDPA) if FusedSDPA else None
-        self.fused_scaled_dot_product_attention = DistributedAttention(self.fused_scaled_dot_product_attention_loc, dist.get_world_group(),1,2)
+        self.fused_scaled_dot_product_attention = DistributedAttention(self.fused_scaled_dot_product_attention_loc, parallel_state.get_sequence_parallel_group(),1,2)
         if config.fused_qkv:
             self.num_heads = config.num_attention_heads
             self.head_dim = config.hidden_size // self.num_heads
@@ -422,7 +421,7 @@ class GaudiLlamaAttention(LlamaAttention):
         #Get Before and After ROPE
         cos, sin = self.rotary_emb(value_states, seq_len=8192)
         rank = 0
-        # rank = parallel_state.get_sequence_parallel_rank()
+        rank = parallel_state.get_sequence_parallel_rank()
         if rank==1:
             position_ids = torch.arange(4096,8192, dtype=torch.long, device=query_states.device)
             position_ids = position_ids.unsqueeze(0)
@@ -841,7 +840,7 @@ class GaudiLlamaModel(LlamaModel):
         hidden_states = inputs_embeds
         #BHARGAV
         #Hidden States
-        print(hidden_states)
+        # print(hidden_states)
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None

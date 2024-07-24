@@ -22,6 +22,7 @@ from accelerate.utils import is_deepspeed_available, parse_choice_from_env, pars
 from optimum.utils import logging
 
 from .utils import GaudiDistributedType
+from .. import parallel_state
 
 
 logger = logging.get_logger()
@@ -83,6 +84,7 @@ class GaudiPartialState(PartialState):
                 if self.device is None:
                     # TODO: replace by `torch.device("hpu", self.local_process_index)` when hpu:x is supported
                     self.device = torch.device("hpu")
+                parallel_state.initialize_model_parallel(sequence_parallel_size = 2, use_fp8 = False)
             else:
                 self.distributed_type = (
                     GaudiDistributedType.NO

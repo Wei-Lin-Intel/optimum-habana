@@ -116,7 +116,7 @@ class GaudiAccelerator(Accelerator):
 
 
         self.mpu = parallel_state
-        parallel_state.initialize_model_parallel(sequence_parallel_size = 2, use_fp8 = False)
+        # parallel_state.initialize_model_parallel(sequence_parallel_size = 2, use_fp8 = False)
         if project_config is not None:
             self.project_configuration = project_config
         else:
@@ -449,6 +449,7 @@ class GaudiAccelerator(Accelerator):
         deepspeed_plugin = self.state.deepspeed_plugin
 
         is_dataloader_present = any(isinstance(obj, torch.utils.data.DataLoader) for obj in args)
+
         result = [
             self._prepare_one(obj, first_pass=True) if isinstance(obj, torch.utils.data.DataLoader) else convert_model(obj) if isinstance(obj, torch.nn.Module) and self.state.is_fp8_enabled  else obj
             for obj in args

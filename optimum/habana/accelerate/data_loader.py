@@ -288,10 +288,10 @@ def gaudi_prepare_data_loader(
         raise ValueError("Using `dispatch_batches=True` requires `put_on_device=True`.")
     # Grab defaults from GaudiAcceleratorState
     state = GaudiAcceleratorState()
-    if num_processes is None:
-        num_processes = state.num_processes
-    if process_index is None:
-        process_index = state.process_index
+    # if num_processes is None:
+    num_processes = int(state.num_processes / 2)
+    # if process_index is None:
+    process_index = int(state.process_index / 2)
 
     # Sanity check
     batch_size = dataloader.batch_size if dataloader.batch_size is not None else dataloader.batch_sampler.batch_size

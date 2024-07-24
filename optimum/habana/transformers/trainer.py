@@ -697,7 +697,7 @@ class GaudiTrainer(Trainer):
         # prepare using `accelerator` prepare
         if use_accelerator_prepare:
             self.model.train()
-            from .. import parallel_state
+
 
             #self.accelerator.mpu = parallel_state.initialize_model_parallel(sequence_parallel_size = 2, use_fp8 = False)
             if hasattr(self.lr_scheduler, "step"):
@@ -1550,12 +1550,12 @@ class GaudiTrainer(Trainer):
         model.train()
         inputs = self._prepare_inputs(inputs)
             #Bhargav
-        inputs = torch.load('/software/users/scsudhakaran/frameworks/fp8_optimum_habana/data_backup/input_0.pt')
-        print(inputs)
+        # inputs = torch.load('/software/users/scsudhakaran/frameworks/fp8_optimum_habana/data_backup/input_0.pt')
+        # print(inputs)
         seq_parallel_world_rank = int(os.environ.get("LOCAL_RANK", -1))
         seq_parallel_world_rank = self.accelerator.mpu.get_sequence_parallel_rank()
-        print(self.accelerator.mpu.get_sequence_parallel_rank())
-        print(seq_parallel_world_rank)
+        # print(self.accelerator.mpu.get_sequence_parallel_rank())
+        # print(seq_parallel_world_rank)
         # seq_parallel_world_rank = 0
         sub_seq_length = 4096
         sub_seq_start = seq_parallel_world_rank * sub_seq_length

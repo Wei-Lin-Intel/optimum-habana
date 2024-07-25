@@ -182,9 +182,14 @@ class GaudiGenerationMixin(GenerationMixin):
         device: Union[str, torch.device],
         dtype: torch.dtype = torch.bool,
     ) -> torch.Tensor:
+<<<<<<< HEAD
         decoder_attention_mask = torch.zeros((batch_size, max_steps), device=device, dtype=dtype)
         index = torch.tensor(0, device=device)
         return decoder_attention_mask.index_fill(1, index, 1)  # First position with 1
+=======
+        x = torch.zeros((batch_size, max_steps), device=device, dtype=dtype)
+        return x.index_fill(1, torch.tensor(0), 1)  # First the position with pad_token_id
+>>>>>>> 2312d377 ([SW-188464] To fix CPU tensor issue (#287))
 
     def _prepare_decoder_input_ids_for_generation(
         self,

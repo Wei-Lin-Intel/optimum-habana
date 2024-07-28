@@ -18,6 +18,7 @@ from transformers.models.llama.modeling_llama import (
     apply_rotary_pos_emb,
     logger,
 )
+
 from optimum.habana import parallel_state
 from ...modeling_attn_mask_utils import (
     _gaudi_prepare_4d_causal_attention_mask,
@@ -279,7 +280,7 @@ class GaudiLlamaAttention(LlamaAttention):
         from deepspeed.sequence.layer import DistributedAttention
         from deepspeed import comm as dist
         self.fused_scaled_dot_product_attention_loc = ModuleFusedSDPA(FusedSDPA) if FusedSDPA else None
-        self.fused_scaled_dot_product_attention = DistributedAttention(self.fused_scaled_dot_product_attention_loc, parallel_state.get_sequence_parallel_group(),1,2)
+        self.fused_scaled_dot_product_attention = DistributedAttention(self.fused_scaled_dot_product_attention_loc, parallel_state.get_sequence_parallel_group(), 1, 2)
         if config.fused_qkv:
             self.num_heads = config.num_attention_heads
             self.head_dim = config.hidden_size // self.num_heads
@@ -416,14 +417,10 @@ class GaudiLlamaAttention(LlamaAttention):
                 else:
                     kv_seq_len = past_key_value[0].shape[-2]
 
-        # cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
-        #BHARGAV
-        #Get Before and After ROPE
-        cos, sin = self.rotary_emb(value_states, seq_len=8192)
-        rank = 0
+        cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len * 2)
         rank = parallel_state.get_sequence_parallel_rank()
-        if rank==1:
-            position_ids = torch.arange(4096,8192, dtype=torch.long, device=query_states.device)
+        if rank == 1:
+            position_ids = torch.arange(kv_seq_len, kv_seq_len * 2, dtype=torch.long, device=query_states.device)
             position_ids = position_ids.unsqueeze(0)
 
         query_states, key_states = apply_customized_rope(query_states, key_states, cos, sin, position_ids)
@@ -825,8 +822,7 @@ class GaudiLlamaModel(LlamaModel):
                 position_ids = position_ids.unsqueeze(0)
             cache_position = None
 
-
-            # HPU specific mask generation
+        # HPU specific mask generation
         if ignore_cache_position:
             causal_mask = _gaudi_prepare_4d_causal_attention_mask(
                 attention_mask,
@@ -838,9 +834,7 @@ class GaudiLlamaModel(LlamaModel):
             causal_mask = self._update_causal_mask(attention_mask, inputs_embeds)
         # embed positions
         hidden_states = inputs_embeds
-        #BHARGAV
-        #Hidden States
-        # print(hidden_states)
+
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None

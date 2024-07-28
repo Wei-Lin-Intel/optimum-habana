@@ -688,7 +688,7 @@ class GaudiTrainer(Trainer):
         # this is for unhandled cases such as
         # FSDP-XLA, SageMaker MP/DP, DataParallel, IPEX
         use_accelerator_prepare = True if model is self.model else False
-        print("Bhargav", use_accelerator_prepare)
+
         if delay_optimizer_creation:
             if use_accelerator_prepare:
                 self.model = self.accelerator.prepare(self.model)
@@ -697,9 +697,6 @@ class GaudiTrainer(Trainer):
         # prepare using `accelerator` prepare
         if use_accelerator_prepare:
             self.model.train()
-
-
-            #self.accelerator.mpu = parallel_state.initialize_model_parallel(sequence_parallel_size = 2, use_fp8 = False)
             if hasattr(self.lr_scheduler, "step"):
                 model, self.optimizer = self.accelerator.prepare(self.model, self.optimizer)
             else:
@@ -1549,42 +1546,15 @@ class GaudiTrainer(Trainer):
         """
         model.train()
         inputs = self._prepare_inputs(inputs)
-            #Bhargav
-        # inputs = torch.load('/software/users/scsudhakaran/frameworks/fp8_optimum_habana/data_backup/input_0.pt')
-        # print(inputs)
         seq_parallel_world_rank = int(os.environ.get("LOCAL_RANK", -1))
         seq_parallel_world_rank = self.accelerator.mpu.get_sequence_parallel_rank()
-        # print(self.accelerator.mpu.get_sequence_parallel_rank())
-        # print(seq_parallel_world_rank)
-        # seq_parallel_world_rank = 0
-        sub_seq_length = 4096
+        sub_seq_length = inputs['input_ids'].size()[1]
         sub_seq_start = seq_parallel_world_rank * sub_seq_length
         sub_seq_end = (seq_parallel_world_rank + 1) * sub_seq_length
 
-        sub_seq_start_2 = 1 * sub_seq_length
-        sub_seq_end_2 = (1 + 1) * sub_seq_length
-        inputs_2 = {}
-
         inputs['input_ids'] = inputs['input_ids'][:, sub_seq_start:sub_seq_end]
+        inputs['attention_mask'] = inputs['attention_mask'][:, sub_seq_start:sub_seq_end]
         inputs['labels'] = inputs['labels'][:, sub_seq_start:sub_seq_end]
-        
-        # from deepspeed import comm as dist
-        # if seq_parallel_world_rank == 0:
-        #     inputs_2['input_ids'] = inputs['input_ids'][:, sub_seq_start_2:sub_seq_end_2]
-        #     inputs_2['labels'] = inputs['labels'][:, sub_seq_start_2:sub_seq_end_2]
-        #     # flatten_data = torch.cat(
-        #     # [data[key].contiguous().view(-1) for key in keys], dim=0).to(get_accelerator().device_name())
-        # else:
-        #     inputs_2['labels'] = torch.empty(4096,
-        #                            device="hpu",dtype=torch.bfloat16)
-        #     inputs_2['input_ids'] = torch.empty(4096,
-        #                            device="hpu",dtype=torch.bfloat16)
-        # torch.distributed.broadcast(inputs_2['labels'], 0, group=dist.get_world_group())
-        # torch.distributed.broadcast(inputs_2['input_ids'], 0, group=dist.get_world_group())
-        
-        # if seq_parallel_world_rank == 1:
-        #     inputs["labels"] = inputs_2["labels"]
-        #     inputs["input_ids"] = inputs_2["input_ids"]
 
         with self.compute_loss_context_manager():
             loss = self.compute_loss(model, inputs)
@@ -2058,7 +2028,6 @@ class GaudiTrainer(Trainer):
         loss_without_labels = True if len(self.label_names) == 0 and return_loss else False
 
         inputs = self._prepare_inputs(inputs)
-        
         if ignore_keys is None:
             if hasattr(self.model, "config"):
                 ignore_keys = getattr(self.model.config, "keys_to_ignore_at_inference", [])

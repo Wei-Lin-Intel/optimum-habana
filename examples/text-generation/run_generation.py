@@ -288,6 +288,24 @@ def setup_parser(parser):
         help="Whether to trust the execution of code from datasets/models defined on the Hub. This option should only be set to `True` for repositories you trust and in which you have read the code, as it will execute code present on the Hub on your local machine.",
     )
     parser.add_argument(
+<<<<<<< HEAD
+        "--parallel_strategy",
+        type=str,
+        choices=["tp", "none"],  # Add other strategies as needed
+        default="none",
+        help="Run multi card with the specified parallel strategy. Choices are 'tp' for Tensor Parallel Strategy or 'none'.",
+=======
+        "--run_partial_dataset",
+        action="store_true",
+        help="Run the inference with dataset for specified --n_iterations(default:5)",
+    )
+    parser.add_argument(
+        "--load_cp",
+        action="store_true",
+        help="Whether to load model from hugging face checkpoint.",
+>>>>>>> 7e939192 (Tensor parallel distributed strategy without using deepspeed (#321))
+    )
+    parser.add_argument(
         "--parallel_strategy",
         type=str,
         choices=["tp", "none"],  # Add other strategies as needed

@@ -153,12 +153,15 @@ def _test_text_generation(
     if "falcon" in model_name.lower() or "starcoder2" in model_name.lower():
         command += ["--use_flash_attention", "--flash_attention_causal_mask"]
 
+<<<<<<< HEAD
     if "starcoder" in model_name.lower() and "starcoder2" not in model_name.lower():
         command += ["--use_flash_attention"]
 
     if "starcoder2" in model_name.lower():
         command += ["--flash_attention_recompute"]
 
+=======
+>>>>>>> 7e939192 (Tensor parallel distributed strategy without using deepspeed (#321))
     if (reuse_cache or torch_compile) and not parallel_strategy == "tp":
         command += ["--reuse_cache"]
 
@@ -208,6 +211,17 @@ def _test_text_generation(
             f"--max_input_tokens {max_input_tokens}",
             "--limit_hpu_graphs",
         ]
+<<<<<<< HEAD
+    if parallel_strategy is not None:
+        command += [
+            f"--parallel_strategy={parallel_strategy}",
+        ]
+=======
+
+    if gptq:
+        command += ["--gptq"]
+>>>>>>> 7e939192 (Tensor parallel distributed strategy without using deepspeed (#321))
+
     if parallel_strategy is not None:
         command += [
             f"--parallel_strategy={parallel_strategy}",
@@ -325,6 +339,7 @@ def test_text_generation_distributed_tp(model_name: str, baseline: float, token:
         torch_compile=True,
         parallel_strategy="tp",
     )
+<<<<<<< HEAD
 
 
 class TextGenPipeline(TestCase):
@@ -370,3 +385,5 @@ class TextGenPipeline(TestCase):
 
         # Ensure the run finished without any issue
         self.assertEqual(return_code, 0)
+=======
+>>>>>>> 7e939192 (Tensor parallel distributed strategy without using deepspeed (#321))

@@ -14,6 +14,10 @@
 #
 # This file has been modified from its original version.
 # The original version can be found at https://github.com/foundation-model-stack/foundation-model-stack
+<<<<<<< HEAD
+=======
+
+>>>>>>> 7e939192 (Tensor parallel distributed strategy without using deepspeed (#321))
 
 import torch
 import torch._inductor.ir as ir

@@ -660,6 +660,7 @@ class TPGaudiLlamaAttention(GaudiLlamaAttention, TPModule):
         flash_attention_recompute: Optional[bool] = False,
         flash_attention_causal_mask: Optional[bool] = False,
         flash_attention_fast_softmax: Optional[bool] = False,
+        valid_sequence_lengths: torch.Tensor = None,
         cache_idx: int = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
@@ -679,6 +680,7 @@ class TPGaudiLlamaAttention(GaudiLlamaAttention, TPModule):
             flash_attention_recompute,
             flash_attention_causal_mask,
             flash_attention_fast_softmax,
+            valid_sequence_lengths,
             cache_idx,
             **kwargs,
         )

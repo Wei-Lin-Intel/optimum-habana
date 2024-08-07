@@ -1765,6 +1765,7 @@ class GaudiGenerationMixin(GenerationMixin):
 
             hpu_graphs_kwargs = self._get_hpu_graphs_kwargs(model_kwargs)
 
+            print(f"_greedy_search {model_inputs['input_ids'].dtype=} {model_inputs['position_ids'].dtype=} {model_inputs['attention_mask'].dtype=}")
             # forward pass to get next token
             outputs = self(
                 **model_inputs,

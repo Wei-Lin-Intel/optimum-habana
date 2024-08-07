@@ -340,6 +340,12 @@ def setup_parser(parser):
         action="store_true",
         help="Whether to load model from hugging face checkpoint.",
     )
+    parser.add_argument(
+        "--inc_quant_model",
+        type=str,
+        default=None,
+        help="Path to neural-compressor quantized model.",
+    )
 
     args = parser.parse_args()
 
@@ -623,6 +629,7 @@ def main():
                     if torch.is_tensor(input_tokens[t]):
                         input_tokens[t] = input_tokens[t].to(args.device)
             iteration_times = []
+            print(f"generate {input_tokens['input_ids'].dtype=} {input_tokens['attention_mask'].dtype=}")
             output_tokens = model.generate(
                 **input_tokens,
                 generation_config=generation_config,

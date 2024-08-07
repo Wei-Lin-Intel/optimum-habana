@@ -66,16 +66,21 @@ def gaudi_llama_rmsnorm_forward(self, hidden_states):
     The only differences are:
         - override RMSNorm with Habana fused RMSNorm
     """
+    print(f"gaudi_llama_rmsnorm_forward  {has_fused_rms_norm=} {hidden_states.dtype=} {self.weight.dtype=}")
     if hidden_states.device.type == "hpu" and has_fused_rms_norm:
+        print("hidden_states.device.type == 'hpu' and has_fused_rms_norm")
         # mixed dtypes are not good for FusedRMSNorm, both inputs need to have same dtype
         if hidden_states.dtype != self.weight.dtype:
+            print(f"hidden_states.dtype != self.weight.dtype {hidden_states.dtype=} {hidden_states.dtype=}.to({self.weight.dtype=})")
             orig_dtype = hidden_states.dtype
             hidden_states = FusedRMSNorm.apply(hidden_states.to(self.weight.dtype), self.weight, self.variance_epsilon)
             return hidden_states.to(orig_dtype)
         else:
+            print(f"not hidden_states.dtype != self.weight.dtype {hidden_states.dtype=}")
             hidden_states = FusedRMSNorm.apply(hidden_states, self.weight, self.variance_epsilon)
             return hidden_states
     else:
+        print(f"not hidden_states.device.type == 'hpu' and has_fused_rms_norm {hidden_states.dtype=}, setting {hidden_states.dtype=} to float32")
         input_dtype = hidden_states.dtype
         hidden_states = hidden_states.to(torch.float32)
         variance = hidden_states.pow(2).mean(-1, keepdim=True)
@@ -94,12 +99,14 @@ class GaudiLlamaRotaryEmbedding(torch.nn.Module):
         inv_freq = 1.0 / (self.base ** (torch.arange(0, self.dim, 2).float().to(device) / self.dim))
         self.register_buffer("inv_freq", inv_freq, persistent=False)
 
+        print(f"GaudiLlamaRotaryEmbedding {torch.get_default_dtype()=}")
         # Build here to make `torch.jit.trace` work.
         self._set_cos_sin_cache(
             seq_len=max_position_embeddings, device=self.inv_freq.device, dtype=torch.get_default_dtype()
         )
 
     def _set_cos_sin_cache(self, seq_len, device, dtype):
+        print(f"GaudiLlamaRotaryEmbedding::_set_cos_sin_cache {dtype=}")
         self.max_seq_len_cached = seq_len
         t = torch.arange(self.max_seq_len_cached, device=device, dtype=self.inv_freq.dtype)
 
@@ -110,6 +117,7 @@ class GaudiLlamaRotaryEmbedding(torch.nn.Module):
         self.register_buffer("_sin_cached", emb.sin().to(dtype), persistent=False)
 
     def forward(self, x, seq_len=None):
+        print(f"GaudiLlamaRotaryEmbedding::forward {x.dtype=}")
         # x: [bs, num_attention_heads, seq_len, head_size]
         if seq_len > self.max_seq_len_cached:
             self._set_cos_sin_cache(seq_len=seq_len, device=x.device, dtype=x.dtype)
@@ -122,6 +130,7 @@ class GaudiLlamaRotaryEmbedding(torch.nn.Module):
 
 class GaudiLlamaLinearScalingRotaryEmbedding(GaudiLlamaRotaryEmbedding):
     def _set_cos_sin_cache(self, seq_len, device, dtype):
+        print(f"GaudiLlamaLinearScalingRotaryEmbedding::_set_cos_sin_cache {dtype=} {self.inv_freq.dtype=}")
         self.max_seq_len_cached = seq_len
         t = torch.arange(self.max_seq_len_cached, device=device, dtype=self.inv_freq.dtype)
         t = t / self.scaling_factor
@@ -366,7 +375,9 @@ class GaudiLlamaAttention(LlamaAttention):
     def get_k_proj_weight_dtype(self):
         """ 4bit quantization in GPTQ replaces the k_proj.weight with qweight.
             Scales tensor gets the weight dtype. """
+        print(f"get_k_proj_weight_dtype")
         if hasattr(self.k_proj, 'qweight'):
+            print(f"get_k_proj_weight_dtype {self.k_proj.scales.dtype=}")
             return self.k_proj.scales.dtype
         return self.k_proj.weight.dtype
 
@@ -750,8 +761,9 @@ class GaudiLlamaDecoderLayer(LlamaDecoderLayer):
             warnings.warn(
                 "Passing `padding_mask` is deprecated and will be removed in v4.37. Please make sure use `attention_mask` instead.`"
             )
-
+        htcore.mark_step()
         residual = hidden_states
+        print(f"GaudiLlamaDecoderLayer::forward {hidden_states.dtype=}")
         hidden_states, self_attn_weights, present_key_value = self.pre_attn(
             hidden_states,
             attention_mask,
@@ -873,6 +885,8 @@ class GaudiLlamaModel(LlamaModel):
         self.distributed_strategy = config.distributed_strategy
         config.distributed_strategy = None
         self.embed_tokens = torch.nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
+        print(f"{self.embed_tokens.weight.dtype=} {config.vocab_size=} {config.hidden_size=} {self.padding_idx=}")
+        # self.embed_tokens.weight = torch.nn.Parameter(self.embed_tokens.weight.to(torch.bfloat16))
         layers = []
         for layer_idx in range(config.num_hidden_layers):
             layer = GaudiLlamaDecoderLayer(config, layer_idx)
@@ -963,6 +977,7 @@ class GaudiLlamaModel(LlamaModel):
             )
             use_cache = False
 
+        print(f"{(inputs_embeds is None)=}")
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
 
@@ -1016,6 +1031,7 @@ class GaudiLlamaModel(LlamaModel):
 
         # embed positions
         hidden_states = inputs_embeds
+        print(f"GaudiLlamaModel {inputs_embeds.dtype=}")
 
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
@@ -1076,6 +1092,7 @@ class GaudiLlamaModel(LlamaModel):
                     cache_idx=cache_idx,
                     num_virtual_tokens=num_virtual_tokens,
                 )
+            print(f"GaudiLlama.. {layer_outputs[0].dtype=}")
             hidden_states = layer_outputs[0]
 
             if use_cache:

@@ -250,6 +250,23 @@ def setup_model(args, model_dtype, model_kwargs, logger):
             device="hpu",
             **model_kwargs
         )
+    elif args.inc_quant_model:
+        org_model = AutoModelForCausalLM.from_pretrained(
+            args.model_name_or_path,
+            **model_kwargs,
+        )
+        print(f"calling org_model.to(torch.bfloat16)")
+        org_model = org_model.to(torch.bfloat16)
+
+        from neural_compressor.torch.quantization import load
+        model = load(
+            model_name_or_path=args.inc_quant_model,
+            format="huggingface" if args.load_cp else "default",
+            device="hpu",
+            original_model=org_model,
+            **model_kwargs
+        )
+        print(f"setup_model {model.config.torch_dtype=} {org_model.config.torch_dtype=}")
     else:
         if args.assistant_model is not None:
             assistant_model = AutoModelForCausalLM.from_pretrained(
@@ -646,7 +663,7 @@ def initialize_model(args, logger):
         "token": args.token,
         "trust_remote_code": args.trust_remote_code,
     }
-    if args.load_cp:
+    if args.load_cp or args.inc_quant_model:
         model_kwargs["torch_dtype"] = torch.bfloat16
 
     if args.trust_remote_code:

@@ -1,7 +1,15 @@
 datasets >= 2.4.0
 sentencepiece != 0.1.92
+<<<<<<< HEAD
 protobuf
 sacrebleu >= 1.4.12
 py7zr
 torch >= 1.3
 evaluate
+=======
+protobuf == 3.20.3
+sacrebleu >= 1.4.12, <= 2.4.2
+py7zr == 0.21.0
+torch >= 1.3
+evaluate == 0.4.2
+>>>>>>> be7e20a8 ([SW-194524] Loosen pytorch requirement)

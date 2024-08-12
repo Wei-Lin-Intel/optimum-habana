@@ -876,7 +876,7 @@ class GaudiTrainer(Trainer):
             active=self.args.profiling_steps,
             record_shapes=self.args.profiling_record_shapes,
         )
-        hb_profiler.start()
+        # hb_profiler.start()
 
         total_batched_samples = 0
         if _is_peft_model(self.model) and self.model.peft_type == PeftType.ADALORA:
@@ -969,7 +969,8 @@ class GaudiTrainer(Trainer):
 
                 # TODO: keep syncs for fast DDP?
                 with self.accelerator.accumulate(model):
-                    tr_loss_step = self.training_step(model, inputs)
+                    tr_loss_step = self.training_step(model, inputs, hb_profiler)
+                hb_profiler.stop()
 
                 is_last_step_and_steps_less_than_grad_acc = (
                     steps_in_epoch <= args.gradient_accumulation_steps and (step + 1) == steps_in_epoch
@@ -1045,7 +1046,7 @@ class GaudiTrainer(Trainer):
                 else:
                     self.control = self.callback_handler.on_substep_end(args, self.state, self.control)
 
-                hb_profiler.step()
+                # hb_profiler.step()
                 if self.control.should_epoch_stop or self.control.should_training_stop:
                     break
             if step < 0:
@@ -1062,7 +1063,7 @@ class GaudiTrainer(Trainer):
             if self.control.should_training_stop:
                 break
 
-        hb_profiler.stop()
+        # hb_profiler.stop()
 
         if args.past_index and hasattr(self, "_past"):
             # Clean the state at the end of training
@@ -1529,7 +1530,7 @@ class GaudiTrainer(Trainer):
 
         return ctx_manager
 
-    def training_step(self, model: torch.nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]]) -> torch.Tensor:
+    def training_step(self, model: torch.nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]], hb_profiler) -> torch.Tensor:
         """
         Perform a training step on a batch of inputs.
 
@@ -1549,7 +1550,7 @@ class GaudiTrainer(Trainer):
         """
         model.train()
         inputs = self._prepare_inputs(inputs)
-
+        hb_profiler.start()
         with self.compute_loss_context_manager():
             loss = self.compute_loss(model, inputs)
 
@@ -1558,6 +1559,8 @@ class GaudiTrainer(Trainer):
 
         if self.args.use_lazy_mode and self.args.pipelining_fwd_bwd:
             self.htcore.mark_step()
+        hb_profiler.stop()
+        hb_profiler.start()
 
         if _is_peft_model(self.model) and self.model.peft_type == PeftType.ADALORA:
             assert not (

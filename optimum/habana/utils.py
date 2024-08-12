@@ -288,40 +288,49 @@ class HabanaProfile(object):
         output_dir: str = "./hpu_profile",
         wait: int = 0,
     ):
-        if active <= 0 or warmup < 0 or not HabanaProfile.HABANA_PROFILE_ENABLED:
-
-            def noop():
-                pass
-
-            self.start = noop
-            self.stop = noop
-            self.step = noop
-        else:
-            HabanaProfile.HABANA_PROFILE_ENABLED = False
-            schedule = torch.profiler.schedule(wait=wait, warmup=warmup, active=active, repeat=1)
-            activities = [torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.HPU]
-
-            profiler = torch.profiler.profile(
-                schedule=schedule,
-                activities=activities,
-                on_trace_ready=torch.profiler.tensorboard_trace_handler(output_dir),
-                record_shapes=record_shapes,
-                with_stack=False,
-            )
-            self.start = profiler.start
-            self.stop = profiler.stop
-            self.step = profiler.step
-            HabanaProfile.enable.invalid = True
-            HabanaProfile.disable.invalid = True
+        self.warmup = warmup
+        self.active = active
+        self.record_shapes = record_shapes
+        self.output_dir = output_dir
+        print(self.output_dir)
+        self.wait = wait
 
     def stop(self):
-        self.stop()
+        if self.profiler is not None:
+            self.profiler.stop()
+        self.profiler = None
+        HabanaProfile.HABANA_PROFILE_ENABLED = True
+        import gc
+        gc.collect()
 
     def start(self):
-        self.start()
+        if self.active <= 0 or self.warmup < 0 or not HabanaProfile.HABANA_PROFILE_ENABLED:
+            self.profiler = None
+            import gc
+            gc.collect()
+        else:
+            HabanaProfile.HABANA_PROFILE_ENABLED = False
+            schedule = torch.profiler.schedule(
+                wait=self.wait, warmup=self.warmup, active=self.active, repeat=1)
+            activities = [torch.profiler.ProfilerActivity.CPU,
+                          torch.profiler.ProfilerActivity.HPU]
+
+            print(self.output_dir)
+            self.profiler = torch.profiler.profile(
+                schedule=schedule,
+                activities=activities,
+                on_trace_ready=torch.profiler.tensorboard_trace_handler(
+                    self.output_dir),
+                record_shapes=self.record_shapes,
+                with_stack=False,
+            )
+            HabanaProfile.enable.invalid = True
+            HabanaProfile.disable.invalid = True
+            self.profiler.start()
 
     def step(self):
-        self.step()
+        if self.profiler is not None:
+            self.profiler.step()
 
     @staticmethod
     def disable():

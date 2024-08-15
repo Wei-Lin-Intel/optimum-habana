@@ -491,6 +491,7 @@ Currently, uint4 checkpoints and single device are supported.
 More information on enabling 4 bit inference in SynapseAI is available here:
 https://docs.habana.ai/en/latest/PyTorch/Inference_on_PyTorch/Inference_Using_INT4.html.
 
+<<<<<<< HEAD
 Below is an example to load a model with 4bit checkpoints from Hugging Face.
 Please note that model name is denoted as `<model_path_in_hugging_face>`.
 Additionally, the below env vars are used for performance optimizations, and are planned to be removed in future version:
@@ -510,6 +511,11 @@ python run_lm_eval.py \
 --bucket_internal \
 --load_quantized_model
 ```
+=======
+Some models can fit on HPU DRAM but can't fit on the CPU RAM.
+When we run a model on single card and don't use deepspeed the `--disk_offload` flag allows to offload weights to disk during model quantization in INC. When this flag is mentioned, during the quantization process, each weight first is loaded from disk to CPU RAM, when brought to HPU DRAM and quantized there. This way not all the model is on the CPU RAM but only one weight each time.
+To enable this weights offload mechanism, add `--disk_offload` flag to the topology command line.
+>>>>>>> f5a042ac ([SW-196685] Remove HQT from OHF)
 
 ### Using Habana Flash Attention
 

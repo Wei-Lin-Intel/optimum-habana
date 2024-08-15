@@ -187,6 +187,7 @@ def get_torch_compiled_model(model):
 
 
 def setup_quantization(model, args):
+<<<<<<< HEAD
     if os.getenv("USE_INC", "1") != "0":
         try:
             from neural_compressor.torch.quantization import FP8Config, convert, prepare
@@ -194,21 +195,21 @@ def setup_quantization(model, args):
             raise ImportError(
                 "Module neural_compressor is missing. Please use a newer Synapse version to use quantization, or set the environment variable to USE_INC=0"
             )
+=======
+    from neural_compressor.torch.quantization import FP8Config, convert, prepare
+>>>>>>> f5a042ac ([SW-196685] Remove HQT from OHF)
 
-        config = FP8Config.from_json_file(args.quant_config)
-        if config.measure:
-            model = prepare(model, config)
-        elif config.quantize:
-            model = convert(model, config)
-    else:
-        import habana_quantization_toolkit
-
-        habana_quantization_toolkit.prep_model(model)
+    config = FP8Config.from_json_file(args.quant_config)
+    if config.measure:
+        model = prepare(model, config)
+    elif config.quantize:
+        model = convert(model, config)
 
     return model
 
 
 def finalize_quantization(model):
+<<<<<<< HEAD
     if os.getenv("USE_INC", "1") != "0":
         try:
             from neural_compressor.torch.quantization import finalize_calibration
@@ -216,12 +217,11 @@ def finalize_quantization(model):
             raise ImportError(
                 "Module neural_compressor is missing. Please use a newer Synapse version to use quantization, or set the environment variable to USE_INC=0"
             )
+=======
+    from neural_compressor.torch.quantization import finalize_calibration
+>>>>>>> f5a042ac ([SW-196685] Remove HQT from OHF)
 
-        finalize_calibration(model)
-    else:
-        import habana_quantization_toolkit
-
-        habana_quantization_toolkit.finish_measurements(model)
+    finalize_calibration(model)
 
 
 def setup_model(args, model_dtype, model_kwargs, logger):

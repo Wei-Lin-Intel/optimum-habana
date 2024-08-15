@@ -48,6 +48,7 @@ python3 run_pipeline.py \
     --bf16
 ```
 
+<<<<<<< HEAD
 To run Llava-1.5-13b inference, use the following command:
 ```bash
 python3 run_pipeline.py \
@@ -55,6 +56,9 @@ python3 run_pipeline.py \
     --use_hpu_graphs \
     --bf16
 ```
+=======
+Llava-1.5-7b and Llava-1.5-13b in FP8 are enabled using the Intel Neural Compressor (INC), which provides model measurement and quantization capabilities in PyTorch.
+>>>>>>> f5a042ac ([SW-196685] Remove HQT from OHF)
 
 To run Llava-v1.6-mistral-7b inference, use the following command:
 ```bash

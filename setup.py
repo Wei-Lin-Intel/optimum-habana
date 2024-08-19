@@ -36,6 +36,10 @@ INSTALL_REQUIRES = [
     "diffusers == 0.29.2",
     "huggingface_hub >= 0.23.2",
     "sentence-transformers[train] == 3.0.1",
+<<<<<<< HEAD
+=======
+    "pytest < 8.0.0",
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
 ]
 
 TESTS_REQUIRE = [

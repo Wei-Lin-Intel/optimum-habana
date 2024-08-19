@@ -312,6 +312,12 @@ def setup_parser(parser):
         help="Run multi card with the specified parallel strategy. Choices are 'tp' for Tensor Parallel Strategy or 'none'.",
     )
 
+    parser.add_argument(
+        "--run_partial_dataset",
+        action="store_true",
+        help="Run the inference with dataset for specified --n_iterations(default:5)",
+    )
+
     args = parser.parse_args()
 
     if args.torch_compile:
@@ -319,6 +325,9 @@ def setup_parser(parser):
 
     if not args.use_hpu_graphs:
         args.limit_hpu_graphs = False
+
+    if args.use_flash_attention and not args.flash_attention_fast_softmax:
+        args.flash_attention_fast_softmax = True
 
     if args.use_flash_attention and not args.flash_attention_fast_softmax:
         args.flash_attention_fast_softmax = True

@@ -2021,6 +2021,16 @@ class GaudiGenerationMixin(GenerationMixin):
                     eos_token_id=generation_config.eos_token_id,
                 )
                 this_peer_finished = unfinished_sequences.max() == 0
+<<<<<<< HEAD
+=======
+
+            if greedy_first:
+                import habana_frameworks.torch.hpu as torch_hpu
+
+                torch_hpu.synchronize()
+                print(f"First Token time(greedy):{time.perf_counter()*1000}")
+                greedy_first = False
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
 
             if (
                 not model_kwargs.get("pad_done", False)
@@ -2031,6 +2041,15 @@ class GaudiGenerationMixin(GenerationMixin):
                 # before starting the decode phase.
                 self._pad_past_key_values(model_kwargs)
                 model_kwargs["pad_done"] = True
+            hb_profer.step()
+
+            if hb_gen_time is not None:
+                if not time_to_first_token_done:
+                    time_to_first_token_done = True
+                    import habana_frameworks.torch.hpu as torch_hpu
+
+                    torch_hpu.synchronize()
+                hb_gen_time.step()
 
             if hb_gen_time is not None:
                 if not time_to_first_token_done:
@@ -2364,6 +2383,10 @@ class GaudiGenerationMixin(GenerationMixin):
                 )
                 this_peer_finished = unfinished_sequences.max() == 0
 
+<<<<<<< HEAD
+=======
+            hb_profer.step()
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
             if hb_gen_time is not None:
                 if not time_to_first_token_done:
                     time_to_first_token_done = True
@@ -2388,6 +2411,16 @@ class GaudiGenerationMixin(GenerationMixin):
             # Otherwise a reference to outputs is kept which keeps the logits alive in the next iteration
             del outputs
 
+<<<<<<< HEAD
+=======
+            if sample_first:
+                import habana_frameworks.torch.hpu as torch_hpu
+
+                torch_hpu.synchronize()
+                print(f"First Token time(sample):{time.perf_counter()*1000}")
+                sample_first = False
+
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
         if (
             model_kwargs.get("use_hpu_graphs", False)
             and model_kwargs.get("limit_hpu_graphs", False)

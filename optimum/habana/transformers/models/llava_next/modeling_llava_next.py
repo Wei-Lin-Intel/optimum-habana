@@ -55,7 +55,10 @@ class GaudiLlavaNextForConditionalGeneration(LlavaNextForConditionalGeneration):
         return_dict: Optional[bool] = None,
         token_idx: Optional[torch.Tensor] = None,
         use_flash_attention: Optional[bool] = False,
+<<<<<<< HEAD
         flash_attention_recompute: Optional[bool] = False,
+=======
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
     ) -> Union[Tuple, LlavaNextCausalLMOutputWithPast]:
         """
         Inherits from LlavaForConditionalGeneration: https://github.com/huggingface/transformers/blob/v4.40.0/src/transformers/models/llava_next/modeling_llava_next.py#L433
@@ -86,7 +89,11 @@ class GaudiLlavaNextForConditionalGeneration(LlavaNextForConditionalGeneration):
                 return_dict=return_dict,
                 token_idx=token_idx + self.image_offset,
                 use_flash_attention=use_flash_attention,
+<<<<<<< HEAD
                 flash_attention_recompute=flash_attention_recompute,
+=======
+                flash_attention_recompute=use_flash_attention,
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
             )
 
             if inputs_embeds.shape[1] != 1 and pixel_values is not None:
@@ -251,7 +258,10 @@ class GaudiLlavaNextForConditionalGeneration(LlavaNextForConditionalGeneration):
             )
         else:
             use_flash_attention = kwargs.get("use_flash_attention", False)
+<<<<<<< HEAD
             flash_attention_recompute = kwargs.get("flash_attention_recompute", False)
+=======
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
             position_ids = kwargs.get("position_ids", None)
             labels = kwargs.get("labels", None)
             if past_key_values is None and pixel_values is not None and input_ids.shape[1] != 1:
@@ -272,10 +282,14 @@ class GaudiLlavaNextForConditionalGeneration(LlavaNextForConditionalGeneration):
                 batch_size, num_patches, num_channels, height, width = pixel_values.shape
                 reshaped_pixel_values = pixel_values.view(batch_size * num_patches, num_channels, height, width)
                 image_features = self.vision_tower(
+<<<<<<< HEAD
                     reshaped_pixel_values,
                     output_hidden_states=True,
                     use_flash_attention=use_flash_attention,
                     flash_attention_recompute=flash_attention_recompute,
+=======
+                    reshaped_pixel_values, output_hidden_states=True, use_flash_attention=use_flash_attention
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
                 )
 
                 selected_image_feature = image_features.hidden_states[vision_feature_layer]
@@ -397,7 +411,10 @@ class GaudiLlavaNextForConditionalGeneration(LlavaNextForConditionalGeneration):
                     "image_sizes": image_sizes,
                     "labels": labels,
                     "use_flash_attention": use_flash_attention,
+<<<<<<< HEAD
                     "flash_attention_recompute": flash_attention_recompute,
+=======
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
                 }
             )
 

@@ -40,7 +40,11 @@ except ImportError:
 
 
 # Will error if the minimal version of Optimum Habana is not installed. Remove at your own risks.
+<<<<<<< HEAD
 check_optimum_habana_min_version("1.14.0.dev0")
+=======
+check_optimum_habana_min_version("1.12.0")
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
 
 
 logger = logging.getLogger(__name__)

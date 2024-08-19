@@ -1,6 +1,9 @@
 import copy
 import math
+<<<<<<< HEAD
 import os
+=======
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
 from typing import List, Optional, Tuple, Union
 
 import torch
@@ -412,7 +415,10 @@ class GaudiLlamaAttention(LlamaAttention):
         self.matmul_av = Matmul()
         self.k_cache = KVCache()
         self.v_cache = KVCache()
+<<<<<<< HEAD
         self.fused_scaled_dot_product_attention = ModuleFusedSDPA(FusedSDPA) if FusedSDPA else None
+=======
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
         if hasattr(config, "fused_qkv") and config.fused_qkv:
             self.num_heads = config.num_attention_heads
             self.head_dim = config.hidden_size // self.num_heads
@@ -925,6 +931,10 @@ class GaudiLlamaDecoderLayer(LlamaDecoderLayer):
             flash_attention_recompute=flash_attention_recompute,
             flash_attention_causal_mask=flash_attention_causal_mask,
             flash_attention_fast_softmax=flash_attention_fast_softmax,
+<<<<<<< HEAD
+=======
+            valid_sequence_lengths=valid_sequence_lengths,
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
             cache_idx=cache_idx,
             num_virtual_tokens=num_virtual_tokens,
         )

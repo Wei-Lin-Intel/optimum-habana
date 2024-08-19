@@ -35,9 +35,18 @@ jobs:
         source venv/bin/activate
         ruff check . setup.py
         ruff format --check . setup.py
+<<<<<<< HEAD
   post-comment:
     if: failure() && github.event_name == 'pull_request'
     needs: check
     uses: ./.github/workflows/failed_code_quality_check_comment.yml
     with:
       pr-number: ${{ github.event.number }}
+=======
+    - name: Post comment to run make style
+      if: failure()
+      uses: peter-evans/create-or-update-comment@v4
+      with:
+        issue-number: ${{ github.event.number }}
+        body: The code quality check failed, please run `make style`.
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)

@@ -223,6 +223,11 @@ def _test_text_generation(
             f"--max_input_tokens {max_input_tokens}",
             "--limit_hpu_graphs",
         ]
+<<<<<<< HEAD
+=======
+    if gptq:
+        command += ["--gptq"]
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
     if parallel_strategy is not None:
         command += [
             f"--parallel_strategy={parallel_strategy}",
@@ -311,6 +316,38 @@ def test_text_generation_fp8(
     )
 
 
+<<<<<<< HEAD
+=======
+@pytest.mark.parametrize(
+    "model_name, world_size, batch_size, reuse_cache, input_len, output_len, baseline", MODELS_TO_TEST["gptq"]
+)
+def test_text_generation_gptq(
+    model_name: str,
+    baseline: float,
+    world_size: int,
+    batch_size: int,
+    reuse_cache: bool,
+    input_len: int,
+    output_len: int,
+    token: str,
+):
+    deepspeed = True if world_size > 1 else False
+    _test_text_generation(
+        model_name,
+        baseline,
+        token,
+        deepspeed=deepspeed,
+        world_size=world_size,
+        fp8=False,
+        gptq=True,
+        batch_size=batch_size,
+        reuse_cache=reuse_cache,
+        max_input_tokens=input_len,
+        max_output_tokens=output_len,
+    )
+
+
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
 @pytest.mark.parametrize("model_name,  world_size, batch_size, baseline", MODELS_TO_TEST["deepspeed"])
 def test_text_generation_deepspeed(model_name: str, baseline: float, world_size: int, batch_size: int, token: str):
     _test_text_generation(model_name, baseline, token, deepspeed=True, world_size=world_size, batch_size=batch_size)

@@ -1,1 +1,8 @@
 https://github.com/EleutherAI/lm-evaluation-harness/archive/0bf683b4e6a9df359b3156ba9ba8d62bdd47e0c0.zip
+<<<<<<< HEAD
+=======
+evaluate == 0.4.2
+rouge_score == 0.1.2
+accelerate < 0.34.0
+pandas <= 2.2.2
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)

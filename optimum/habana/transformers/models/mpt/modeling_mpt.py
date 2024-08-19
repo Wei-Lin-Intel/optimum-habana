@@ -88,6 +88,11 @@ def gaudi_mpt_attention_forward(
         ]
         past_key_value[0][:] = key_states[:]
         past_key_value[1][:] = value_states[:]
+<<<<<<< HEAD
+=======
+
+    attention_scores = torch.matmul(query_states, key_states.transpose(-1, -2)) * self.softmax_scale
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
 
     query_length = seq_length if past_key_value is None else seq_length + past_key_value[0].shape[2]
 

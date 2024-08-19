@@ -78,13 +78,19 @@ class GaudiCLIPAttention(CLIPAttention):
         causal_attention_mask: Optional[torch.Tensor] = None,
         output_attentions: Optional[bool] = False,
         use_flash_attention: Optional[bool] = False,
+<<<<<<< HEAD
         flash_attention_recompute: Optional[bool] = False,
+=======
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         """
         Copied from CLIPAttention.forward: https://github.com/huggingface/transformers/blob/ab0f050b42d903f34d6eb97f3f8c0c07f0517ad2/src/transformers/models/clip/modeling_clip.py
         The only differences are:
         - add new args use_flash_attention to enable FusedSDPA
+<<<<<<< HEAD
         - add new args flash_attention_recompute
+=======
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
         """
         bsz, tgt_len, embed_dim = hidden_states.size()
         attn_weights_reshaped = None
@@ -102,7 +108,12 @@ class GaudiCLIPAttention(CLIPAttention):
         if FusedSDPA and use_flash_attention:
             import habana_frameworks.torch.hpu as ht
 
+<<<<<<< HEAD
             with ht.sdp_kernel(enable_recompute=flash_attention_recompute):
+=======
+            use_recompute = not self.training
+            with ht.sdp_kernel(enable_recompute=use_recompute):
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
                 attn_output = self.fused_scaled_dot_product_attention(
                     query_states, key_states, value_states, attention_mask, self.dropout, False, 1, "fast"
                 )
@@ -179,13 +190,19 @@ class GaudiCLIPEncoderLayer(CLIPEncoderLayer):
         causal_attention_mask: torch.Tensor,
         output_attentions: Optional[bool] = False,
         use_flash_attention: Optional[bool] = False,
+<<<<<<< HEAD
         flash_attention_recompute: Optional[bool] = False,
+=======
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
     ) -> Tuple[torch.FloatTensor]:
         """
         Copied from CLIPEncoderLayer.forward: https://github.com/huggingface/transformers/blob/ab0f050b42d903f34d6eb97f3f8c0c07f0517ad2/src/transformers/models/clip/modeling_clip.py
         The only differences are:
         - add new args use_flash_attention
+<<<<<<< HEAD
         - add new args flash_attention_recompute
+=======
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
         """
         residual = hidden_states
 
@@ -196,7 +213,10 @@ class GaudiCLIPEncoderLayer(CLIPEncoderLayer):
             causal_attention_mask=causal_attention_mask,
             output_attentions=output_attentions,
             use_flash_attention=use_flash_attention,
+<<<<<<< HEAD
             flash_attention_recompute=flash_attention_recompute,
+=======
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
         )
         hidden_states = residual + hidden_states
 
@@ -223,13 +243,19 @@ class GaudiCLIPEncoder(CLIPEncoder):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         use_flash_attention: Optional[bool] = False,
+<<<<<<< HEAD
         flash_attention_recompute: Optional[bool] = False,
+=======
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
     ) -> Union[Tuple, BaseModelOutput]:
         """
         Copied from CLIPEncoder.forward: https://github.com/huggingface/transformers/blob/ab0f050b42d903f34d6eb97f3f8c0c07f0517ad2/src/transformers/models/clip/modeling_clip.py
         The only differences are:
         - add new args use_flash_attention
+<<<<<<< HEAD
         - add new args flash_attention_recompute
+=======
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
         """
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -251,6 +277,10 @@ class GaudiCLIPEncoder(CLIPEncoder):
                     attention_mask,
                     causal_attention_mask,
                     output_attentions,
+<<<<<<< HEAD
+=======
+                    use_flash_attention=use_flash_attention,
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
                 )
             else:
                 layer_outputs = encoder_layer(
@@ -259,7 +289,10 @@ class GaudiCLIPEncoder(CLIPEncoder):
                     causal_attention_mask,
                     output_attentions=output_attentions,
                     use_flash_attention=use_flash_attention,
+<<<<<<< HEAD
                     flash_attention_recompute=flash_attention_recompute,
+=======
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
                 )
 
             hidden_states = layer_outputs[0]
@@ -285,13 +318,19 @@ class GaudiCLIPVisionTransformer(CLIPVisionTransformer):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         use_flash_attention: Optional[bool] = False,
+<<<<<<< HEAD
         flash_attention_recompute: Optional[bool] = False,
+=======
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
     ) -> Union[Tuple, BaseModelOutputWithPooling]:
         """
         Copied from CLIPVisionTransformer.forward: https://github.com/huggingface/transformers/blob/ab0f050b42d903f34d6eb97f3f8c0c07f0517ad2/src/transformers/models/clip/modeling_clip.py
         The only differences are:
         - add new args use_flash_attention
+<<<<<<< HEAD
         - add new args flash_attention_recompute
+=======
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
         """
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -311,7 +350,10 @@ class GaudiCLIPVisionTransformer(CLIPVisionTransformer):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
             use_flash_attention=use_flash_attention,
+<<<<<<< HEAD
             flash_attention_recompute=flash_attention_recompute,
+=======
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
         )
 
         last_hidden_state = encoder_outputs[0]
@@ -337,13 +379,19 @@ class GaudiCLIPVisionModel(CLIPVisionModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         use_flash_attention: Optional[bool] = False,
+<<<<<<< HEAD
         flash_attention_recompute: Optional[bool] = False,
+=======
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
     ) -> Union[Tuple, BaseModelOutputWithPooling]:
         """
         Copied from CLIPVisionModel.forward: https://github.com/huggingface/transformers/blob/ab0f050b42d903f34d6eb97f3f8c0c07f0517ad2/src/transformers/models/clip/modeling_clip.py
         The only differences are:
         - add new args use_flash_attention
+<<<<<<< HEAD
         - add new args flash_attention_recompute
+=======
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
         """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
@@ -353,5 +401,8 @@ class GaudiCLIPVisionModel(CLIPVisionModel):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
             use_flash_attention=use_flash_attention,
+<<<<<<< HEAD
             flash_attention_recompute=flash_attention_recompute,
+=======
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
         )

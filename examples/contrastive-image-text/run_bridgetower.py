@@ -57,7 +57,11 @@ logger = logging.getLogger(__name__)
 
 # Will error if the minimal version of Transformers and Optimum Habana are not installed. Remove at your own risks.
 check_min_version("4.43.0")
+<<<<<<< HEAD
 check_optimum_habana_min_version("1.14.0.dev0")
+=======
+check_optimum_habana_min_version("1.12.0")
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
 
 require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/contrastive-image-text/requirements.txt")
 
@@ -99,7 +103,7 @@ class ModelArguments:
         },
     )
     trust_remote_code: bool = field(
-        default=False,
+        default=True,
         metadata={
             "help": (
                 "Whether to trust the execution of code from datasets/models defined on the Hub."

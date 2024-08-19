@@ -7,7 +7,11 @@ services:
         no_proxy: ${no_proxy:-""}
         GAUDI_SW_VER: ${GAUDI_SW_VER:-1.17.0}
         OS: ${OS:-ubuntu22.04}
+<<<<<<< HEAD
         OPTIMUM_HABANA_VER:  ${OPTIMUM_HABANA_VER:-1.13.0}
+=======
+        OPTIMUM_HABANA_VER:  ${OPTIMUM_HABANA_VER:-1.12.1}
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
         TORCH_VER: ${TORCH_VER:-2.3.1}
         REGISTRY: ${REGISTRY}
         REPO: ${REPO}

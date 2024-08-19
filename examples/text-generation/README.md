@@ -491,6 +491,39 @@ Currently, uint4 checkpoints and single device are supported.
 More information on enabling 4 bit inference in SynapseAI is available here:
 https://docs.habana.ai/en/latest/PyTorch/Inference_on_PyTorch/Inference_Using_INT4.html.
 
+<<<<<<< HEAD
+Below is an example to load a model with 4bit checkpoints from Hugging Face.
+Please note that model name is denoted as `<model_path_in_hugging_face>`.
+Additionally, the below env vars are used for performance optimizations, and are planned to be removed in future version:
+`SRAM_SLICER_SHARED_MME_INPUT_EXPANSION_ENABLED=false ENABLE_EXPERIMENTAL_FLAGS=1`
+```bash
+SRAM_SLICER_SHARED_MME_INPUT_EXPANSION_ENABLED=false ENABLE_EXPERIMENTAL_FLAGS=1 \
+python run_lm_eval.py \
+-o acc_load_uint4_model.txt \
+--model_name_or_path <model_path_in_hugging_face> \
+--use_hpu_graphs \
+--use_kv_cache \
+--trim_logits \
+--batch_size 1 \
+--bf16 \
+--attn_softmax_bf16 \
+--bucket_size=128 \
+--bucket_internal \
+--load_quantized_model
+```
+=======
+Some models can fit on HPU DRAM but can't fit on the CPU RAM.
+When we run a model on single card and don't use deepspeed the `--disk_offload` flag allows to offload weights to disk during model quantization in HQT. When this flag is mentioned, during the quantization process, each weight first is loaded from disk to CPU RAM, when brought to HPU DRAM and quantized there. This way not all the model is on the CPU RAM but only one weight each time.
+To enable this weights offload mechanism, add `--disk_offload` flag to the topology command line.
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
+
+### Loading 4 Bit Checkpoints from Hugging Face
+
+You can load pre-quantized 4bit models with the argument `--load_quantized_model`.
+Currently, uint4 checkpoints and single device are supported.
+More information on enabling 4 bit inference in SynapseAI is available here:
+https://docs.habana.ai/en/latest/PyTorch/Inference_on_PyTorch/Inference_Using_INT4.html.
+
 Below is an example to load a model with 4bit checkpoints from Hugging Face.
 Please note that model name is denoted as `<model_path_in_hugging_face>`.
 Additionally, the below env vars are used for performance optimizations, and are planned to be removed in future version:

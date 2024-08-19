@@ -4323,7 +4323,10 @@ class StableDiffusionInpaintPipelineIntegrationTests(TestCase):
 
         return sdi_pipe
 
+<<<<<<< HEAD
     @slow
+=======
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
     def test_stable_diffusion_inpaint_pipeline(self):
         init_image = load_image(
             "https://huggingface.co/datasets/hf-internal-testing/diffusers-images/resolve/main"
@@ -4366,7 +4369,10 @@ class StableDiffusionInpaintPipelineIntegrationTests(TestCase):
         # np.abs(expected_image - image).max() = 0.31966144
         assert np.abs(expected_image - image).max() < 0.4
 
+<<<<<<< HEAD
     @slow
+=======
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
     def test_stable_diffusion_inpaint_pipeline_bf16(self):
         init_image = load_image(
             "https://huggingface.co/datasets/hf-internal-testing/diffusers-images/resolve/main"

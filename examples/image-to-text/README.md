@@ -145,8 +145,12 @@ python3 run_pipeline.py \
     --image_path "https://llava-vl.github.io/static/images/view.jpg" \
     --use_hpu_graphs \
     --bf16 \
+<<<<<<< HEAD
     --use_flash_attention \
     --flash_attention_recompute
+=======
+    --use_flash_attention
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
 ```
 
 
@@ -157,8 +161,12 @@ python3 run_pipeline.py \
     --image_path "https://llava-vl.github.io/static/images/view.jpg" \
     --use_hpu_graphs \
     --bf16 \
+<<<<<<< HEAD
     --use_flash_attention \
     --flash_attention_recompute
+=======
+    --use_flash_attention
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
 ```
 
 
@@ -170,9 +178,13 @@ QUANT_CONFIG=./quantization_config/maxabs_measure.json python run_pipeline.py \
 --model_name_or_path llava-hf/llava-v1.6-mistral-7b-hf \
 --image_path "https://llava-vl.github.io/static/images/view.jpg" \
 --use_hpu_graphs \
+<<<<<<< HEAD
 --bf16 \
 --use_flash_attention \
 --flash_attention_recompute
+=======
+--bf16 --use_flash_attention
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
 ```
 
 Here is an example of quantizing the model based on previous measurements for Llava-v1.6-mistral-7b:
@@ -181,7 +193,11 @@ QUANT_CONFIG=./quantization_config/maxabs_quant.json python run_pipeline.py \
 --model_name_or_path llava-hf/llava-v1.6-mistral-7b-hf \
 --image_path "https://llava-vl.github.io/static/images/view.jpg" \
 --use_hpu_graphs \
+<<<<<<< HEAD
 --bf16 \
 --use_flash_attention \
 --flash_attention_recompute
+=======
+--bf16 --use_flash_attention
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
 ```

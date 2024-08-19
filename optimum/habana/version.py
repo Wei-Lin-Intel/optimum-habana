@@ -13,4 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+<<<<<<< HEAD
 __version__ = "1.14.0.dev0"
+=======
+__version__ = "1.13.1"
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)

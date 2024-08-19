@@ -19,8 +19,13 @@ except ImportError:
         return ()
 
 
+<<<<<<< HEAD
 check_min_version("4.43.0")
 check_optimum_habana_min_version("1.14.0.dev0")
+=======
+check_min_version("4.37.0")
+check_optimum_habana_min_version("1.10.4")
+>>>>>>> 152e3118 ([SW-193528] Optimum Habana 1.13 rebase)
 
 # Setup logging
 logging.basicConfig(

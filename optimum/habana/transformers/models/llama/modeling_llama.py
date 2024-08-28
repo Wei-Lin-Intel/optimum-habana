@@ -642,9 +642,13 @@ class GaudiLlamaAttention(LlamaAttention):
                 kv_seq_len = key_states.shape[-2]
         else:
             past_key_value = None
+<<<<<<< HEAD
         fused_scaled_dot_product_attention = GaudiDistributedAttention(
             self.fused_scaled_dot_product_attention, self.fused_scaled_dot_product_attention_distributed
         )
+=======
+
+>>>>>>> 3ca2989a ([SW-198030]: Prevent Graph break in Llama when using flash attention)
         if use_flash_attention and FusedSDPA is not None:
             if q_len == 1:
                 # next token

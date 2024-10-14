@@ -252,6 +252,21 @@ def setup_model(args, model_dtype, model_kwargs, logger):
         from neural_compressor.torch.quantization import load
 
         model = load(model_name_or_path=args.model_name_or_path, format="huggingface", device="hpu", **model_kwargs)
+    elif args.quantized_inc_model_path:
+        org_model = AutoModelForCausalLM.from_pretrained(
+            args.model_name_or_path,
+            **model_kwargs,
+        )
+
+        from neural_compressor.torch.quantization import load
+
+        model = load(
+            model_name_or_path=args.quantized_inc_model_path,
+            format="default",
+            device="hpu",
+            original_model=org_model,
+            **model_kwargs,
+        )
     else:
         if args.assistant_model is not None:
             assistant_model = AutoModelForCausalLM.from_pretrained(

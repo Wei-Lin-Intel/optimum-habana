@@ -700,11 +700,14 @@ def main():
         raise ValueError("Must provide model_name_or_path to load a pretrained CausalLM model.")
 
     if model.config.model_type == "llama":
+<<<<<<< HEAD
         if model.generation_config.pad_token_id is None:
             if isinstance(model.generation_config.eos_token_id, int):
                 model.generation_config.pad_token_id = model.generation_config.eos_token_id
             elif isinstance(model.generation_config.eos_token_id, list):
                 model.generation_config.pad_token_id = model.generation_config.eos_token_id[0]
+=======
+>>>>>>> 25e9920e ([SW-206350] Fix Llama 3.1 generation)
         if model_args.attn_softmax_bf16:
             model.generation_config.attn_softmax_bf16 = True
         if model_args.use_flash_attention:

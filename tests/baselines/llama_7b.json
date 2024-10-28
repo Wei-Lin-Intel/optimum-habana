@@ -474,6 +474,7 @@
                 }
             }
         },
+<<<<<<< HEAD
         "ia3": {
             "num_train_epochs": 3,
             "eval_batch_size": 4,
@@ -487,10 +488,26 @@
                     "extra_arguments": [
                         "--bf16",
                         "--gradient_accumulation_steps 2",
+=======
+        "tatsu-lab/alpaca_cp": {
+            "num_train_epochs": 1,
+            "eval_batch_size": 4,
+            "distribution": {
+                "deepspeed": {
+                    "learning_rate": 3e-4,
+                    "train_batch_size": 8,
+                    "perplexity": 2.3889,
+                    "train_runtime": 147.3597,
+                    "train_samples_per_second": 34.41,
+                    "extra_arguments": [
+                        "--bf16 True",
+                        "--gradient_accumulation_steps 4",
+>>>>>>> 5e40fd72 ([SW-0] Add test for Context Parallel feature)
                         "--eval_strategy no",
                         "--save_strategy no",
                         "--warmup_ratio  0.03",
                         "--lr_scheduler_type constant",
+<<<<<<< HEAD
                         "--max_grad_norm  0.3",
                         "--logging_steps 1",
                         "--use_hpu_graphs_for_inference",
@@ -538,10 +555,20 @@
                         "--adalora_orth_reg_weight 0.5",
                         "--dataset_concatenation",
                         "--max_seq_length 512",
+=======
+                        "--logging_steps 1",
+                        "--lora_rank 8",
+                        "--lora_alpha 16",
+                        "--lora_dropout 0.05",
+                        "--lora_target_modules q_proj v_proj",
+                        "--dataset_concatenation",
+                        "--max_seq_length 2048",
+>>>>>>> 5e40fd72 ([SW-0] Add test for Context Parallel feature)
                         "--low_cpu_mem_usage True",
                         "--adam_epsilon 1e-08",
                         "--ddp_bucket_cap_mb 50",
                         "--validation_split_percentage 10",
+<<<<<<< HEAD
                         "--attn_softmax_bf16",
                         "--peft_type adalora"
                     ]
@@ -610,6 +637,13 @@
                         "--validation_split_percentage 10",
                         "--attn_softmax_bf16",
                         "--peft_type ln_tuning"
+=======
+                        "--pipelining_fwd_bwd",
+                        "--throughput_warmup_steps 3",
+                        "--use_lazy_mode",
+                        "--context_parallel_size 4",
+                        "--deepspeed tests/configs/deepspeed_zero_1.json"
+>>>>>>> 5e40fd72 ([SW-0] Add test for Context Parallel feature)
                     ]
                 }
             }

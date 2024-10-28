@@ -228,6 +228,7 @@ class ExampleTestMeta(type):
             "codellama/CodeLlama-13b-Instruct-hf",
             "MIT/ast-finetuned-speech-commands-v2",
             "meta-llama/LlamaGuard-7b",
+            "huggyllama/llama-7b",
         ]
 
         if (fsdp or fp8) and not IS_GAUDI2:
@@ -249,6 +250,7 @@ class ExampleTestMeta(type):
             return False
         elif ("qwen2" in model_name or "Qwen2" in model_name) and task_name == "trl-sft":
             return False
+<<<<<<< HEAD
         elif "llama" in model_name and "trl-sft-qwen" in task_name:
             return False
         elif "falcon" in model_name and task_name in (
@@ -258,6 +260,12 @@ class ExampleTestMeta(type):
             "ia3",
             "adalora",
             "ln_tuning",
+=======
+        elif "falcon" in model_name and task_name in (
+            "llama-adapter",
+            "databricks/databricks-dolly-15k",
+            "tatsu-lab/alpaca_cp",
+>>>>>>> 5e40fd72 ([SW-0] Add test for Context Parallel feature)
         ):
             return False
         elif model_name not in models_with_specific_rules and not deepspeed:
@@ -293,6 +301,8 @@ class ExampleTestMeta(type):
         elif "LlamaGuard" in model_name and deepspeed and IS_GAUDI2:
             return True
         elif "ast-finetuned-speech-commands-v2" in model_name and IS_GAUDI2:
+            return True
+        elif "huggyllama" in model_name and IS_GAUDI2 and deepspeed:
             return True
 
         return False
@@ -922,6 +932,7 @@ class MultiCardCausalLanguageModelingLoRAFP8ExampleTester(
     DATASET_NAME = "tatsu-lab/alpaca"
 
 
+<<<<<<< HEAD
 class MultiCardCausalLanguageModelingVeraExampleTester(
     ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_lora_clm", multi_card=True
 ):
@@ -947,4 +958,10 @@ class MultiCardCausalLanguageModelingAdaloraExampleTester(
     ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_lora_clm", multi_card=True
 ):
     TASK_NAME = "adalora"
+=======
+class MultiCardCausalLanguageModelingLoRACPExampleTester(
+    ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_lora_clm", deepspeed=True
+):
+    TASK_NAME = "tatsu-lab/alpaca_cp"
+>>>>>>> 5e40fd72 ([SW-0] Add test for Context Parallel feature)
     DATASET_NAME = "tatsu-lab/alpaca"

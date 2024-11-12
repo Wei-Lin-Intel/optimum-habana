@@ -61,10 +61,14 @@ MODELS_TO_TEST_MAPPING = {
     "code_llama": [("codellama/CodeLlama-13b-Instruct-hf", "Habana/llama")],
     "protst": [("mila-intel/protst-esm1b-for-sequential-classification", "Habana/gpt2")],
     "qwen2": [("Qwen/Qwen2-7B", "Habana/qwen"), ("Qwen/Qwen2-72B", "Habana/qwen")],
+<<<<<<< HEAD
     "idefics2": [("HuggingFaceM4/idefics2-8b", "Habana/gpt2")],
     "mllama": [("meta-llama/Llama-3.2-11B-Vision-Instruct", "Habana/gpt2")],
     "gemma": [("google/gemma-2b-it", "Habana/gpt2")],
     "chatglm": [("THUDM/chatglm3-6b", "Habana/gpt2")],
+=======
+    "mllama": [("meta-llama/Llama-3.2-11B-Vision-Instruct", "Habana/gpt2")],
+>>>>>>> 51e03163 (Add mllama support (#1419))
 }
 
 MODELS_TO_TEST_FOR_QUESTION_ANSWERING = [

@@ -8,7 +8,11 @@
                     "learning_rate": 5e-5,
                     "train_batch_size": 2,
                     "train_runtime": 470,
+<<<<<<< HEAD
                     "train_samples_per_second": 20.48,
+=======
+                    "train_samples_per_second": 22,
+>>>>>>> 51e03163 (Add mllama support (#1419))
                     "eval_accuracy": 0.6,
                     "extra_arguments": [
                         "--bf16",

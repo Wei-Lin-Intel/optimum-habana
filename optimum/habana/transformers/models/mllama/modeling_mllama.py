@@ -18,7 +18,10 @@ import math
 import os
 from typing import List, Optional, Tuple, Union
 
+<<<<<<< HEAD
 import habana_frameworks.torch.core as htcore
+=======
+>>>>>>> 51e03163 (Add mllama support (#1419))
 import torch
 import torch.nn.functional as F
 import torch.utils.checkpoint
@@ -36,10 +39,13 @@ from transformers.models.mllama.modeling_mllama import (
     MllamaTextCrossAttention,
     MllamaTextModel,
     MllamaTextSelfAttention,
+<<<<<<< HEAD
     MllamaVisionAttention,
     MllamaVisionConfig,
     MllamaVisionEncoder,
     MllamaVisionEncoderLayer,
+=======
+>>>>>>> 51e03163 (Add mllama support (#1419))
     MllamaVisionModel,
     _prepare_4d_causal_attention_mask_with_cache_position,
     _prepare_aspect_ratio_attention_mask,
@@ -112,6 +118,7 @@ def _prepare_cross_attention_mask(
     return cross_attention_mask, full_text_row_masked_out_mask
 
 
+<<<<<<< HEAD
 class GaudiMllamaVisionSdpaAttention(MllamaVisionAttention):
     def __init__(self, config: MllamaVisionConfig):
         super().__init__(config)
@@ -269,6 +276,8 @@ class GaudiMllamaVisionEncoder(MllamaVisionEncoder):
         )
 
 
+=======
+>>>>>>> 51e03163 (Add mllama support (#1419))
 class GaudiMllamaTextCrossAttention(MllamaTextCrossAttention):
     def __init__(self, config: Optional[MllamaTextConfig] = None, layer_idx: Optional[int] = None):
         super().__init__(config, layer_idx)
@@ -1004,7 +1013,10 @@ class GaudiMllamaForConditionalGeneration(MllamaForConditionalGeneration):
                 output_hidden_states=output_hidden_states,
                 output_attentions=output_attentions,
                 return_dict=return_dict,
+<<<<<<< HEAD
                 use_flash_attention=use_flash_attention,
+=======
+>>>>>>> 51e03163 (Add mllama support (#1419))
             )
             cross_attention_states = vision_outputs[0]
             cross_attention_states = self.multi_modal_projector(cross_attention_states).reshape(
@@ -1183,7 +1195,10 @@ class GaudiMllamaVisionModel(MllamaVisionModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+<<<<<<< HEAD
         use_flash_attention: Optional[bool] = False,
+=======
+>>>>>>> 51e03163 (Add mllama support (#1419))
     ) -> Union[BaseModelOutput, Tuple[torch.Tensor, ...]]:
         """
         Copied from MllamaVisionModel::forward: https://github.com/huggingface/transformers/blob/v4.45.2/src/transformers/models/mllama/modeling_mllama.py#L1425
@@ -1245,7 +1260,10 @@ class GaudiMllamaVisionModel(MllamaVisionModel):
             attention_mask=attention_mask,
             output_hidden_states=True,
             output_attentions=output_attentions,
+<<<<<<< HEAD
             use_flash_attention=use_flash_attention,
+=======
+>>>>>>> 51e03163 (Add mllama support (#1419))
         )
         hidden_state = output[0]
 
@@ -1264,7 +1282,10 @@ class GaudiMllamaVisionModel(MllamaVisionModel):
             attention_mask=attention_mask,
             output_hidden_states=output_hidden_states,
             output_attentions=output_attentions,
+<<<<<<< HEAD
             use_flash_attention=use_flash_attention,
+=======
+>>>>>>> 51e03163 (Add mllama support (#1419))
         )
         hidden_state = global_output[0]
 

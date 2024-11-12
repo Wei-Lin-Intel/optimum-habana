@@ -23,7 +23,14 @@ from pathlib import Path
 import PIL.Image
 import requests
 import torch
+<<<<<<< HEAD
 from transformers import AutoConfig, AutoModelForVision2Seq, AutoProcessor, pipeline
+=======
+from transformers import AutoConfig, LlavaNextProcessor, LlavaProcessor, pipeline
+from transformers import AutoConfig, AutoModelForVision2Seq, AutoProcessor, pipeline
+
+from optimum.habana.transformers.modeling_utils import adapt_transformers_to_gaudi
+>>>>>>> 51e03163 (Add mllama support (#1419))
 
 
 logging.basicConfig(
@@ -197,9 +204,14 @@ def main():
 
     adapt_transformers_to_gaudi()
 
+<<<<<<< HEAD
     config = AutoConfig.from_pretrained(args.model_name_or_path)
     model_type = config.model_type
     if args.image_path is None and model_type in ["llava", "idefics2", "mllama"]:
+=======
+    model_type = AutoConfig.from_pretrained(args.model_name_or_path).model_type
+    if args.image_path is None and model_type in ["llava", "mllama"]:
+>>>>>>> 51e03163 (Add mllama support (#1419))
         args.image_path = ["https://llava-vl.github.io/static/images/view.jpg"]
     elif args.image_path is None and model_type == "paligemma":
         args.image_path = [
@@ -209,6 +221,7 @@ def main():
         args.image_path = [
             "https://github.com/haotian-liu/LLaVA/blob/1a91fc274d7c35a9b50b3cb29c4247ae5837ce39/images/llava_v1_5_radar.jpg?raw=true"
         ]
+<<<<<<< HEAD
 
     if model_type in ["llava", "idefics2", "llava_next", "mllama", "paligemma"]:
         processor = AutoProcessor.from_pretrained(args.model_name_or_path)
@@ -240,6 +253,25 @@ def main():
                     args.prompt = "caption es"
                 else:
                     args.prompt = f"User:{image_str}\nWhat is shown in this image?\nAssistant:"
+=======
+    if args.prompt is None and model_type in ("llava", "llava_next", "mllama"):
+        if model_type == "llava":
+            processor = LlavaProcessor.from_pretrained(args.model_name_or_path)
+        elif model_type == "llava_next":
+            processor = LlavaNextProcessor.from_pretrained(args.model_name_or_path)
+        elif model_type == "mllama": 
+            processor = AutoProcessor.from_pretrained(args.model_name_or_path)
+            conversation = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "What is shown in this image?"},
+                        {"type": "image"},
+                    ],
+                }
+            ]
+            args.prompt = processor.apply_chat_template(conversation, add_generation_prompt=True)
+>>>>>>> 51e03163 (Add mllama support (#1419))
 
     image_paths = args.image_path
     image_paths_len = len(image_paths)
@@ -321,7 +353,11 @@ def main():
         htcore.hpu_initialize(generator.model)
 
     # delete once pipeline integrate AutoProcessor as preprocess engine
+<<<<<<< HEAD
     if model_type in ["idefics2", "mllama", "paligemma"]:
+=======
+    if model_type in ["mllama"]:
+>>>>>>> 51e03163 (Add mllama support (#1419))
         from transformers.image_utils import load_image
 
         def preprocess(self, image, prompt=None, timeout=None):

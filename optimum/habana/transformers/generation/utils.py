@@ -109,6 +109,7 @@ MODELS_OPTIMIZED_WITH_STATIC_SHAPES = [
     "qwen2_moe",
     "xglm",
     "whisper",
+<<<<<<< HEAD
     "paligemma",
     "idefics2",
     "mllama",
@@ -116,6 +117,9 @@ MODELS_OPTIMIZED_WITH_STATIC_SHAPES = [
     "baichuan",
     "deepseek_v2",
     "chatglm",
+=======
+    "mllama",
+>>>>>>> 51e03163 (Add mllama support (#1419))
 ]
 
 # Initial generated token index is set to 1 to accomodate SOS (start of string) token.
@@ -348,6 +352,7 @@ class GaudiGenerationMixin(GenerationMixin):
         lazy_mode = model_kwargs.get("lazy_mode", False)
         pad_amount = model_kwargs.get("kv_cache_pad_len", 0)
         kv_cache_len = model_kwargs.get("kv_cache_len", 0)
+<<<<<<< HEAD
         kv_cache_len_pad_amount = kv_cache_len - pad_amount
 
         # For MQA models, past_key_values is a tensor
@@ -369,6 +374,32 @@ class GaudiGenerationMixin(GenerationMixin):
                         # Mark step if lazy mode is enabled
                         if lazy_mode:
                             self.htcore_generation.mark_step()
+=======
+        if model_kwargs["past_key_values"]:
+            if model_kwargs.get("mqa_model", False):
+                for i in range(len(model_kwargs["past_key_values"])):  # layer
+                    if (
+                        torch.is_tensor(model_kwargs["past_key_values"][i])
+                        and model_kwargs["past_key_values"][i].shape[-2] == kv_cache_len - pad_amount
+                    ):  # tensor(batch_size, kv_cache_len, n_heads * head_dim * 2) k and v stacked
+                        model_kwargs["past_key_values"][i] = torch.nn.functional.pad(
+                            model_kwargs["past_key_values"][i], (0, 0, 0, pad_amount)
+                        )
+                        if model_kwargs.get("lazy_mode", False):
+                            self.htcore_generation.mark_step()
+            else:
+                for i in range(len(model_kwargs["past_key_values"])):  # layer
+                    for j in range(len(model_kwargs["past_key_values"][i])):  # k or v
+                        if (
+                            torch.is_tensor(model_kwargs["past_key_values"][i][j])
+                            and model_kwargs["past_key_values"][i][j].shape[-2] == kv_cache_len - pad_amount
+                        ):  # tensor(batch_size, n_heads, kv_cache_len, head_dim)
+                            model_kwargs["past_key_values"][i][j] = torch.nn.functional.pad(
+                                model_kwargs["past_key_values"][i][j], (0, 0, 0, pad_amount)
+                            )
+                            if model_kwargs.get("lazy_mode", False):
+                                self.htcore_generation.mark_step()
+>>>>>>> 51e03163 (Add mllama support (#1419))
 
     def _remove_past_key_values(self, model_kwargs):
         if model_kwargs["past_key_values"]:
@@ -477,7 +508,11 @@ class GaudiGenerationMixin(GenerationMixin):
                     model_kwargs["attention_mask"], (0, pad_amount), value=0
                 )
             else:
+<<<<<<< HEAD
                 assert False, "Not tested for cases where attn_mask isn't passed"
+=======
+                assert False, "Not tested for cases where attn_mask isnt passed"
+>>>>>>> 51e03163 (Add mllama support (#1419))
 
             if model_kwargs.get("cross_attention_mask") is not None:
                 model_kwargs["cross_attention_mask"] = torch.nn.functional.pad(
@@ -528,11 +563,19 @@ class GaudiGenerationMixin(GenerationMixin):
                             # This is a necessary (but not sufficient) condition: what ever dimension we are padding, should be a multiple of bucket_size
                             # This check is added in case we get a new model with a new kv-cache structure, and we attempt to pad some wrong dimension
                             # in peft case, if there's virtual token. the model_kwargs["past_key_values"][i][j].shape[-(len(pad_tuple) // 2)] % bucket_size == num_virtual_token, no need of assert, the pad length of past_key_value should be aligned with input id and attention_mask
+<<<<<<< HEAD
                             num_virtual_tokens = model_kwargs.get("num_virtual_tokens", 0)
                             if (
                                 model_kwargs["past_key_values"][i][j].shape[-(len(pad_tuple) // 2)]
                                 == params["allocated_space"] - pad_amount + num_virtual_tokens
                             ):
+=======
+                            if (
+                                model_kwargs["past_key_values"][i][j].shape[-(len(pad_tuple) // 2)]
+                                == params["allocated_space"] - pad_amount
+                            ):
+                                num_virtual_tokens = model_kwargs.get("num_virtual_tokens", 0)
+>>>>>>> 51e03163 (Add mllama support (#1419))
                                 assert (
                                     model_kwargs["past_key_values"][i][j].shape[-(len(pad_tuple) // 2)] % bucket_size
                                     == num_virtual_tokens

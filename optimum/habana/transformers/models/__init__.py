@@ -189,10 +189,14 @@ from .mllama import (
     GaudiMllamaTextCrossAttention,
     GaudiMllamaTextModel,
     GaudiMllamaTextSelfAttention,
+<<<<<<< HEAD
     GaudiMllamaVisionEncoder,
     GaudiMllamaVisionEncoderLayer,
     GaudiMllamaVisionModel,
     GaudiMllamaVisionSdpaAttention,
+=======
+    GaudiMllamaVisionModel,
+>>>>>>> 51e03163 (Add mllama support (#1419))
 )
 from .modeling_all_models import (
     KVCache,

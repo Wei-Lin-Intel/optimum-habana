@@ -35,7 +35,12 @@ INSTALL_REQUIRES = [
     "accelerate >= 0.33.0, < 0.34.0",
     "diffusers == 0.29.2",
     "huggingface_hub >= 0.24.7",
+<<<<<<< HEAD
     "sentence-transformers == 3.2.1",
+=======
+    "sentence-transformers[train] == 3.0.1",
+    "pytest < 8.0.0",
+>>>>>>> 81e1cb08 ([SW-205356] Rebase to OH v1.14 (#3))
 ]
 
 TESTS_REQUIRE = [

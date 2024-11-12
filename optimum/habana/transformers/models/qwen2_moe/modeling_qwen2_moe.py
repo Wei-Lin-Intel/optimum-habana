@@ -491,7 +491,11 @@ class GaudiQwen2MoeAttention(Qwen2MoeAttention):
 
     def post_attn_forward(self, attn_output):
         if hasattr(self.o_proj, "post_all_reduce"):
+<<<<<<< HEAD
             return self.o_proj.post_all_reduce(attn_output)
+=======
+            self.o_proj.post_all_reduce(attn_output)
+>>>>>>> 81e1cb08 ([SW-205356] Rebase to OH v1.14 (#3))
         return attn_output
 
 

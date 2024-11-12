@@ -286,6 +286,10 @@ def main():
         action="store_true",
         help="Use rescale_betas_zero_snr for controlling image brightness",
     )
+<<<<<<< HEAD
+=======
+    parser.add_argument("--optimize", action="store_true", help="Use optimized pipeline.")
+>>>>>>> 81e1cb08 ([SW-205356] Rebase to OH v1.14 (#3))
     args = parser.parse_args()
 
     # Select stable diffuson pipeline based on input

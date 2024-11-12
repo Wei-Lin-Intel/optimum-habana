@@ -30,8 +30,11 @@ Models that have been validated:
   - [llava-hf/llava-v1.6-vicuna-13b-hf](https://huggingface.co/llava-hf/llava-v1.6-vicuna-13b-hf)
   - [llava-hf/llava-v1.6-34b-hf](https://huggingface.co/llava-hf/llava-v1.6-34b-hf)
   - [llava-hf/llama3-llava-next-8b-hf](https://huggingface.co/llava-hf/llama3-llava-next-8b-hf)
+<<<<<<< HEAD
   - [HuggingFaceM4/idefics2-8b](https://huggingface.co/HuggingFaceM4/idefics2-8b)
   - [meta-llama/Llama-3.2-11B-Vision-Instruct](https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct)
+=======
+>>>>>>> 81e1cb08 ([SW-205356] Rebase to OH v1.14 (#3))
 
 ### Inference with BF16
 
@@ -94,6 +97,7 @@ python3 run_pipeline.py \
     --bf16
 ```
 
+<<<<<<< HEAD
 To run idefics2 inference, use the following command:
 
 ```bash
@@ -112,6 +116,8 @@ python3 run_pipeline.py \
     --bf16
 ```
 
+=======
+>>>>>>> 81e1cb08 ([SW-205356] Rebase to OH v1.14 (#3))
 ### Inference with FP8
 Inference for Llava-1.5-7b, Llava-1.5-13b, Llava-v1.6-mistral-7b and Llava-v1.6-vicuna-13b in FP8 precision are enabled using  [Intel Neural Compressor (INC)](https://docs.habana.ai/en/latest/PyTorch/Inference_on_PyTorch/Inference_Using_FP8.html), which provides model measurement and quantization capabilities in PyTorch.
 
@@ -206,12 +212,21 @@ Use the following commands to run Llava-v1.6-mistral-7b FP8 inference with Fused
 Here is an example of measuring the tensor quantization statistics on Llava-v1.6-mistral-7b:
 ```bash
 QUANT_CONFIG=./quantization_config/maxabs_measure.json python run_pipeline.py \
+<<<<<<< HEAD
     --model_name_or_path llava-hf/llava-v1.6-mistral-7b-hf \
     --image_path "https://llava-vl.github.io/static/images/view.jpg" \
     --use_hpu_graphs \
     --bf16 \
     --use_flash_attention \
     --flash_attention_recompute
+=======
+--model_name_or_path llava-hf/llava-v1.6-mistral-7b-hf \
+--image_path "https://llava-vl.github.io/static/images/view.jpg" \
+--use_hpu_graphs \
+--bf16 \
+--use_flash_attention \
+--flash_attention_recompute
+>>>>>>> 81e1cb08 ([SW-205356] Rebase to OH v1.14 (#3))
 ```
 
 Here is an example of quantizing the model based on previous measurements for Llava-v1.6-mistral-7b:

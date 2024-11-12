@@ -104,12 +104,17 @@ MODELS_OPTIMIZED_WITH_STATIC_SHAPES = [
     "stablelm",
     "mamba",
     "deci",
+<<<<<<< HEAD
     "cohere",
     "qwen2_moe",
     "xglm",
     "whisper",
     "idefics2",
     "mllama",
+=======
+    "qwen2_moe",
+    "whisper",
+>>>>>>> 81e1cb08 ([SW-205356] Rebase to OH v1.14 (#3))
 ]
 
 
@@ -335,9 +340,14 @@ class GaudiGenerationMixin(GenerationMixin):
         if model_kwargs["past_key_values"]:
             if model_kwargs.get("mqa_model", False):
                 for i in range(len(model_kwargs["past_key_values"])):  # layer
+<<<<<<< HEAD
                     if (
                         torch.is_tensor(model_kwargs["past_key_values"][i])
                         and model_kwargs["past_key_values"][i].shape[-2] == kv_cache_len - pad_amount
+=======
+                    if torch.is_tensor(
+                        model_kwargs["past_key_values"][i]
+>>>>>>> 81e1cb08 ([SW-205356] Rebase to OH v1.14 (#3))
                     ):  # tensor(batch_size, kv_cache_len, n_heads * head_dim * 2) k and v stacked
                         model_kwargs["past_key_values"][i] = torch.nn.functional.pad(
                             model_kwargs["past_key_values"][i], (0, 0, 0, pad_amount)
@@ -347,9 +357,14 @@ class GaudiGenerationMixin(GenerationMixin):
             else:
                 for i in range(len(model_kwargs["past_key_values"])):  # layer
                     for j in range(len(model_kwargs["past_key_values"][i])):  # k or v
+<<<<<<< HEAD
                         if (
                             torch.is_tensor(model_kwargs["past_key_values"][i][j])
                             and model_kwargs["past_key_values"][i][j].shape[-2] == kv_cache_len - pad_amount
+=======
+                        if torch.is_tensor(
+                            model_kwargs["past_key_values"][i][j]
+>>>>>>> 81e1cb08 ([SW-205356] Rebase to OH v1.14 (#3))
                         ):  # tensor(batch_size, n_heads, kv_cache_len, head_dim)
                             model_kwargs["past_key_values"][i][j] = torch.nn.functional.pad(
                                 model_kwargs["past_key_values"][i][j], (0, 0, 0, pad_amount)

@@ -272,9 +272,12 @@ from .whisper import (
     GaudiWhisperModel,
     GaudiWhisperSdpaAttention,
 )
+<<<<<<< HEAD
 from .xglm import (
     GaudiXGLMForCausalLM,
     gaudi_xglm_attention_forward,
     gaudi_xglm_decoder_layer_forward,
     gaudi_xglm_model_forward,
 )
+=======
+>>>>>>> 81e1cb08 ([SW-205356] Rebase to OH v1.14 (#3))

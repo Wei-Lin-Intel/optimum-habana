@@ -23,7 +23,11 @@ from pathlib import Path
 import PIL.Image
 import requests
 import torch
+<<<<<<< HEAD
 from transformers import AutoConfig, AutoModelForVision2Seq, AutoProcessor, pipeline
+=======
+from transformers import AutoConfig, LlavaNextProcessor, LlavaProcessor, pipeline
+>>>>>>> 81e1cb08 ([SW-205356] Rebase to OH v1.14 (#3))
 
 from optimum.habana.transformers.modeling_utils import adapt_transformers_to_gaudi
 
@@ -191,8 +195,16 @@ def main():
         args.image_path = [
             "https://github.com/haotian-liu/LLaVA/blob/1a91fc274d7c35a9b50b3cb29c4247ae5837ce39/images/llava_v1_5_radar.jpg?raw=true"
         ]
+<<<<<<< HEAD
     if args.prompt is None and model_type in ["llava", "idefics2", "llava_next", "mllama"]:
         processor = AutoProcessor.from_pretrained(args.model_name_or_path)
+=======
+    if args.prompt is None and model_type in ("llava", "llava_next"):
+        if model_type == "llava":
+            processor = LlavaProcessor.from_pretrained(args.model_name_or_path)
+        elif model_type == "llava_next":
+            processor = LlavaNextProcessor.from_pretrained(args.model_name_or_path)
+>>>>>>> 81e1cb08 ([SW-205356] Rebase to OH v1.14 (#3))
         conversation = [
             {
                 "role": "user",
@@ -270,6 +282,14 @@ def main():
     }
     if args.use_kv_cache:
         generate_kwargs["use_cache"] = args.use_kv_cache
+<<<<<<< HEAD
+=======
+
+    if args.use_hpu_graphs:
+        from habana_frameworks.torch.hpu import wrap_in_hpu_graph
+
+        generator.model = wrap_in_hpu_graph(generator.model)
+>>>>>>> 81e1cb08 ([SW-205356] Rebase to OH v1.14 (#3))
 
     if args.quant_config:
         generator.model = setup_quantization(generator.model, args)

@@ -88,6 +88,7 @@ from .models import (
     GaudiMixtralDecoderLayer,
     GaudiMixtralForCausalLM,
     GaudiMixtralModel,
+<<<<<<< HEAD
     GaudiMllamaCrossAttentionDecoderLayer,
     GaudiMllamaForCausalLM,
     GaudiMllamaForConditionalGeneration,
@@ -96,6 +97,8 @@ from .models import (
     GaudiMllamaTextModel,
     GaudiMllamaTextSelfAttention,
     GaudiMllamaVisionModel,
+=======
+>>>>>>> 81e1cb08 ([SW-205356] Rebase to OH v1.14 (#3))
     GaudiMptAttention,
     GaudiMptBlock,
     GaudiMptForCausalLM,
@@ -131,7 +134,10 @@ from .models import (
     GaudiWhisperForConditionalGeneration,
     GaudiWhisperModel,
     GaudiWhisperSdpaAttention,
+<<<<<<< HEAD
     GaudiXGLMForCausalLM,
+=======
+>>>>>>> 81e1cb08 ([SW-205356] Rebase to OH v1.14 (#3))
     LlamaConfig,
     MistralConfig,
     MixtralConfig,
@@ -630,6 +636,7 @@ def adapt_transformers_to_gaudi():
     transformers.models.whisper.modeling_whisper.WhisperForConditionalGeneration = GaudiWhisperForConditionalGeneration
     transformers.models.whisper.modeling_whisper.WHISPER_ATTENTION_CLASSES = GAUDI_WHISPER_ATTENTION_CLASSES
 
+<<<<<<< HEAD
     # Optimization for mllama on Gaudi
     transformers.models.mllama.modeling_mllama.MllamaSelfAttentionDecoderLayer = GaudiMllamaSelfAttentionDecoderLayer
     transformers.models.mllama.modeling_mllama.MllamaCrossAttentionDecoderLayer = GaudiMllamaCrossAttentionDecoderLayer
@@ -640,6 +647,8 @@ def adapt_transformers_to_gaudi():
     transformers.models.mllama.modeling_mllama.MllamaTextModel = GaudiMllamaTextModel
     transformers.models.mllama.modeling_mllama.MllamaVisionModel = GaudiMllamaVisionModel
 
+=======
+>>>>>>> 81e1cb08 ([SW-205356] Rebase to OH v1.14 (#3))
     transformers.AutoConfig.register("deci", DeciLMConfig)
     transformers.AutoModelForCausalLM.register(DeciLMConfig, DeciLMForCausalLM)
 

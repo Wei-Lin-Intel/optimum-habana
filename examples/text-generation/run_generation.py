@@ -491,7 +491,11 @@ def main():
                 input_data.update(input_tokens)
 
             iteration_times = []
+<<<<<<< HEAD
             outputs = model.generate(
+=======
+            output_tokens = model.generate(
+>>>>>>> 81e1cb08 ([SW-205356] Rebase to OH v1.14 (#3))
                 **input_data,
                 generation_config=generation_config,
                 assistant_model=assistant_model,

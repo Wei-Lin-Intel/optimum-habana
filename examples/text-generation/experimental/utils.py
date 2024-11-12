@@ -135,9 +135,9 @@ def setup_env(args):
     # TODO: SW-167588 - WA for memory issue in hqt prep_model
     os.environ.setdefault("EXPERIMENTAL_WEIGHT_SHARING", "FALSE")
 
-    if args.global_rank == 0 and not args.torch_compile and args.show_graphs_count:
-        os.environ.setdefault("GRAPH_VISUALIZATION", "true")
-        shutil.rmtree(".graph_dumps", ignore_errors=True)
+    if args.pt2e_quant:
+        os.environ.setdefault("USE_FX_GRAPH_PATTERN_MATCHING", "1")
+        os.environ.setdefault("USE_FX_GRAPH_FREEZING", "1")
 
     if args.world_size > 0:
         os.environ.setdefault("PT_HPU_LAZY_ACC_PAR_MODE", "0")
@@ -177,46 +177,80 @@ def patch_scoped_linear_all_reduce(model):
 
 
 def get_torch_compiled_model(model):
-    if model.config.model_type in ["gpt_bigcode", "mpt", "bloom", "gpt2"]:
-<<<<<<< HEAD
-        model.transformer = torch.compile(
-            model.transformer, backend="hpu_backend", options={"keep_input_mutations": True}
-        )
-=======
+    if model.config.model_type in ["gpt_bigcode"]:
+        # For gpt_bigcode model_type, model.transformer is used instead of model.model
         model.transformer = torch.compile(model.transformer, backend="hpu_backend")
->>>>>>> 81e1cb08 ([SW-205356] Rebase to OH v1.14 (#3))
-    elif model.config.model_type in ["gpt_neox"]:
-        model.gpt_neox = torch.compile(model.gpt_neox, backend="hpu_backend", options={"keep_input_mutations": True})
     else:
-        model.model = torch.compile(model.model, backend="hpu_backend", options={"keep_input_mutations": True})
+        model.model = torch.compile(model.model, backend="hpu_backend")
     return model
 
 
 def setup_quantization(model, args):
-    try:
+    if os.getenv("USE_INC", "1") != "0":
         from neural_compressor.torch.quantization import FP8Config, convert, prepare
-    except ImportError:
-        raise ImportError(
-            "Module neural_compressor is missing. Please use a newer Synapse version to use quantization."
-        )
 
-    config = FP8Config.from_json_file(args.quant_config)
-    if config.measure:
-        model = prepare(model, config)
-    if config.quantize:
-        model = convert(model, config)
+        config = FP8Config.from_json_file(args.quant_config)
+        if config.measure:
+            model = prepare(model, config)
+        elif config.quantize:
+            model = convert(model, config)
+    else:
+        import habana_quantization_toolkit
+
+        habana_quantization_toolkit.prep_model(model)
 
     return model
 
 
 def finalize_quantization(model):
-    try:
+    if os.getenv("USE_INC", "1") != "0":
         from neural_compressor.torch.quantization import finalize_calibration
-    except ImportError:
-        raise ImportError(
-            "Module neural_compressor is missing. Please use a newer Synapse version to use quantization."
-        )
-    finalize_calibration(model)
+
+        finalize_calibration(model)
+    else:
+        import habana_quantization_toolkit
+
+        habana_quantization_toolkit.finish_measurements(model)
+
+
+# [Experimental] export and prepare_pt2e
+def get_model_with_observer(args, model, logger):
+    logger.info("[pt2e_quant] Inserting observers for measurement.")
+
+    QUANTIZER_DTYPES = {"int8": torch.int8, "fp8_143": torch.float8_e4m3fn, "fp8_152": torch.float8_e5m2}
+    quant_dtype = QUANTIZER_DTYPES[os.getenv("USE_PT2E_QUANT_DTYPE", "fp8_143")]
+
+    from habana_frameworks.torch.core.quantizer import (
+        habana_quant_config_symmetric,
+        habana_quantizer,
+    )
+
+    quantizer = habana_quantizer()
+    quant_config = habana_quant_config_symmetric(quant_dtype)
+    quantizer.set_global(quant_config)
+
+    actual_model = model.model
+
+    from torch._export import capture_pre_autograd_graph
+
+    exported_model = capture_pre_autograd_graph(actual_model)
+
+    from torch.ao.quantization.quantize_pt2e import prepare_pt2e
+
+    prepared_model = prepare_pt2e(exported_model, quantizer)
+    model.model = prepared_model
+
+    return model
+
+
+# [Experimental] convert_pt2e
+def add_quant_dquant_nodes(model, logger):
+    logger.info("[pt2e_quant] Converting model after calibration.")
+
+    from torch.ao.quantization.quantize_pt2e import convert_pt2e
+
+    model.model = convert_pt2e(model.model)
+    return model
 
 
 def setup_model(args, model_dtype, model_kwargs, logger):
@@ -241,41 +275,17 @@ def setup_model(args, model_dtype, model_kwargs, logger):
             torch_dtype=model_dtype,
             **model_kwargs,
         )
-    elif args.load_quantized_model_with_autogptq:
+    elif args.gptq:
         from transformers import GPTQConfig
 
         quantization_config = GPTQConfig(bits=4, use_exllama=False)
         model = AutoModelForCausalLM.from_pretrained(
             args.model_name_or_path, torch_dtype=model_dtype, quantization_config=quantization_config, **model_kwargs
         )
-    elif args.load_quantized_model_with_inc:
-        # TODO: This will be removed in v1.19 Synapse release
-        # Override neural_compressor _load_remaining_pretrained_weight for the Transformer 4.45 release.
-        import neural_compressor.torch.algorithms.weight_only.save_load as nc_sl
-
-        nc_sl.WOQModelLoader._load_remaining_pretrained_weight = local_load_remaining_pretrained_weight
-
+    elif args.load_cp:
         from neural_compressor.torch.quantization import load
 
         model = load(model_name_or_path=args.model_name_or_path, format="huggingface", device="hpu", **model_kwargs)
-    elif args.local_quantized_inc_model_path:
-        org_model = AutoModelForCausalLM.from_pretrained(
-            args.model_name_or_path,
-            **model_kwargs,
-        )
-
-        from neural_compressor.torch.quantization import load
-
-        model = load(
-            model_name_or_path=args.local_quantized_inc_model_path,
-            format="default",
-            device="hpu",
-            original_model=org_model,
-            **model_kwargs,
-        )
-        # TODO: This will be removed in v1.19 Synapse release
-        # the loaded model should have the same dtype as original_model
-        model = model.to(model_kwargs["torch_dtype"])
     else:
         if args.assistant_model is not None:
             assistant_model = AutoModelForCausalLM.from_pretrained(
@@ -289,6 +299,11 @@ def setup_model(args, model_dtype, model_kwargs, logger):
             )
     if args.quant_config:
         model = setup_quantization(model, args)
+
+        if args.assistant_model is not None:
+            import habana_quantization_toolkit
+
+            habana_quantization_toolkit.quantize_model(assistant_model)
 
     model = model.eval().to(args.device)
     if args.assistant_model is not None:
@@ -307,13 +322,17 @@ def setup_model(args, model_dtype, model_kwargs, logger):
             assistant_model = wrap_in_hpu_graph(assistant_model)
         if _is_peft_model(model):
             model.base_model = wrap_in_hpu_graph(model.base_model)
-            if model.peft_type == "ADAPTION_PROMPT":
-                model.base_model.model = wrap_in_hpu_graph(model.base_model.model)
 
     if args.torch_compile:
         model = get_torch_compiled_model(model)
         # if args.assistant_model is not None:
         #     assistant_model = get_torch_compiled_model(assistant_model)
+
+    # [Experimental] PT2E Quant like flow
+    if os.getenv("USE_PT2E_QUANT", "0") == "1" and model.config.model_type == "llama":
+        logger.info("[pt2e_quant] Using PT2 Export like flow for measurement / quantization.")
+        model = get_model_with_observer(args, model, logger)
+
     return model, assistant_model
 
 
@@ -377,7 +396,7 @@ def setup_distributed_model_tp(args, model_dtype, model_kwargs, logger, cache_di
 
         model = wrap_in_hpu_graph(model)
 
-    if args.torch_compile:
+    if args.torch_compile and model.config.model_type == "llama":
         model = get_torch_compiled_model(model)
 
     return model, args.assistant_model
@@ -445,16 +464,26 @@ def setup_distributed_model(args, model_dtype, model_kwargs, logger):
 
     model = deepspeed.init_inference(model, **ds_inference_kwargs)
     model = model.module
-    if model.config.model_type in ["llama", "falcon", "qwen2", "starcoder2", "gemma"]:
+    if model.config.model_type in ["llama", "falcon", "qwen2"]:
         patch_scoped_linear_all_reduce(model)
 
     if args.quant_config:
         model = setup_quantization(model, args)
+        if args.assistant_model is not None:
+            import habana_quantization_toolkit
+
+            habana_quantization_toolkit.prep_model(assistant_model)
 
     if args.torch_compile:
         model = get_torch_compiled_model(model)
         # if args.assistant_model is not None:
         #     assistant_model = get_torch_compiled_model(assistant_model)
+
+    # [Experimental] PT2E Quant like flow
+    if os.getenv("USE_PT2E_QUANT", "0") == "1" and model.config.model_type == "llama":
+        logger.info("[pt2e_quant] Using PT2 Export like flow for measurement / quantization.")
+        model = get_model_with_observer(args, model, logger)
+
     return model, assistant_model
 
 
@@ -505,17 +534,6 @@ def peft_model(args, model_dtype, logger, **model_kwargs):
 
         model.__class__.generate = gaudi_generate
         model.__class__.prepare_inputs_for_generation = gaudi_prepare_inputs_for_generation
-        if model.peft_type == "ADAPTION_PROMPT":
-            from peft import tuners
-
-            from optimum.habana.peft.layer import (
-                GaudiAdaptedAttention_getattr,
-                GaudiAdaptedAttentionPreAttnForward,
-            )
-
-            tuners.adaption_prompt.layer.AdaptedAttention.pre_attn_forward = GaudiAdaptedAttentionPreAttnForward
-            tuners.adaption_prompt.layer.AdaptedAttention.__getattr__ = GaudiAdaptedAttention_getattr
-
         return model
 
 
@@ -532,22 +550,16 @@ def setup_tokenizer(args, model, assistant_model):
         tokenizer.padding_side = "left"
 
     if model.config.model_type == "llama":
-        if model.generation_config.pad_token_id is None:
-            if isinstance(model.generation_config.eos_token_id, int):
-                model.generation_config.pad_token_id = model.generation_config.eos_token_id
-            elif isinstance(model.generation_config.eos_token_id, list):
-                model.generation_config.pad_token_id = model.generation_config.eos_token_id[0]
+        # unwind broken decapoda-research config
+        model.generation_config.pad_token_id = 0
+        model.generation_config.bos_token_id = 1
+        model.generation_config.eos_token_id = 2
         if assistant_model is not None:
-            if assistant_model.generation_config.pad_token_id is None:
-                if isinstance(assistant_model.generation_config.eos_token_id, int):
-                    assistant_model.generation_config.pad_token_id = assistant_model.generation_config.eos_token_id
-                elif isinstance(assistant_model.generation_config.eos_token_id, list):
-                    assistant_model.generation_config.pad_token_id = assistant_model.generation_config.eos_token_id[0]
+            assistant_model.generation_config.pad_token_id = 0
+            assistant_model.generation_config.bos_token_id = 1
+            assistant_model.generation_config.eos_token_id = 2
         tokenizer.bos_token_id = model.generation_config.bos_token_id
-        if isinstance(model.generation_config.eos_token_id, int):
-            tokenizer.eos_token_id = model.generation_config.eos_token_id
-        elif isinstance(model.generation_config.eos_token_id, list):
-            tokenizer.eos_token_id = model.generation_config.eos_token_id[0]
+        tokenizer.eos_token_id = model.generation_config.eos_token_id
         tokenizer.pad_token_id = model.generation_config.pad_token_id
         tokenizer.pad_token = tokenizer.decode(tokenizer.pad_token_id)
         tokenizer.eos_token = tokenizer.decode(tokenizer.eos_token_id)
@@ -592,8 +604,6 @@ def setup_generation_config(args, model, assistant_model, tokenizer):
     generation_config.bucket_internal = args.bucket_internal
     generation_config.do_sample = args.do_sample
     generation_config.num_beams = args.num_beams
-    generation_config.top_k = args.top_k
-    generation_config.penalty_alpha = args.penalty_alpha
     generation_config.bad_words_ids = bad_words_ids
     generation_config.force_words_ids = force_words_ids
     generation_config.num_return_sequences = args.num_return_sequences
@@ -609,7 +619,7 @@ def setup_generation_config(args, model, assistant_model, tokenizer):
     generation_config.flash_attention_causal_mask = args.flash_attention_causal_mask
     generation_config.flash_attention_fast_softmax = args.flash_attention_fast_softmax
     generation_config.trust_remote_code = args.trust_remote_code
-    generation_config.valid_sequence_lengths = None
+    setattr(generation_config, "valid_sequence_lengths", None)
 
     return generation_config
 
@@ -655,7 +665,7 @@ def initialize_model(args, logger):
         "token": args.token,
         "trust_remote_code": args.trust_remote_code,
     }
-    if args.load_quantized_model_with_inc or args.local_quantized_inc_model_path:
+    if args.load_cp:
         model_kwargs["torch_dtype"] = torch.bfloat16
 
     if args.trust_remote_code:
@@ -668,7 +678,6 @@ def initialize_model(args, logger):
         if not args.parallel_strategy == "tp"
         else setup_distributed_model_tp(args, model_dtype, model_kwargs, logger, cache_dir)
     )
-
     tokenizer, model, assistant_model = setup_tokenizer(args, model, assistant_model)
     generation_config = setup_generation_config(args, model, assistant_model, tokenizer)
 
@@ -681,47 +690,3 @@ def initialize_model(args, logger):
     logger.info(f"device: {args.device}, n_hpu: {args.world_size}, bf16: {model_dtype == torch.bfloat16}")
     logger.info(f"Model initialization took {(init_end - init_start):.3f}s")
     return model, assistant_model, tokenizer, generation_config
-
-
-# TODO:This will be removed from Synapse v1.19 release.
-# This is to override _load_remaining_pretrained_weight for Transformer 4.45 release.
-def local_load_remaining_pretrained_weight(self, model):
-    from transformers.modeling_utils import _load_state_dict_into_meta_model, load_state_dict
-
-    resolved_archive_file = self.kwargs.pop("resolved_archive_file", None)
-    torch_dtype = self.kwargs.pop("torch_dtype", torch.float32)
-    dtype_orig = self.kwargs.pop("dtype_orig", None)
-    offload_folder = self.kwargs.pop("offload_folder", None)
-    offload_state_dict = self.kwargs.pop("offload_state_dict", False)
-
-    # restore default dtype
-    if dtype_orig is not None:
-        torch.set_default_dtype(dtype_orig)
-
-    if not isinstance(resolved_archive_file, list):
-        resolved_archive_file = [resolved_archive_file]
-    for shard_file in resolved_archive_file:
-        state_dict = load_state_dict(shard_file)
-
-        params_dict = {
-            "model": model,
-            "state_dict": state_dict,
-            "start_prefix": "",
-            "expected_keys": self.loaded_state_dict_keys,
-            "device_map": {"": self.device},
-            "offload_folder": offload_folder,
-            "state_dict_folder": tempfile.mkdtemp() if offload_state_dict else None,
-            "state_dict_index": {} if offload_state_dict else None,
-            "dtype": torch_dtype,
-            "keep_in_fp32_modules": [],
-        }
-
-        _load_state_dict_into_meta_model(**params_dict)
-
-    # make sure token embedding weights are still tied if needed
-    model.tie_weights()
-
-    # Set model in evaluation mode to deactivate DropOut modules by default
-    model.eval()
-
-    return model

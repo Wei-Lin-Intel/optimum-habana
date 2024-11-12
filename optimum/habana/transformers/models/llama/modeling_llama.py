@@ -20,6 +20,11 @@ from transformers.models.llama.modeling_llama import (
     logger,
 )
 from transformers.utils import is_torchdynamo_compiling
+<<<<<<< HEAD
+=======
+
+from optimum.habana import parallel_state
+>>>>>>> 81e1cb08 ([SW-205356] Rebase to OH v1.14 (#3))
 
 from .... import distributed
 from ....distributed.strategy import DistributedStrategy, NoOpStrategy

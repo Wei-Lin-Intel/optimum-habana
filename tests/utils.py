@@ -61,8 +61,11 @@ MODELS_TO_TEST_MAPPING = {
     "code_llama": [("codellama/CodeLlama-13b-Instruct-hf", "Habana/llama")],
     "protst": [("mila-intel/protst-esm1b-for-sequential-classification", "Habana/gpt2")],
     "qwen2": [("Qwen/Qwen2-7B", "Habana/qwen"), ("Qwen/Qwen2-72B", "Habana/qwen")],
+<<<<<<< HEAD
     "idefics2": [("HuggingFaceM4/idefics2-8b", "Habana/gpt2")],
     "mllama": [("meta-llama/Llama-3.2-11B-Vision-Instruct", "Habana/gpt2")],
+=======
+>>>>>>> 81e1cb08 ([SW-205356] Rebase to OH v1.14 (#3))
 }
 
 MODELS_TO_TEST_FOR_QUESTION_ANSWERING = [

@@ -13,4 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+<<<<<<< HEAD
 __version__ = "1.15.0.dev0"
+=======
+__version__ = "1.14.0"
+>>>>>>> 81e1cb08 ([SW-205356] Rebase to OH v1.14 (#3))

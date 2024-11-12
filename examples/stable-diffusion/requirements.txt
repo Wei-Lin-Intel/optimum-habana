@@ -1,2 +1,6 @@
+<<<<<<< HEAD
 opencv-python
+=======
+opencv-python == 4.10.0.82
+>>>>>>> 81e1cb08 ([SW-205356] Rebase to OH v1.14 (#3))
 compel

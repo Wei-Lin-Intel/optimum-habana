@@ -15,6 +15,7 @@
 
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -417,6 +418,28 @@ def main():
 
             pipeline = AutoPipelineForInpainting.from_pretrained(args.model_name_or_path, **kwargs)
 
+<<<<<<< HEAD
+=======
+        elif args.optimize:
+            # Import SDXL pipeline
+            # set PATCH_SDPA to enable fp8 varient of softmax in sdpa
+            os.environ["PATCH_SDPA"] = "1"
+            import habana_frameworks.torch.hpu as torch_hpu
+
+            from optimum.habana.diffusers.pipelines.stable_diffusion_xl.pipeline_stable_diffusion_xl_mlperf import (
+                StableDiffusionXLPipeline_HPU,
+            )
+
+            pipeline = StableDiffusionXLPipeline_HPU.from_pretrained(
+                args.model_name_or_path,
+                **kwargs,
+            )
+
+            pipeline.to(torch.device("hpu"))
+            pipeline.unet.set_default_attn_processor(pipeline.unet)
+            if args.use_hpu_graphs:
+                pipeline.unet = torch_hpu.wrap_in_hpu_graph(pipeline.unet)
+>>>>>>> d424fc60 ([SW-206300] add support for num_images_per_prompts in optimized mlperf sdxl pipeline in OH (#7))
         else:
             # Import SDXL pipeline
             from optimum.habana.diffusers import GaudiStableDiffusionXLPipeline

@@ -14,6 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 
+# :no_entry::no_entry::no_entry::no_entry::no_entry:
+# This repository is no longer used for development. It's sole purpose is to create PRs in upstream. Please use habana-internal/optimum-habana-fork
+# :no_entry::no_entry::no_entry::no_entry::no_entry:
+
 <a href="https://github.com/huggingface/optimum-habana#gh-light-mode-only">
   <img src="https://github.com/huggingface/optimum-habana/blob/main/readme_logo_light.png"/>
 </a>
@@ -21,7 +25,6 @@ limitations under the License.
 <a href="https://github.com/huggingface/optimum-habana#gh-dark-mode-only">
   <img src="https://github.com/huggingface/optimum-habana/blob/main/readme_logo_dark.png"/>
 </a>
-
 
 # Optimum for Intel® Gaudi® Accelerators
 

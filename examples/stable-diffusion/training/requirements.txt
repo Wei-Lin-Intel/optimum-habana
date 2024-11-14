@@ -1,2 +1,0 @@
-imagesize == 1.4.1
-peft == 0.10.0

@@ -1,2 +1,0 @@
-datasets == 2.19.2
-soundfile == 0.12.1

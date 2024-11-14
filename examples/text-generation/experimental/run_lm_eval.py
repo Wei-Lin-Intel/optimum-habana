@@ -40,6 +40,7 @@ from optimum.habana.utils import get_hpu_memory_stats
 
 
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+os.environ.setdefault("HF_DATASETS_TRUST_REMOTE_CODE", "true")
 logger = logging.getLogger(__name__)
 
 
@@ -105,28 +106,18 @@ class HabanaModelAdapter(HFLM):
         self.tokenizer = tokenizer
         self._model = model
         self._batch_size = args.batch_size
-        self.buckets: list[int] = sorted(args.buckets)
+        self.buckets = sorted(args.buckets)
         self.options = options
-        self.device_ = args.device
+        self._device = args.device
         self.model_inputs = {"use_cache": self.options.use_cache}
-        if self._model.config.model_type in [
-            "llama",
-            "mistral",
-            "falcon",
-            "phi",
-            "mixtral",
-            "qwen2",
-            "gptj",
-            "starcoder2",
-            "gemma",
-        ]:
+        if self._model.config.model_type in ["llama", "mistral", "falcon", "phi", "mixtral", "qwen2"]:
             self.model_inputs.update(
                 {
                     "reuse_cache": self.options.reuse_cache,
                 }
             )
-        if self.model.config.model_type in ["llama", "mistral", "qwen2", "falcon", "starcoder2", "gemma"]:
-            if self.model.config.model_type != "falcon":
+        if self._model.config.model_type in ["llama", "mistral", "qwen2", "falcon"]:
+            if self._model.config.model_type != "falcon":
                 self.model_inputs.update(
                     {
                         "attn_softmax_bf16": self.options.attn_softmax_bf16,
@@ -146,14 +137,19 @@ class HabanaModelAdapter(HFLM):
         for bucket_size in reversed(self.buckets):
             inps = torch.ones((self._batch_size, bucket_size), dtype=torch.int64)
             self._model_call(inps)
+            pass
 
     @property
     def eot_token_id(self) -> int:
-        return self._model.config.eos_token_id
+        return self.model.config.eos_token_id
 
     @property
     def max_length(self) -> int:
         return self.buckets[-1]
+
+    @property
+    def batch_size(self) -> int:
+        return self._batch_size
 
     @property
     def device(self):
@@ -170,52 +166,60 @@ class HabanaModelAdapter(HFLM):
         if self.options.static_shapes:
             bucket_length = self.find_bucket(seq_length)
             if self.options.use_cache and self.options.reuse_cache:
-                self._model.allocate_kv_cache(bs, bucket_length + 1, bucket_length)
+                self.model.allocate_kv_cache(bs, bucket_length + 1, bucket_length)
             padding_length = bucket_length - seq_length
-            inps = F.pad(inps, (0, padding_length), value=self._model.config.pad_token_id)
-        logits = self._model(inps.to(self.device_), **self.model_inputs)["logits"].cpu()
+            inps = F.pad(inps, (0, padding_length), value=self.model.config.pad_token_id)
+        logits = self.model(inps.to(self._device), **self.model_inputs)["logits"].cpu()
         if self.options.static_shapes and padding_length > 0:
             logits = logits[:, :-padding_length, :]
         logits = logits.to(torch.float32)
         return logits
 
 
-def main() -> None:
+def main():
     args = setup_lm_eval_parser()
     model, _, tokenizer, generation_config = initialize_model(args, logger)
-<<<<<<< HEAD
 
-    lm_tasks = lm_eval.tasks.get_task_dict(args.tasks)
-=======
-    if args.trust_remote_code:
-        # trust_remote_code fix was introduced in lm_eval 0.4.3
-        # https://github.com/EleutherAI/lm-evaluation-harness/pull/1998/files
-        # We need to cherry-pick the fix manually untill we upgrade (SW-190418)
-        import datasets
+    run_modes = ["pt2e_quant_not_used"]
+    if args.pt2e_quant and model.config.model_type == "llama":
+        run_modes = ["pt2e_quant_calibration", "pt2e_quant_inference"]
 
-        datasets.config.HF_DATASETS_TRUST_REMOTE_CODE = True
->>>>>>> 3fcf3611 ([SW-190418] Updated lm eval harness version above 0.4.0 (#9))
-    with torch.no_grad():
-        lm = HabanaModelAdapter(tokenizer, model, args, generation_config)
-    eval_start = time.perf_counter()
-    with torch.no_grad():
-        results = evaluator.simple_evaluate(lm, tasks=args.tasks, limit=args.limit_iters)
-    if args.device == "hpu":
-        import habana_frameworks.torch.hpu as torch_hpu
+    for mode in run_modes:
+        if mode == "pt2e_quant_calibration":
+            logger.info("[pt2e_quant] Running in calibration mode...")
+        elif mode == "pt2e_quant_inference":
+            logger.info("[pt2e_quant] Running with quantized model...")
 
-        torch_hpu.synchronize()
-    eval_end = time.perf_counter()
+        with torch.no_grad():
+            lm = HabanaModelAdapter(tokenizer, model, args, generation_config)
 
-    results["args"] = vars(args)
-    results["duration"] = eval_end - eval_start
-
-    if args.local_rank == 0:
+        eval_start = time.perf_counter()
+        results = {}
+        with torch.no_grad():
+            results = evaluator.simple_evaluate(lm, tasks=args.tasks, limit=args.limit_iters)
         if args.device == "hpu":
-            mem = get_hpu_memory_stats()
-            for k, v in mem.items():
-                print("{:35} = {} GB".format(k[:-5].replace("_", " ").capitalize(), v))
-        json.dump(results, open(args.output_file, "w"), indent=2)
-        print(json.dumps(results, indent=2))
+            import habana_frameworks.torch.hpu as torch_hpu
+
+            torch_hpu.synchronize()
+        eval_end = time.perf_counter()
+
+        results["args"] = vars(args)
+        results["duration"] = eval_end - eval_start
+
+        if args.local_rank == 0:
+            if args.device == "hpu":
+                mem = get_hpu_memory_stats()
+                for k, v in mem.items():
+                    print("{:35} = {} GB".format(k[:-5].replace("_", " ").capitalize(), v))
+            json.dump(results, open(args.output_file, "w"), indent=2)
+            print(json.dumps(results, indent=2))
+
+        if mode == "pt2e_quant_calibration":
+            # Prepare for next run with quantized model
+            from utils import add_quant_dquant_nodes
+
+            model = add_quant_dquant_nodes(model, logger)
+
     if args.quant_config:
         finalize_quantization(model)
 

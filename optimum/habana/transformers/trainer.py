@@ -1534,6 +1534,18 @@ class GaudiTrainer(Trainer):
         elif isinstance(data, (tuple, list)):
             return type(data)(self._prepare_input(v) for v in data)
         elif isinstance(data, torch.Tensor):
+<<<<<<< HEAD
+=======
+            if (
+                self.accelerator.mpu.sequence_parallel_is_initialized()
+                and self.accelerator.mpu.get_sequence_parallel_world_size() > 1
+            ):
+                seq_parallel_world_rank = self.accelerator.mpu.get_sequence_parallel_rank()
+                sub_seq_length = int(data.size()[1] / self.accelerator.mpu.get_sequence_parallel_world_size())
+                data = data[
+                    :, seq_parallel_world_rank * sub_seq_length : (seq_parallel_world_rank + 1) * sub_seq_length
+                ]
+>>>>>>> dc88a906 (Adding labels clone as workaround to avoid crash (#24))
             kwargs = {"device": self.args.device}
             if self.is_deepspeed_enabled and (torch.is_floating_point(data) or torch.is_complex(data)):
                 # NLP models inputs are int/uint and those get adjusted to the right dtype of the
@@ -1778,7 +1790,10 @@ class GaudiTrainer(Trainer):
         self.control = self.callback_handler.on_evaluate(self.args, self.state, self.control, output.metrics)
 
         self._memory_tracker.stop_and_update_metrics(output.metrics)
+<<<<<<< HEAD
 
+=======
+>>>>>>> dc88a906 (Adding labels clone as workaround to avoid crash (#24))
         return output.metrics
 
     def evaluation_loop(
@@ -1916,6 +1931,8 @@ class GaudiTrainer(Trainer):
                 all_losses.add(losses)
             if labels is not None:
                 labels = self.accelerator.pad_across_processes(labels, dim=1, pad_index=-100)
+                if self.args.context_parallel_size != 1:
+                    labels = labels.clone()
                 labels = self.gather_function((labels))
                 if not self.args.batch_eval_metrics or description == "Prediction":
                     all_labels.add(labels)

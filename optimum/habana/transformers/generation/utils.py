@@ -112,6 +112,8 @@ MODELS_OPTIMIZED_WITH_STATIC_SHAPES = [
     "mllama",
 ]
 
+# Initial generated token index is set to 1 to accomodate SOS (start of string) token.
+INITIAL_TOKEN_IDX = 1
 
 logger = logging.get_logger(__name__)
 
@@ -1136,11 +1138,15 @@ class GaudiGenerationMixin(GenerationMixin):
                         )
             else:
                 assert generation_config.bucket_size <= 0, "Untested path for bucket>0"
+<<<<<<< HEAD
                 if model_kwargs.get("decoder_input_ids", None) is None:
                     token_idx = 1
                 else:
                     token_idx = model_kwargs["decoder_input_ids"].shape[-1]
                 model_kwargs["token_idx"] = torch.tensor(token_idx, device=inputs_tensor.device)
+=======
+                model_kwargs["token_idx"] = torch.tensor(INITIAL_TOKEN_IDX, device=inputs_tensor.device)
+>>>>>>> 0cc75c7a ([SW-209210] skip first token in EOS check. (#25))
                 if model_kwargs.get("decoder_attention_mask", None) is None and generation_config.use_cache:
                     max_length = (
                         generation_config.max_new_tokens + token_idx
@@ -2598,7 +2604,7 @@ class GaudiGenerationMixin(GenerationMixin):
             eos_token_id = generation_config.eos_token_id
             idx_bs = generation_config.max_length
             for i in range(batch_size):
-                for idx in range(len(input_ids[i])):
+                for idx in range(INITIAL_TOKEN_IDX, len(input_ids[i])):
                     if input_ids[i][idx] == eos_token_id:
                         idx_bs = idx
                     if idx > idx_bs:

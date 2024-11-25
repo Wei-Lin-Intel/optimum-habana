@@ -1789,8 +1789,12 @@ class GaudiTrainer(Trainer):
     ) -> PredictionOutput:
         """
         From https://github.com/huggingface/transformers/blob/v4.45.2/src/transformers/trainer.py#L3904 with the following modification
+<<<<<<< HEAD
         1. comment out TPU related
         2. use throughput_warmup_steps in evaluation throughput calculation
+=======
+        1. use throughput_warmup_steps in evaluation throughput calculation
+>>>>>>> 509bca5c (Add compile time/warmup time calcuation for eval/predict (#20))
         """
         # memory metrics - must set up as early as possible
         self._memory_tracker.start()
@@ -1930,7 +1934,10 @@ class GaudiTrainer(Trainer):
             ):
                 self.start_time_after_warmup = time.time()
                 self.compilation_time = self.start_time_after_warmup - start_time_eval
+<<<<<<< HEAD
 
+=======
+>>>>>>> 509bca5c (Add compile time/warmup time calcuation for eval/predict (#20))
             # Update the observed num examples
             observed_batch_size = find_batch_size(inputs)
             if observed_batch_size is not None:

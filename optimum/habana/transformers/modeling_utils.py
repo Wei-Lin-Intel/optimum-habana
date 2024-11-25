@@ -41,8 +41,11 @@ from .models import (
     GaudiCLIPVisionTransformer,
     GaudiCodeGenAttention,
     GaudiCodeGenForCausalLM,
+<<<<<<< HEAD
     GaudiCohereDecoderLayer,
     GaudiCohereForCausalLM,
+=======
+>>>>>>> 44289dce (Revert "[SW-205385]Add DynamicMoE support for Mixtral (#10)" (#35))
     GaudiFalconAttention,
     GaudiFalconDecoderLayer,
     GaudiFalconForCausalLM,

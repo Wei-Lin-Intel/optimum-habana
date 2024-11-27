@@ -344,6 +344,12 @@ def setup_parser(parser):
         help="Path to neural-compressor quantized model, if set, the checkpoint will be loaded.",
     )
 
+    parser.add_argument(
+        "--use_mark_dynamic",
+        action="store_true",
+        help="Mark the required tensor(s) as dynamic with min/max tensor shape derived from input and output tokens. Only applicable in Dynamic Mode execution.",
+    )
+
     args = parser.parse_args()
 
     if args.torch_compile:
@@ -363,6 +369,12 @@ def setup_parser(parser):
         logger.warning(
             "`--disk_offload` was tested only with fp8, it may not work with full precision. If error raises try to remove the --disk_offload flag."
         )
+
+    if args.use_mark_dynamic:
+        assert (
+            args.max_input_tokens == -1
+        ), "--use_mark_dynamic should be used only with Dynamic Mode aka max_input_tokens == -1."
+
     return args
 
 
@@ -706,10 +718,32 @@ def main():
             ).cpu()
             return prompt, outputs
 
+        def mark_tensor_dynamic(generation_config, batch):
+            if generation_config.use_mark_dynamic:
+                for t in batch:
+                    if torch.is_tensor(batch[t]):
+                        if generation_config.mark_dyn_dim_0_min and generation_config.mark_dyn_dim_0_max:
+                            # batch dimension as dynamic
+                            torch._dynamo.mark_dynamic(
+                                batch[t],
+                                0,
+                                min=generation_config.mark_dyn_dim_0_min,
+                                max=generation_config.mark_dyn_dim_0_max,
+                            )
+
+                        if generation_config.mark_dyn_dim_1_min and generation_config.mark_dyn_dim_1_max:
+                            torch._dynamo.mark_dynamic(
+                                batch[t],
+                                1,
+                                min=generation_config.mark_dyn_dim_1_min,
+                                max=generation_config.mark_dyn_dim_1_max,
+                            )
+
         # warmup
         if prompt_length > 0:
             from optimum.habana.utils import HabanaProfile
 
+<<<<<<< HEAD
             # compilation stage disable profiling
             HabanaProfile.disable()
             # Compilation
@@ -723,6 +757,30 @@ def main():
             torch_hpu.synchronize()
             compilation_duration = time.perf_counter() - t0
             HabanaProfile.enable()
+=======
+        # compilation stage disable profiling
+        HabanaProfile.disable()
+        # Compilation
+        logger.info("Graph compilation...")
+        t0 = time.perf_counter()
+        for i, batch in enumerate(dataloader):
+            if i == 0:
+                mark_tensor_dynamic(generation_config, batch)
+            print("Warming up", flush=True)
+            t0 = time.perf_counter()
+            print(f"Step4+ starting time is {t0*1000}", flush=True)
+            generate_dataset(batch)
+            if generation_config.use_mark_dynamic:
+                generation_config.use_mark_dynamic = False
+            duration = time.perf_counter() - t0
+            print(f"Total E2E time of this iteration is {duration:.3f}s", flush=True)
+            # The first three iterations take longer because of graph compilation
+            if (i + 1) == 3:
+                break
+        torch_hpu.synchronize()
+        compilation_duration = time.perf_counter() - t0
+        HabanaProfile.enable()
+>>>>>>> 9dc6f8ba ([SW-202760] Add support for mark_dynamic() in Llama2 Model Script (#19))
 
         total_new_tokens_generated = 0
         duration = 0

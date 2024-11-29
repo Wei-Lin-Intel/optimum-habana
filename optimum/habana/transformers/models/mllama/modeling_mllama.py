@@ -122,7 +122,11 @@ class GaudiMllamaVisionSdpaAttention(MllamaVisionAttention):
         attention_mask: Optional[torch.Tensor] = None,
         output_attentions: bool = None,
         use_flash_attention: Optional[bool] = False,
+<<<<<<< HEAD
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+=======
+    ) -> torch.Tensor:
+>>>>>>> 64c082da (Enable fusedsdpa kernel for vision part of mllama (#1531))
         # TODO: Improve this warning with e.g. `model.config.attn_implementation = "manual"` once this is implemented.
         """
         Copied from MllamaVisionSdpaAttention::forward:https://github.com/huggingface/transformers/blob/v4.45.2/src/transformers/models/mllama/modeling_mllama.py#L283

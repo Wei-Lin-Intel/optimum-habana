@@ -665,6 +665,20 @@ def setup_generation_config(args, model, assistant_model, tokenizer):
     generation_config.flash_attention_fast_softmax = args.flash_attention_fast_softmax
     generation_config.trust_remote_code = args.trust_remote_code
     generation_config.valid_sequence_lengths = None
+<<<<<<< HEAD
+=======
+    generation_config.use_mark_dynamic = args.use_mark_dynamic
+    generation_config.attn_batch_split = args.attn_batch_split
+    if generation_config.use_mark_dynamic:
+        mark_dynamic_config = get_mark_dynamic_min_max(args)
+        if mark_dynamic_config.get("dim_0") is not None:
+            generation_config.mark_dyn_dim_0_min = mark_dynamic_config["dim_0"]["min"]
+            generation_config.mark_dyn_dim_0_max = mark_dynamic_config["dim_0"]["max"]
+
+        if mark_dynamic_config.get("dim_1") is not None:
+            generation_config.mark_dyn_dim_1_min = mark_dynamic_config["dim_1"]["min"]
+            generation_config.mark_dyn_dim_1_max = mark_dynamic_config["dim_1"]["max"]
+>>>>>>> 780e4769 ([SW-212702] Fix the  attn_batch_split argument specific to llama config (#74))
 
     return generation_config
 
@@ -689,6 +703,9 @@ def exclude_hpu_graph_configs(args):
 def initialize_model(args, logger):
     init_start = time.perf_counter()
     setup_distributed(args)
+    if not args.world_size > 0 and args.attn_batch_split > 1:
+        logger.warning("Disabling attention batch splitting as it's unnecessary for single-card execution")
+        args.attn_batch_split = 1
     if exclude_hpu_graph_configs(args):
         args.limit_hpu_graphs = False
     override_prints(args.global_rank == 0 or args.verbose_workers, logger)

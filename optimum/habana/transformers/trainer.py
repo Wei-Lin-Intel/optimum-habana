@@ -2462,7 +2462,11 @@ class GaudiTrainer(Trainer):
             "gradient_accumulation_plugin": gradient_accumulation_plugin,
             "distribution_strategy": self.args.distribution_strategy,
             "dynamic": self.args.compile_dynamic,
+<<<<<<< HEAD
             "dataloader_config": dataloader_config,
+=======
+            "use_regional_compilation": self.args.use_regional_compilation,
+>>>>>>> 7f342a81 ([SW_212465] [LLama2-FT-70B] torch.compile fails with regional_compilation enabled (#76))
         }
 
         # create accelerator object

@@ -123,6 +123,10 @@ class GaudiAccelerator(Accelerator):
         dynamic: bool | None = None,
         distribution_strategy: str = None,
         force_autocast: bool = False,
+<<<<<<< HEAD
+=======
+        use_regional_compilation: bool | None = None,
+>>>>>>> 7f342a81 ([SW_212465] [LLama2-FT-70B] torch.compile fails with regional_compilation enabled (#76))
     ):
         self.trackers = []
         self.mpu = parallel_state
@@ -315,6 +319,10 @@ class GaudiAccelerator(Accelerator):
             )
         self.step_scheduler_with_optimizer = step_scheduler_with_optimizer
         self.dynamic = dynamic
+<<<<<<< HEAD
+=======
+        self.use_regional_compilation = use_regional_compilation
+>>>>>>> 7f342a81 ([SW_212465] [LLama2-FT-70B] torch.compile fails with regional_compilation enabled (#76))
 
         # Mixed precision attributes
         self.scaler = None
@@ -783,7 +791,14 @@ class GaudiAccelerator(Accelerator):
             if self.state.dynamo_plugin.backend == GaudiDynamoBackend.HPU_BACKEND and not is_compiled_module(
                 kwargs["model"]
             ):
+<<<<<<< HEAD
                 engine.compile(compile_kwargs={"dynamic": self.dynamic})
+=======
+                if self.use_regional_compilation:
+                    self.compile_regions(engine.module)
+                else:
+                    engine.compile(compile_kwargs={"dynamic": self.dynamic})
+>>>>>>> 7f342a81 ([SW_212465] [LLama2-FT-70B] torch.compile fails with regional_compilation enabled (#76))
             if optimizer is not None:
                 optimizer = DeepSpeedOptimizerWrapper(optimizer)
             if scheduler is not None:

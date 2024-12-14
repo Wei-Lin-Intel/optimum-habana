@@ -101,6 +101,15 @@ class GaudiTrainingArguments(TrainingArguments):
             Whether to use compiled autograd for training. Currently only for summarization models.
         compile_dynamic (`bool|None`, *optional*, defaults to `None`):
             Set value of 'dynamic' parameter for torch.compile.
+<<<<<<< HEAD
+=======
+        cache_size_limit(`int`, *optional*, defaults to 'None'):
+            Set value of 'cache_size_limit' parameter for torch._dynamo.config
+        use_regional_compilation (`bool`, *optional*, defaults to `False`):
+            Whether to use regional compilation with deepspeed
+        inline_inbuilt_nn_modules (`bool`, *optional*, defaults to `None`):
+            Set value of 'inline_inbuilt_nn_modules' parameter for torch._dynamo.config.
+>>>>>>> 7f342a81 ([SW_212465] [LLama2-FT-70B] torch.compile fails with regional_compilation enabled (#76))
         disable_tensor_cache_hpu_graphs (`bool`, *optional*, defaults to `False`):
             Whether to disable tensor cache when using hpu graphs. If True, tensors won't be cached in hpu graph and memory can be saved.
         max_hpu_graphs (`int`, *optional*):
@@ -170,6 +179,24 @@ class GaudiTrainingArguments(TrainingArguments):
         metadata={"help": ("Set value of 'dynamic' parameter for torch.compile.")},
     )
 
+<<<<<<< HEAD
+=======
+    cache_size_limit: Optional[int] = field(
+        default=None,
+        metadata={"help": "Set value of 'cache_size_limit' parameter for torch._dynamo.config."},
+    )
+
+    use_regional_compilation: Optional[bool] = field(
+        default=False,
+        metadata={"help": ("Whether to use regional compilation for traing.")},
+    )
+
+    inline_inbuilt_nn_modules: Optional[bool] = field(
+        default=None,
+        metadata={"help": ("Set value of 'inline_inbuilt_nn_modules' parameter for torch._dynamo.config.")},
+    )
+
+>>>>>>> 7f342a81 ([SW_212465] [LLama2-FT-70B] torch.compile fails with regional_compilation enabled (#76))
     disable_tensor_cache_hpu_graphs: Optional[bool] = field(
         default=False,
         metadata={"help": "Whether to use a tensor cache for hpu graphs."},

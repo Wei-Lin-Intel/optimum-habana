@@ -267,6 +267,7 @@ def main():
 
         htcore.hpu_set_env()
 
+<<<<<<< HEAD
     if args.world_size > 1:
         import deepspeed
 
@@ -292,14 +293,30 @@ def main():
             torch_dtype=model_dtype,
             device="hpu",
         )
+=======
+    generator = pipeline(
+        "image-to-text",
+        model=args.model_name_or_path,
+        torch_dtype=model_dtype,
+        device="hpu",
+    )
+
+    if args.world_size > 1:
+        generator.model = initialize_distributed_model(args, generator.model, logger, model_dtype)
+
+    else:
+>>>>>>> 9808db14 (rebase 1.14.1 (#81))
         if args.use_hpu_graphs:
             from habana_frameworks.torch.hpu import wrap_in_hpu_graph
 
             generator.model = wrap_in_hpu_graph(generator.model)
 
+<<<<<<< HEAD
     if "falcon-11B-vlm" in args.model_name_or_path:
         # WA falcon vlm issue that image_token_id == embed size.
         generator.model.resize_token_embeddings(generator.tokenizer.vocab_size + 1)
+=======
+>>>>>>> 9808db14 (rebase 1.14.1 (#81))
     generate_kwargs = {
         "lazy_mode": True,
         "hpu_graphs": args.use_hpu_graphs,

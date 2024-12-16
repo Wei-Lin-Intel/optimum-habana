@@ -13,4 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+<<<<<<< HEAD
 __version__ = "1.15.0.dev0"
+=======
+__version__ = "1.14.1"
+>>>>>>> 9808db14 (rebase 1.14.1 (#81))

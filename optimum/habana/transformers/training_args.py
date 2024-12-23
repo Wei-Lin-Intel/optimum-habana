@@ -860,6 +860,9 @@ class GaudiTrainingArguments(TrainingArguments):
         if self.sdp_on_bf16:
             torch._C._set_math_sdp_allow_fp16_bf16_reduction(True)
 
+        if self.sdp_on_bf16:
+            torch._C._set_math_sdp_allow_fp16_bf16_reduction(True)
+
         logger.info("PyTorch: setting up devices")
         if not is_accelerate_available():
             raise ImportError(

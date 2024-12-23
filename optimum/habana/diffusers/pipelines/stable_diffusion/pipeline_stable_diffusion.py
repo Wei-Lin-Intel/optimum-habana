@@ -132,7 +132,11 @@ class GaudiStableDiffusionPipeline(GaudiDiffusionPipeline, StableDiffusionPipeli
             Whether to use full bfloat16 evaluation instead of 32-bit.
             This will be faster and save memory compared to fp32/mixed precision but can harm generated images.
         sdp_on_bf16 (bool, defaults to `False`):
+<<<<<<< HEAD
             Whether to allow PyTorch to use reduced precision in the SDPA math backend.
+=======
+            Whether to allow pyTorch to use reduced precision in the SDPA math backend.
+>>>>>>> 2aac5c6a (sdp_on_bf16 improvements (#73))
     """
 
     def __init__(

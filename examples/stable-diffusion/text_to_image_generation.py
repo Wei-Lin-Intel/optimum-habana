@@ -631,6 +631,7 @@ def main():
 
         pipeline.enable_freeu(s1=0.9, s2=0.2, b1=1.5, b2=1.6)
 
+<<<<<<< HEAD
     # If prompts file is specified override prompts from the file
     if args.prompts_file is not None:
         lines = []
@@ -639,6 +640,8 @@ def main():
         lines = [line.strip() for line in lines]
         args.prompts = lines
 
+=======
+>>>>>>> 2aac5c6a (sdp_on_bf16 improvements (#73))
     # Generate Images using a Stable Diffusion pipeline
     if args.distributed:
         with distributed_state.split_between_processes(args.prompts) as prompt:

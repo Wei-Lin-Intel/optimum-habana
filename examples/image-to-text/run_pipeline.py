@@ -23,8 +23,25 @@ from pathlib import Path
 import PIL.Image
 import requests
 import torch
+<<<<<<< HEAD
 from transformers import AutoConfig, AutoModelForVision2Seq, AutoProcessor, pipeline
 
+=======
+from transformers import (
+    AutoConfig,
+    AutoModelForVision2Seq,
+    AutoProcessor,
+    LlavaNextProcessor,
+    LlavaProcessor,
+    pipeline,
+)
+
+from optimum.habana.transformers.modeling_utils import adapt_transformers_to_gaudi
+from optimum.habana.utils import (
+    set_seed,
+)
+
+>>>>>>> bef33481 (add padding to input for mllama/paligemma/idefices2)
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
@@ -175,9 +192,27 @@ def main():
         help="Whether to use the key/value cache for decoding. It should speed up generation.",
     )
     parser.add_argument(
+<<<<<<< HEAD
         "--sdp_on_bf16",
         action="store_true",
         help="Allow PyTorch to use reduced precision in the SDPA math backend",
+=======
+        "--max_input_tokens",
+        type=int,
+        default=None,
+        help="If > 0 then pad the input sequences to this specified length of tokens. will not apply truncate to avoid deleting the image tag",
+    )
+    parser.add_argument(
+        "--do_sample",
+        action="store_true",
+        help="Whether to use sampling for generation.",
+    )
+    parser.add_argument(
+        "--seed",
+        default=27,
+        type=int,
+        help="Seed to use for random generation. Useful to reproduce your runs with `--do_sample`.",
+>>>>>>> bef33481 (add padding to input for mllama/paligemma/idefices2)
     )
 
     args = parser.parse_args()
@@ -197,6 +232,11 @@ def main():
 
     adapt_transformers_to_gaudi()
 
+<<<<<<< HEAD
+=======
+    set_seed(args.seed)
+
+>>>>>>> bef33481 (add padding to input for mllama/paligemma/idefices2)
     config = AutoConfig.from_pretrained(args.model_name_or_path)
     model_type = config.model_type
     if args.image_path is None and model_type in ["llava", "idefics2", "mllama"]:
@@ -209,6 +249,7 @@ def main():
         args.image_path = [
             "https://github.com/haotian-liu/LLaVA/blob/1a91fc274d7c35a9b50b3cb29c4247ae5837ce39/images/llava_v1_5_radar.jpg?raw=true"
         ]
+<<<<<<< HEAD
 
     if model_type in ["llava", "idefics2", "llava_next", "mllama", "paligemma"]:
         processor = AutoProcessor.from_pretrained(args.model_name_or_path)
@@ -240,6 +281,25 @@ def main():
                     args.prompt = "caption es"
                 else:
                     args.prompt = f"User:{image_str}\nWhat is shown in this image?\nAssistant:"
+=======
+    if args.prompt is None and model_type in ("llava", "llava_next", "mllama"):
+        if model_type == "llava":
+            processor = LlavaProcessor.from_pretrained(args.model_name_or_path)
+        elif model_type == "llava_next":
+            processor = LlavaNextProcessor.from_pretrained(args.model_name_or_path)
+        elif model_type == "mllama":
+            processor = AutoProcessor.from_pretrained(args.model_name_or_path, padding_side="left")
+            conversation = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "What is shown in this image?"},
+                        {"type": "image"},
+                    ],
+                }
+            ]
+            args.prompt = processor.apply_chat_template(conversation, add_generation_prompt=True)
+>>>>>>> bef33481 (add padding to input for mllama/paligemma/idefices2)
 
     image_paths = args.image_path
     image_paths_len = len(image_paths)
@@ -307,7 +367,11 @@ def main():
         "ignore_eos": args.ignore_eos,
         "use_flash_attention": args.use_flash_attention,
         "flash_attention_recompute": args.flash_attention_recompute,
+<<<<<<< HEAD
         "limit_hpu_graphs": args.limit_hpu_graphs,
+=======
+        "do_sample": args.do_sample,
+>>>>>>> bef33481 (add padding to input for mllama/paligemma/idefices2)
     }
 
     if args.sdp_on_bf16:
@@ -325,8 +389,12 @@ def main():
         from transformers.image_utils import load_image
 
         def preprocess(self, image, prompt=None, timeout=None):
+            kwargs = {}
+            if args.max_input_tokens is not None and args.max_input_tokens > 0:
+                kwargs["max_length"] = args.max_input_tokens
+                kwargs["padding"] = "max_length"
             image = load_image(image, timeout=timeout)
-            model_inputs = processor(images=image, text=prompt, return_tensors=self.framework)
+            model_inputs = processor(images=image, text=prompt, return_tensors=self.framework, **kwargs)
             return model_inputs
 
         generator.__class__.preprocess = preprocess

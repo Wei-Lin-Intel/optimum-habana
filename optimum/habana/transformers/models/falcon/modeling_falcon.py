@@ -172,6 +172,59 @@ class ScaledDotProductAttention(nn.Module):
         return attn_output
 
 
+<<<<<<< HEAD
+=======
+def update(prev, cur, dim, idx, inp_seq_len):
+    orig_cur = cur
+    cur = cur.to(dtype=prev.dtype)
+
+    if prev.shape == cur.shape:
+        prev.copy_(cur)
+        return orig_cur
+
+    if cur.shape[-2] > 1 and cur.shape[-2] <= prev.shape[-2]:
+        # Initialize
+        prev[:, :, :inp_seq_len, :].copy_(cur)
+        return orig_cur
+    assert cur.shape[2] == 1, f"Cannot update kv-cache. Unsupported shapes. prev:{prev.shape} cur:{cur.shape}"
+    if idx is not None:
+        prev.index_copy_(dim, idx - 1, cur)
+        prev_cast = prev.to(orig_cur.dtype)
+        return prev_cast
+    else:
+        return torch.cat((prev, cur), dim=dim)
+
+
+class KVCache(torch.nn.Module):
+    def __init__(self):
+        super(KVCache, self).__init__()
+        self.cache = None
+        self.inp_seq_len = -1
+
+    def allocate(self, inp_seq_len, dtype, device, shape):
+        if self.cache is None or self.cache.shape != shape:
+            self.inp_seq_len = inp_seq_len
+            self.cache = torch.zeros(shape, dtype=dtype, device=device)
+        else:
+            assert self.inp_seq_len == inp_seq_len, (
+                f"inp_seq_len must be the same. self.inp_seq_len:{self.inp_seq_len} inp_seq_len:{inp_seq_len}"
+            )
+            self.cache.fill_(0)
+
+    def get_shape(self):
+        if self.cache is None:
+            return None
+        return self.cache.shape
+
+    def forward(self, cur, dim, idx):
+        return self.update(self.cache, cur, dim, idx, self.inp_seq_len)
+
+    @staticmethod
+    def update(prev, cur, dim, idx, inp_seq_len):
+        return update(prev, cur, dim, idx, inp_seq_len)
+
+
+>>>>>>> 948581f4 (Revert "Mlapinskix/feature/sw 190418 (#89)" (#106))
 class GaudiFalconAttention(FalconAttention):
     """
     Inherits from FalconAttention: https://github.com/huggingface/transformers/blob/838b87abe231fd70be5132088d0dee72a7bb8d62/src/transformers/models/falcon/modeling_falcon.py#L267
@@ -1048,7 +1101,9 @@ class GaudiFalconForCausalLM(FalconForCausalLM):
         """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         if use_flash_attention:
-            assert FusedSDPA, "`use_flash_attention` is True, but cannot find FusedSDPA. Please import it as `from habana_frameworks.torch.hpex.kernels import FusedSDPA` or set use_flash_attention to False (at the expense of a possible performance degradation)."
+            assert FusedSDPA, (
+                "`use_flash_attention` is True, but cannot find FusedSDPA. Please import it as `from habana_frameworks.torch.hpex.kernels import FusedSDPA` or set use_flash_attention to False (at the expense of a possible performance degradation)."
+            )
         if flash_attention_recompute:
             assert use_flash_attention, "flash_attention_recompute is set, but use_flash_attention is not"
         if flash_attention_causal_mask:

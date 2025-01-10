@@ -366,6 +366,15 @@ def setup_parser(parser):
         logger.warning(
             "`--disk_offload` was tested only with fp8, it may not work with full precision. If error raises try to remove the --disk_offload flag."
         )
+<<<<<<< HEAD
+=======
+
+    if args.use_mark_dynamic:
+        assert args.max_input_tokens == -1, (
+            "--use_mark_dynamic should be used only with Dynamic Mode aka max_input_tokens == -1."
+        )
+
+>>>>>>> 948581f4 (Revert "Mlapinskix/feature/sw 190418 (#89)" (#106))
     return args
 
 
@@ -395,7 +404,160 @@ def main():
     if args.sdp_on_bf16:
         torch._C._set_math_sdp_allow_fp16_bf16_reduction(True)
 
+<<<<<<< HEAD
     if args.dataset_name is None:
+=======
+        def get_input(ds, batch_size):
+            queries = []
+            tok_input = ds["tok_input"].tolist()
+            for start in range(0, len(ds), batch_size):
+                end = start + batch_size
+                batch = tok_input[start:end]
+                input_ids = []
+                attention_mask = []
+                for query in batch:
+                    input_ids.append([0] * (args.max_input_tokens - len(query)) + query)
+                    attention_mask.append([0] * (args.max_input_tokens - len(query)) + [1] * len(query))
+                queries.append(
+                    {
+                        "input_ids": torch.tensor(input_ids, dtype=torch.int32),
+                        "attention_mask": torch.tensor(attention_mask, dtype=torch.int32),
+                    }
+                )
+            return queries
+
+        ds = get_ds(args)
+        input_sentences = get_input(ds, args.batch_size)
+
+        def generate(input_tokens, size=None, reduce_recompile=False):
+            """Generates sequences from the input sentences and returns them."""
+
+            t0 = time.perf_counter()
+            print(f"Step4+ starting time is {t0 * 1000}", flush=True)
+            if size is not None:
+                input_tokens = adjust_batch(input_tokens, size)
+
+            if not reduce_recompile:
+                # Move inputs to target device(s)
+                for t in input_tokens:
+                    if torch.is_tensor(input_tokens[t]):
+                        input_tokens[t] = input_tokens[t].to(args.device)
+
+            outputs = model.generate(
+                **input_tokens,
+                generation_config=generation_config,
+                lazy_mode=use_lazy_mode,
+                hpu_graphs=args.use_hpu_graphs,
+                profiling_steps=args.profiling_steps,
+                profiling_warmup_steps=args.profiling_warmup_steps,
+            ).cpu()
+            outputs = outputs.tolist()
+            for i in range(len(outputs)):
+                outputs[i] = outputs[i][args.max_input_tokens :]
+            duration = time.perf_counter() - t0
+            print(f"Total E2E time of this batch is {duration:.3f}s", flush=True)
+            return outputs
+
+        from optimum.habana.utils import HabanaProfile
+
+        # compilation stage disable profiling
+        HabanaProfile.disable()
+        # Compilation
+        logger.info("Graph compilation...")
+        dyn_prompt_lens = args.simulate_dyn_prompt
+        t0 = time.perf_counter()
+        # The first three iterations take longer because of graph compilation
+        if dyn_prompt_lens is None or len(set(dyn_prompt_lens)) == 1:
+            for _ in range(args.warmup):
+                if dyn_prompt_lens is None:
+                    print("Warming up", flush=True)
+                    generate(input_sentences[0], None, args.reduce_recompile)
+                else:
+                    print("Warming up for shape,", dyn_prompt_lens[0], flush=True)
+                    generate(input_sentences[0], dyn_prompt_lens[0], args.reduce_recompile)
+        else:
+            if args.bucket_size > 0:
+                mn = min(dyn_prompt_lens)
+                mx = max(dyn_prompt_lens)
+
+                def rounder(x):
+                    return int(math.ceil(x / args.bucket_size) * args.bucket_size)
+
+                min_prompt_len = rounder(mn)
+                max_sentence_len = rounder(mx)
+                for _ in range(args.warmup):
+                    lst = list(range(min_prompt_len, max_sentence_len + 1, args.bucket_size))
+                    for sz in lst:
+                        print("Warming up for shape,", sz - 1, flush=True)
+                        generate(input_sentences[0], sz - 1, args.reduce_recompile)
+        torch_hpu.synchronize()
+        compilation_duration = time.perf_counter() - t0
+        HabanaProfile.enable()
+        total_new_tokens_generated = 0
+        logger.info("Running generate...")
+        t0 = time.perf_counter()
+        # Benchmark over n_iterations iterations
+        N = len(input_sentences)
+        if dyn_prompt_lens is None:
+            for i in range(args.n_iterations):
+                results = []
+                b = 1
+                for sentence in input_sentences:
+                    generated = generate(sentence, None, args.reduce_recompile)
+                    results.extend(generated)
+                    print(f"Generatig batch {b}/{N}")
+                    b += 1
+        else:
+            repeated_prompt_len = cycle(dyn_prompt_lens)
+            for i in range(args.n_iterations):
+                prompt_len = next(repeated_prompt_len)
+                print("Generating for shape,", prompt_len)
+                results = []
+                for sentence in input_sentences:
+                    generated = generate(sentence, prompt_len, args.reduce_recompile)
+                    results.extend(generated)
+        duration = time.perf_counter() - t0
+        total_new_tokens_generated = args.n_iterations * args.batch_size * args.max_new_tokens
+        throughput = total_new_tokens_generated / duration
+
+        # Store results if necessary
+        if args.output_dir is not None and args.global_rank == 0:
+            output_dir = Path(args.output_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            # TODO dump in hex format
+            acc_file = []
+            num_token = 0
+            for i, idx in enumerate(ds.index):
+                pred = results[i]
+                eos_token_id = 2
+                try:
+                    ind_eos = pred.index(eos_token_id) + 1
+                except:  # noqa
+                    ind_eos = len(pred)
+                pred = pred[:ind_eos]
+                num_token += len(pred)
+                acc_file.append(
+                    {"seq_id": idx, "qsl_idx": idx, "data": bytes(struct.pack("L" * len(pred), *pred)).hex().upper()}
+                )
+            with open(output_dir / "accuracy.json", "w") as outfile:
+                outfile.write(json.dumps(acc_file))
+
+        stats = f"Throughput (including tokenization) = {throughput} tokens/second"
+        stats = stats + f"\nNumber of HPU graphs                = {count_hpu_graphs()}"
+        separator = "-" * len(stats)
+        print()
+        print("Stats:")
+        print(separator)
+        print(stats)
+        mem = get_hpu_memory_stats()
+        for k, v in mem.items():
+            print("{:35} = {} GB".format(k[:-5].replace("_", " ").capitalize(), v))
+        print(f"Graph compilation duration          = {compilation_duration} seconds")
+        print(separator)
+        print()
+    elif args.dataset_name is None:
+>>>>>>> 948581f4 (Revert "Mlapinskix/feature/sw 190418 (#89)" (#106))
         # Benchmark over the prompts below
         if args.prompt:
             input_sentences = args.prompt
@@ -461,6 +623,11 @@ def main():
         def generate(size=None, reduce_recompile=False):
             """Generates sequences from the input sentences and returns them."""
             encode_t0 = time.perf_counter()
+<<<<<<< HEAD
+=======
+            t0 = time.perf_counter()
+            print(f"Step4+ starting time is {t0 * 1000}", flush=True)
+>>>>>>> 948581f4 (Revert "Mlapinskix/feature/sw 190418 (#89)" (#106))
             # Tokenization
             if args.max_input_tokens > 0:
                 if hasattr(model.config, "type_vocab_size") and model.config.type_vocab_size > 0:
@@ -526,8 +693,14 @@ def main():
                 profiling_record_shapes=args.profiling_record_shapes,
             ).cpu()
             first_token_time = iteration_times[0] + encode_duration
+<<<<<<< HEAD
             logger.info(f"Time to first token = {first_token_time*1000}ms")
             return tokenizer.batch_decode(outputs, skip_special_tokens=True)
+=======
+            logger.info(f"Time to first token = {first_token_time * 1000}ms")
+            print(f"Total E2E time of this iteration is {duration:.3f}s", flush=True)
+            return outputs
+>>>>>>> 948581f4 (Revert "Mlapinskix/feature/sw 190418 (#89)" (#106))
 
         from optimum.habana.utils import HabanaProfile
 
@@ -541,10 +714,10 @@ def main():
         if dyn_prompt_lens is None or len(set(dyn_prompt_lens)) == 1:
             for i in range(args.warmup):
                 if dyn_prompt_lens is None:
-                    print(f"Warming up iteration {i+1}/{args.warmup}", flush=True)
+                    print(f"Warming up iteration {i + 1}/{args.warmup}", flush=True)
                     generate(None, args.reduce_recompile)
                 else:
-                    print(f"Warming up for shape {dyn_prompt_lens[0]} iteration {i+1}/{args.warmup}", flush=True)
+                    print(f"Warming up for shape {dyn_prompt_lens[0]} iteration {i + 1}/{args.warmup}", flush=True)
                     generate(dyn_prompt_lens[0], args.reduce_recompile)
         else:
             if args.bucket_size > 0:
@@ -559,7 +732,7 @@ def main():
                 for i in range(args.warmup):
                     lst = list(range(min_prompt_len, max_sentence_len + 1, args.bucket_size))
                     for sz in lst:
-                        print(f"Warming up for shape {sz - 1} iteration {i+1}/{args.warmup}", flush=True)
+                        print(f"Warming up for shape {sz - 1} iteration {i + 1}/{args.warmup}", flush=True)
                         generate(sz - 1, args.reduce_recompile)
         torch_hpu.synchronize()
         compilation_duration = time.perf_counter() - t0
@@ -586,6 +759,7 @@ def main():
         all_inputs = []
         all_outputs = []
         for i, input_sentence in enumerate(zip(input_sentences)):
+<<<<<<< HEAD
             print(f"input {i+1}: {input_sentence}")
             all_inputs.append(input_sentence)
             for j, output in enumerate(
@@ -593,6 +767,13 @@ def main():
             ):
                 print(f"output {i+1}.{j+1}: {output}")
                 all_outputs.append(output)
+=======
+            print(f"input {i + 1}: {input_sentence}")
+            for j, output in enumerate(
+                zip(generated[args.num_return_sequences * i : args.num_return_sequences * (i + 1)])
+            ):
+                print(f"output {j + 1}: {output}")
+>>>>>>> 948581f4 (Revert "Mlapinskix/feature/sw 190418 (#89)" (#106))
             print()
 
         # Store results if necessary
@@ -727,6 +908,7 @@ def main():
             # Compilation
             logger.info("Graph compilation...")
             t0 = time.perf_counter()
+<<<<<<< HEAD
             for i, batch in enumerate(dataloader):
                 generate_dataset(batch)
                 # The first three iterations take longer because of graph compilation
@@ -735,6 +917,20 @@ def main():
             torch_hpu.synchronize()
             compilation_duration = time.perf_counter() - t0
             HabanaProfile.enable()
+=======
+            print(f"Step4+ starting time is {t0 * 1000}", flush=True)
+            generate_dataset(batch)
+            if generation_config.use_mark_dynamic:
+                generation_config.use_mark_dynamic = False
+            duration = time.perf_counter() - t0
+            print(f"Total E2E time of this iteration is {duration:.3f}s", flush=True)
+            # The first three iterations take longer because of graph compilation
+            if (i + 1) == 3:
+                break
+        torch_hpu.synchronize()
+        compilation_duration = time.perf_counter() - t0
+        HabanaProfile.enable()
+>>>>>>> 948581f4 (Revert "Mlapinskix/feature/sw 190418 (#89)" (#106))
 
         total_new_tokens_generated = 0
         duration = 0
@@ -747,10 +943,10 @@ def main():
             duration += time.perf_counter() - t0
             total_new_tokens_generated += args.batch_size * args.max_new_tokens
             print(separator)
-            print(f"Batch n°{i+1}")
-            print(f"Input: {prompt[:args.batch_size]}")
+            print(f"Batch n°{i + 1}")
+            print(f"Input: {prompt[: args.batch_size]}")
             print(
-                f"Output: {tokenizer.batch_decode(outputs, skip_special_tokens=True)[:args.batch_size*args.num_return_sequences]}"
+                f"Output: {tokenizer.batch_decode(outputs, skip_special_tokens=True)[: args.batch_size * args.num_return_sequences]}"
             )
             print(separator)
             if args.run_partial_dataset and args.n_iterations == i + 1:

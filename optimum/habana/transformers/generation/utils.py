@@ -1078,6 +1078,7 @@ class GaudiGenerationMixin(GenerationMixin):
             assert generation_config.bucket_size >= 0, "please set bucket_size to use bucket_internal"
             assert generation_config.use_cache, "please set use_cache flag to use bucket_internal"
         if generation_config.reuse_cache:
+<<<<<<< HEAD
             assert (
                 self.config.model_type
                 in [
@@ -1096,10 +1097,26 @@ class GaudiGenerationMixin(GenerationMixin):
                     "chatglm",
                 ]
             ), "reuse_cache only supported by llama, mistral, falcon, mixtral, phi, qwen2, qwen2_moe, gemma, gemma2, starcoder2, baichuan and chatglm at the moment"
+=======
+            assert self.config.model_type in [
+                "llama",
+                "mistral",
+                "falcon",
+                "mixtral",
+                "phi",
+                "qwen2",
+                "gptj",
+                "starcoder2",
+                "qwen2_moe",
+                "gemma",
+            ], (
+                "reuse_cache only supported by llama, mistral, falcon, mixtral, phi, qwen2, qwen2_moe, gemma and starcoder2 at the moment"
+            )
+>>>>>>> 948581f4 (Revert "Mlapinskix/feature/sw 190418 (#89)" (#106))
             if not generation_config.bucket_internal:
-                assert (
-                    generation_config.bucket_size <= 0
-                ), "please set bucket_internal along with reuse_cache and bucket_size"
+                assert generation_config.bucket_size <= 0, (
+                    "please set bucket_internal along with reuse_cache and bucket_size"
+                )
             else:
                 assert generation_config.bucket_size >= 0, "please set valid bucket_size to use bucket_internal"
 
@@ -2211,6 +2228,16 @@ class GaudiGenerationMixin(GenerationMixin):
                 )
                 this_peer_finished = unfinished_sequences.max() == 0
 
+<<<<<<< HEAD
+=======
+            if greedy_first:
+                import habana_frameworks.torch.hpu as torch_hpu
+
+                torch_hpu.synchronize()
+                print(f"First Token time(greedy):{time.perf_counter() * 1000}")
+                greedy_first = False
+
+>>>>>>> 948581f4 (Revert "Mlapinskix/feature/sw 190418 (#89)" (#106))
             if (
                 not model_kwargs.get("pad_done", False)
                 and not model_kwargs.get("reuse_cache", False)
@@ -2606,6 +2633,16 @@ class GaudiGenerationMixin(GenerationMixin):
             # Otherwise a reference to outputs is kept which keeps the logits alive in the next iteration
             del outputs
 
+<<<<<<< HEAD
+=======
+            if sample_first:
+                import habana_frameworks.torch.hpu as torch_hpu
+
+                torch_hpu.synchronize()
+                print(f"First Token time(sample):{time.perf_counter() * 1000}")
+                sample_first = False
+
+>>>>>>> 948581f4 (Revert "Mlapinskix/feature/sw 190418 (#89)" (#106))
         if (
             model_kwargs.get("use_hpu_graphs", False)
             and model_kwargs.get("limit_hpu_graphs", False)

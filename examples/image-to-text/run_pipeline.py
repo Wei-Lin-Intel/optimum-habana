@@ -23,7 +23,22 @@ from pathlib import Path
 import PIL.Image
 import requests
 import torch
+<<<<<<< HEAD
 from transformers import AutoConfig, AutoModelForVision2Seq, AutoProcessor, pipeline
+=======
+from transformers import (
+    AutoConfig,
+    AutoModelForVision2Seq,
+    AutoProcessor,
+    LlavaNextProcessor,
+    LlavaProcessor,
+    pipeline,
+)
+
+from optimum.habana.utils import (
+    set_seed,
+)
+>>>>>>> 15a80048 ([SW-216011] Process getting killed while loading data for Llama3.2 90b, 8x (#116))
 
 
 logging.basicConfig(
@@ -192,6 +207,14 @@ def main():
     os.environ.setdefault("EXPERIMENTAL_WEIGHT_SHARING", "FALSE")
     if args.world_size > 0:
         os.environ.setdefault("PT_HPU_ENABLE_LAZY_COLLECTIVES", "true")
+<<<<<<< HEAD
+=======
+        os.environ.setdefault("DEEPSPEED_USE_HABANA_FRAMEWORKS_DETERMINISTIC_API", "1")
+
+    from optimum.habana.transformers.modeling_utils import adapt_transformers_to_gaudi
+
+    adapt_transformers_to_gaudi()
+>>>>>>> 15a80048 ([SW-216011] Process getting killed while loading data for Llama3.2 90b, 8x (#116))
 
     from optimum.habana.transformers.modeling_utils import adapt_transformers_to_gaudi
 

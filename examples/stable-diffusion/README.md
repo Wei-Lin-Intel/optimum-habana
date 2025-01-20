@@ -138,7 +138,12 @@ python text_to_image_generation.py \
     --use_habana \
     --use_hpu_graphs \
     --gaudi_config Habana/stable-diffusion-2 \
+<<<<<<< HEAD
     --ldm3d
+=======
+    --ldm3d \
+    --distributed
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))
 ```
 
 Here is how to generate images and depth maps with two prompts on two HPUs:
@@ -370,7 +375,11 @@ python text_to_image_generation.py \
     --batch_size 1 \
     --num_inference_steps 4 \
     --image_save_dir /tmp/flux_1_images \
+<<<<<<< HEAD
     --scheduler flow_match_euler_discrete \
+=======
+    --scheduler flow_match_euler_discrete\
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))
     --use_habana \
     --use_hpu_graphs \
     --gaudi_config Habana/stable-diffusion \
@@ -397,7 +406,11 @@ python text_to_image_generation.py \
     --batch_size 1 \
     --num_inference_steps 30 \
     --image_save_dir /tmp/flux_1_images \
+<<<<<<< HEAD
     --scheduler flow_match_euler_discrete \
+=======
+    --scheduler flow_match_euler_discrete\
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))
     --use_habana \
     --use_hpu_graphs \
     --gaudi_config Habana/stable-diffusion \
@@ -418,7 +431,11 @@ python text_to_image_generation.py \
     --batch_size 1 \
     --num_inference_steps 30 \
     --image_save_dir /tmp/flux_1_images \
+<<<<<<< HEAD
     --scheduler flow_match_euler_discrete \
+=======
+    --scheduler flow_match_euler_discrete\
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))
     --use_habana \
     --use_hpu_graphs \
     --gaudi_config Habana/stable-diffusion \
@@ -438,7 +455,11 @@ python text_to_image_generation.py \
     --batch_size 1 \
     --num_inference_steps 30 \
     --image_save_dir /tmp/flux_1_images \
+<<<<<<< HEAD
     --scheduler flow_match_euler_discrete \
+=======
+    --scheduler flow_match_euler_discrete\
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))
     --use_habana \
     --use_hpu_graphs \
     --gaudi_config Habana/stable-diffusion \

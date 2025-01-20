@@ -13,6 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))
 import accelerate
 import transformers
 import transformers.utils.fx
@@ -698,6 +702,10 @@ def adapt_transformers_to_gaudi():
     transformers.AutoConfig.register("deci", DeciLMConfig)
     transformers.AutoModelForCausalLM.register(DeciLMConfig, DeciLMForCausalLM)
 
+<<<<<<< HEAD
+=======
+    transformers.modeling_utils.check_support_param_buffer_assignment = gaudi_check_support_param_buffer_assignment
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))
     transformers.AutoConfig.register("deepseek_v2", DeepseekV2Config)
     transformers.AutoModelForCausalLM.register(DeepseekV2Config, DeepseekV2ForCausalLM)
     transformers.AutoTokenizer.register(DeepseekV2Config, fast_tokenizer_class=DeepseekTokenizerFast)

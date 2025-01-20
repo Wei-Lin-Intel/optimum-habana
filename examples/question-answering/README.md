@@ -89,6 +89,33 @@ PT_HPU_LAZY_MODE=0 PT_ENABLE_INT64_SUPPORT=1 python run_qa.py \
   --sdp_on_bf16
 ```
 
+<<<<<<< HEAD
+=======
+For torch.compile mode,
+```bash
+PT_HPU_LAZY_MODE=0 PT_ENABLE_INT64_SUPPORT=1 python run_qa.py \
+  --model_name_or_path bert-large-uncased-whole-word-masking \
+  --gaudi_config_name Habana/bert-large-uncased-whole-word-masking \
+  --dataset_name squad \
+  --do_train \
+  --do_eval \
+  --per_device_train_batch_size 32 \
+  --per_device_eval_batch_size 8 \
+  --learning_rate 3e-5 \
+  --num_train_epochs 2 \
+  --max_seq_length 384 \
+  --doc_stride 128 \
+  --output_dir /tmp/squad/ \
+  --use_habana \
+  --torch_compile_backend hpu_backend \
+  --torch_compile \
+  --use_lazy_mode false \
+  --throughput_warmup_steps 3 \
+  --bf16 \
+  --sdp_on_bf16
+```
+
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))
 ### Multi-card Training
 
 Here is how you would fine-tune the BERT large model (with whole word masking) on the SQuAD dataset using the `run_qa` script, with 8 HPUs:
@@ -139,6 +166,34 @@ PT_HPU_LAZY_MODE=0 PT_ENABLE_INT64_SUPPORT=1 python ../gaudi_spawn.py \
     --throughput_warmup_steps 3 \
     --bf16 \
     --sdp_on_bf16
+<<<<<<< HEAD
+=======
+```
+
+For torch.compile mode,
+```bash
+PT_HPU_LAZY_MODE=0 PT_ENABLE_INT64_SUPPORT=1 python ../gaudi_spawn.py \
+    --world_size 8 --use_mpi run_qa.py \
+    --model_name_or_path bert-large-uncased-whole-word-masking \
+    --gaudi_config_name Habana/bert-large-uncased-whole-word-masking \
+    --dataset_name squad \
+    --do_train \
+    --do_eval \
+    --per_device_train_batch_size 32 \
+    --per_device_eval_batch_size 8 \
+    --learning_rate 3e-5 \
+    --num_train_epochs 2 \
+    --max_seq_length 384 \
+    --doc_stride 128 \
+    --output_dir /tmp/squad_output/ \
+    --use_habana \
+    --torch_compile_backend hpu_backend \
+    --torch_compile \
+    --use_lazy_mode false \
+    --throughput_warmup_steps 3 \
+    --bf16 \
+    --sdp_on_bf16
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))
 ```
 
 
@@ -190,6 +245,47 @@ Here is a DeepSpeed configuration you can use to train your models on Gaudi:
 }
 ```
 
+<<<<<<< HEAD
+=======
+## Fine-tuning Llama on SQuAD1.1
+
+> [!NOTE]
+>   Llama/Llama2 for question answering requires Transformers v4.38.0 or newer, which supports the `LlamaForQuestionAnswering` class.
+
+Here is a command you can run to train a Llama model for question answering:
+```bash
+python ../gaudi_spawn.py \
+  --world_size 8 --use_deepspeed run_qa.py \
+  --model_name_or_path FlagAlpha/Llama2-Chinese-13b-Chat \
+  --gaudi_config_name Habana/bert-large-uncased-whole-word-masking \
+  --dataset_name squad \
+  --do_train \
+  --do_eval \
+  --per_device_train_batch_size 8 \
+  --per_device_eval_batch_size 8 \
+  --learning_rate 3e-5 \
+  --num_train_epochs 2 \
+  --max_seq_length 384 \
+  --doc_stride 128 \
+  --output_dir /tmp/squad_output/ \
+  --use_habana \
+  --use_lazy_mode \
+  --use_hpu_graphs_for_inference \
+  --throughput_warmup_steps 3 \
+  --max_train_samples 45080 \
+  --deepspeed ../../tests/configs/deepspeed_zero_2.json \
+  --sdp_on_bf16
+```
+
+
+### Training in torch.compile mode
+
+Albert XXL model training in [torch.compile](pytorch.org/tutorials/intermediate/torch_compile_tutorial.html) mode is enabled by applying the following changes to your command, \
+a) Set the following environment variables `PT_HPU_LAZY_MODE=0` and `PT_ENABLE_INT64_SUPPORT=1`. \
+b) Run the above commands with `--model_name_or_path albert-xxlarge-v1`, `--use_lazy_mode False` and add `--torch_compile`, `--torch_compile_backend hpu_backend` and remove `--use_hpu_graphs_for_inference` flags.
+
+
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))
 ## Fine-tuning Llama on SQuAD1.1
 
 > [!NOTE]

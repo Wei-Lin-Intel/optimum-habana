@@ -1085,7 +1085,10 @@ class GaudiTrainer(Trainer):
                         # Delay optimizer scheduling until metrics are generated
                         if not isinstance(self.lr_scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
                             self.lr_scheduler.step()
+<<<<<<< HEAD
 
+=======
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))
                     self._zero_model_grad(model)
                     self.state.global_step += 1
                     self.state.epoch = epoch + (step + 1 + steps_skipped) / steps_in_epoch
@@ -2463,6 +2466,10 @@ class GaudiTrainer(Trainer):
             "distribution_strategy": self.args.distribution_strategy,
             "dynamic": self.args.compile_dynamic,
             "dataloader_config": dataloader_config,
+<<<<<<< HEAD
+=======
+            "use_regional_compilation": self.args.use_regional_compilation,
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))
         }
 
         # create accelerator object

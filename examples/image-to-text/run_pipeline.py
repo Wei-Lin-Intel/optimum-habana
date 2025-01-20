@@ -24,6 +24,13 @@ import PIL.Image
 import requests
 import torch
 from transformers import AutoConfig, AutoModelForVision2Seq, AutoProcessor, pipeline
+<<<<<<< HEAD
+=======
+
+from optimum.habana.utils import (
+    set_seed,
+)
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))
 
 
 logging.basicConfig(
@@ -179,6 +186,11 @@ def main():
         action="store_true",
         help="Allow PyTorch to use reduced precision in the SDPA math backend",
     )
+    parser.add_argument(
+        "--sdp_on_bf16",
+        action="store_true",
+        help="Allow PyTorch to use reduced precision in the SDPA math backend",
+    )
 
     args = parser.parse_args()
 
@@ -211,7 +223,14 @@ def main():
         ]
 
     if model_type in ["llava", "idefics2", "llava_next", "mllama", "paligemma"]:
+<<<<<<< HEAD
         processor = AutoProcessor.from_pretrained(args.model_name_or_path)
+=======
+        if model_type == "mllama":
+            processor = AutoProcessor.from_pretrained(args.model_name_or_path, padding_side="left")
+        else:
+            processor = AutoProcessor.from_pretrained(args.model_name_or_path)
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))
         if args.prompt is None:
             if processor.chat_template is not None:
                 conversation = [
@@ -307,6 +326,10 @@ def main():
         "ignore_eos": args.ignore_eos,
         "use_flash_attention": args.use_flash_attention,
         "flash_attention_recompute": args.flash_attention_recompute,
+<<<<<<< HEAD
+=======
+        "do_sample": args.do_sample,
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))
         "limit_hpu_graphs": args.limit_hpu_graphs,
     }
 

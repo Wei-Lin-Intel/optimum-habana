@@ -74,6 +74,7 @@ except ImportError:
     print("Not using HPU fused kernel for apply_rotary_pos_emb")
     FusedRoPE = None
 
+<<<<<<< HEAD
 try:
     from habana_frameworks.torch.hpu import sdp_kernel
 
@@ -86,6 +87,49 @@ logger = logging.get_logger(__name__)
 
 def apply_customized_rope(q, k, cos, sin, position_ids, training=True):
     if q.device.type == "hpu" and FusedRoPE:
+=======
+deepspeed_available = is_deepspeed_available()
+logger = logging.get_logger(__name__)
+
+
+#  FusedScaledDotProductAttention
+class ModuleFusedSDPA(torch.nn.Module):
+    def __init__(self, fusedSDPA):
+        super().__init__()
+        self._hpu_kernel_fsdpa = fusedSDPA
+
+    def forward(
+        self,
+        query,
+        key,
+        value,
+        attn_mask,
+        dropout_p,
+        is_causal,
+        scale,
+        softmax_mode,
+        recompute_mode,
+        valid_sequence_lengths=None,
+        padding_side="left",
+    ):
+        return self._hpu_kernel_fsdpa.apply(
+            query,
+            key,
+            value,
+            attn_mask,
+            dropout_p,
+            is_causal,
+            scale,
+            softmax_mode,
+            recompute_mode,
+            valid_sequence_lengths,
+            padding_side,
+        )
+
+
+def apply_customized_rope(q, k, cos, sin, position_ids, training=True):
+    if q.device.type == "hpu" and FusedRoPE is not None:
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))
         return apply_customized_rope_module(q, k, cos, sin, position_ids, training)
     else:
         return apply_rotary_pos_emb(q, k, cos, sin, position_ids)
@@ -148,6 +192,67 @@ def gaudi_mixtral_repeat_kv(
     return query_states, key_states, value_states, attention_mask
 
 
+<<<<<<< HEAD
+=======
+class GaudiMixtralSparseMoeBlock(MixtralSparseMoeBlock):
+    def __init__(self, config):
+        super().__init__(config)
+
+    def forward(self, hidden_states: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        batch_size, sequence_length, hidden_dim = hidden_states.shape
+        original_shape = hidden_states.shape
+        hidden_states = hidden_states.view(-1, hidden_dim)
+        # router_logits: (batch * sequence_length, n_experts)
+        router_logits = self.gate(hidden_states)
+
+        if deepspeed_available and (not self.training):
+            from deepspeed import comm as dist
+
+            if dist.is_initialized():
+                output_tensors = [router_logits.clone() for _ in range(dist.get_world_size())]
+                dist.all_gather(output_tensors, router_logits)
+                router_logits = torch.cat(output_tensors, dim=1)
+
+        routing_weights, selected_experts = calculate_routing_tensors(router_logits, self.top_k, hidden_states.dtype)
+
+        final_hidden_states = self.call_dynamic_moe_op(
+            hidden_states=hidden_states,
+            expert_routing_table=selected_experts,
+            router_weights=routing_weights,
+        )
+        if deepspeed_available and (not self.training):
+            from deepspeed import comm as dist
+
+            if dist.is_initialized():
+                dist.all_reduce(final_hidden_states)
+        return final_hidden_states.view(original_shape), router_logits
+
+    def call_dynamic_moe_op(
+        self,
+        hidden_states,
+        expert_routing_table,
+        router_weights,
+    ):
+        # pre-processing for custom op inputs
+        w1_list = [expert.w1.weight for expert in self.experts]
+        w2_list = [expert.w2.weight for expert in self.experts]
+        w3_list = [expert.w3.weight for expert in self.experts]
+
+        return torch.ops.hpu.mixture_of_experts(
+            hidden_states=hidden_states,
+            expert_routing_table=expert_routing_table,
+            router_weights=router_weights,
+            w1=w1_list,
+            w3=w2_list,
+            w2=w3_list,
+            permuted_weights=True,
+            activation="silu",
+            experts_min=0,
+            experts_max=7,
+        )
+
+
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))
 class GaudiMixtralAttentionLongSequence:
     @staticmethod
     def forward(q, k, v, mask, causal, q_block_size):
@@ -166,7 +271,11 @@ class GaudiMixtralAttentionLongSequence:
             s, e = i * q_block_size, (i + 1) * q_block_size
             row_q = q[:, :, s:e, :]
             row_mask = mask[:, :, s:e, :]
+<<<<<<< HEAD
             attn_output[:, :, s:e, :] = FusedSDPA.apply(row_q, k, v, row_mask, 0.0, causal, None)
+=======
+            attn_output[:, :, s:e, :] = fsdpa(row_q, k, v, row_mask, 0.0, causal, None)
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))
 
         if q_padding != 0:
             attn_output = attn_output[:, :, :-q_padding, :]

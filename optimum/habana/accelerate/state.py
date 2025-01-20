@@ -21,7 +21,11 @@ from accelerate.utils import is_deepspeed_available, parse_choice_from_env, pars
 
 from optimum.utils import logging
 
+<<<<<<< HEAD
 from ..distributed import parallel_state
+=======
+from .. import parallel_state
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))
 from .utils import GaudiDistributedType
 
 

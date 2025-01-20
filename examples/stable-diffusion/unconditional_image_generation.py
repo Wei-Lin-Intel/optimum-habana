@@ -20,7 +20,11 @@ except ImportError:
 
 
 check_min_version("4.45.0")
+<<<<<<< HEAD
 check_optimum_habana_min_version("1.16.0.dev0")
+=======
+check_optimum_habana_min_version("1.15.0")
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))
 
 # Setup logging
 logging.basicConfig(

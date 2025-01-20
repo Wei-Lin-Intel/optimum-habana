@@ -730,3 +730,35 @@ def initialize_model(args, logger):
     logger.info(f"device: {args.device}, n_hpu: {args.world_size}, bf16: {model_dtype == torch.bfloat16}")
     logger.info(f"Model initialization took {(init_end - init_start):.3f}s")
     return model, assistant_model, tokenizer, generation_config
+<<<<<<< HEAD
+=======
+
+
+def save_model(model, tokenizer, save_path):
+    """Saves the model and tokenizer in the huggingface format with neural_compressor."""
+    from neural_compressor.torch.quantization import save
+
+    save(model, save_path, format="huggingface")
+    tokenizer.save_pretrained(save_path)
+
+
+def get_mark_dynamic_min_max(args):
+    """
+    min and max should be determined based on the dataset's min and max seq length.
+    """
+    assert args.max_input_tokens == -1, "get_mark_dynamic_min_max() should be called only for dynamic mode execution."
+
+    # default values
+    min_val = 128
+    max_val = min_val + 128
+
+    if args.dataset_name == "tatsu-lab/alpaca":
+        # have a single bucket of dynamic compilation
+        min_val = args.max_new_tokens
+        max_val = 128 + args.max_new_tokens  # derived from compilation stats
+
+    return {
+        "dim_0": {"min": 0, "max": 0},  # 0 mean don't set dynamic
+        "dim_1": {"min": min_val, "max": max_val},
+    }
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))

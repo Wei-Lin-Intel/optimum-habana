@@ -62,7 +62,11 @@ logger = logging.getLogger(__name__)
 
 # Will error if the minimal version of Transformers and Optimum Habana are not installed. Remove at your own risks.
 check_min_version("4.45.0")
+<<<<<<< HEAD
 check_optimum_habana_min_version("1.16.0.dev0")
+=======
+check_optimum_habana_min_version("1.15.0")
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))
 
 require_version("datasets>=2.14.0", "To fix: pip install -r examples/pytorch/language-modeling/requirements.txt")
 

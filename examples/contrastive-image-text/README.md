@@ -147,7 +147,11 @@ python3 ../gaudi_spawn.py --world_size 8 --use_mpi run_clip.py \
     --use_habana \
     --use_lazy_mode=False \
     --gaudi_config_name="Habana/clip" \
+<<<<<<< HEAD
     --throughput_warmup_steps=3 \
+=======
+    --throughput_warmup_steps=30 \
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))
     --save_strategy="no" \
     --dataloader_num_workers=2 \
     --use_hpu_graphs \

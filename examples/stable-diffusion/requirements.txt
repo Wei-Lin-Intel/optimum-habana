@@ -1,3 +1,7 @@
+<<<<<<< HEAD
 opencv-python
+=======
+opencv-python == 4.10.0.82
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))
 compel
 sentencepiece

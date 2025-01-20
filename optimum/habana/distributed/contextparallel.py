@@ -1,6 +1,10 @@
 import torch
 
+<<<<<<< HEAD
 from .parallel_state import (
+=======
+from ..parallel_state import (
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))
     get_sequence_parallel_group,
     get_sequence_parallel_rank,
     get_sequence_parallel_world_size,

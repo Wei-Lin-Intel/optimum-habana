@@ -23,6 +23,10 @@ jobs:
             docker run \
             --rm \
             -v $PWD:/root/workspace \
+<<<<<<< HEAD
+=======
+            -v /scratch-1:/data \
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))
             --workdir=/root/workspace \
             --runtime=habana \
             -e HABANA_VISIBLE_DEVICES=all \

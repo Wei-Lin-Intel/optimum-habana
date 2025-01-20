@@ -29,7 +29,11 @@ from pathlib import Path
 
 import torch
 from transformers import BatchEncoding
+<<<<<<< HEAD
 from utils import adjust_batch, count_hpu_graphs, finalize_quantization, initialize_model
+=======
+from utils import adjust_batch, count_hpu_graphs, finalize_quantization, initialize_model, save_model
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))
 
 from optimum.habana.utils import get_hpu_memory_stats
 
@@ -323,7 +327,9 @@ def setup_parser(parser):
     parser.add_argument(
         "--sdp_on_bf16", action="store_true", help="Allow pyTorch to use reduced precision in the SDPA math backend"
     )
-
+    parser.add_argument(
+        "--sdp_on_bf16", action="store_true", help="Allow pyTorch to use reduced precision in the SDPA math backend"
+    )
     quant_parser_group = parser.add_mutually_exclusive_group()
     quant_parser_group.add_argument(
         "--load_quantized_model_with_autogptq",
@@ -394,6 +400,15 @@ def main():
 
     if args.sdp_on_bf16:
         torch._C._set_math_sdp_allow_fp16_bf16_reduction(True)
+<<<<<<< HEAD
+=======
+
+    if args.dataset_name == "openorca":
+        # Benchmark over the prompts below
+        def get_ds(args):
+            ds = pd.read_pickle(args.dataset)
+            return ds
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))
 
     if args.dataset_name is None:
         # Benchmark over the prompts below

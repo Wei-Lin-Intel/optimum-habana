@@ -36,6 +36,10 @@ INSTALL_REQUIRES = [
     "diffusers >= 0.31.0, < 0.32.0",
     "huggingface_hub >= 0.24.7",
     "sentence-transformers == 3.2.1",
+<<<<<<< HEAD
+=======
+    "pytest < 8.0.0",
+>>>>>>> 5a36339c (Rebase to OH 1.15 (#104))
 ]
 
 TESTS_REQUIRE = [

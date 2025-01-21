@@ -1,1 +1,10 @@
+<<<<<<< HEAD
 https://github.com/EleutherAI/lm-evaluation-harness/archive/refs/tags/v0.4.7.zip
+=======
+lm_eval == 0.4.2
+datasets==2.21.0
+evaluate == 0.4.2
+rouge_score == 0.1.2
+accelerate < 0.34.0
+pandas <= 2.2.2
+>>>>>>> 84d3ed8c (SW-190418 update lm_eval to 0.4.2 (#112))

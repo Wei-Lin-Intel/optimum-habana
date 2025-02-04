@@ -4,4 +4,8 @@ scipy
 scikit-learn == 1.5.2
 protobuf
 torch >= 1.3
+<<<<<<< HEAD
 evaluate
+=======
+evaluate == 0.4.3
+>>>>>>> 03a88d13 ([SW-217692] Bump evaluate (#139))

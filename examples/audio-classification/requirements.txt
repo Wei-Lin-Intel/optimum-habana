@@ -1,4 +1,10 @@
+<<<<<<< HEAD
 datasets>=1.14.0
 evaluate
 numba==0.60.0
 librosa
+=======
+datasets >= 1.14.0, <= 2.19.2
+evaluate == 0.4.3
+librosa == 0.10.2.post1
+>>>>>>> 03a88d13 ([SW-217692] Bump evaluate (#139))

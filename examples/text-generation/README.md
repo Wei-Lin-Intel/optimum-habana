@@ -192,11 +192,7 @@ PT_HPU_LAZY_MODE=1 python ../gaudi_spawn.py --use_deepspeed --world_size 8 run_g
 
 To run Llama3-405B inference on 16 Gaudi2 cards, use the following command:
 ```bash
-HOSTSFILE=./hostsfile
-CMD="HF_DATASETS_TRUST_REMOTE_CODE=true \
-PT_HPU_ENABLE_LAZY_COLLECTIVES=true \
-QUANT_CONFIG=./quantization_config/maxabs_measure.json \
-LOG_LEVEL_INC=0 \
+CMD="QUANT_CONFIG=./quantization_config/maxabs_measure.json \
 python -u run_lm_eval.py \
 --model_name_or_path meta-llama/Llama-3.1-405B-Instruct \
 --batch_size 2 \
@@ -210,15 +206,12 @@ python -u run_lm_eval.py \
 --warmup 0 \
 -o eval_results.txt"
 
-NUM_NODES=2
-DEVICES_PER_NODE=8
-
-deepspeed --num_nodes ${NUM_NODES} \
-          --num_gpus ${DEVICES_PER_NODE} \
+deepspeed --num_nodes 2 \
+          --num_gpus 8 \
           --no_local_rank \
           --no_python \
-          --hostfile=$HOSTSFILE \
-          --master_addr $(head -n 1 $HOSTSFILE | sed -n s/[[:space:]]slots.*//p) \
+          --hostfile=./hostsfile \
+          --master_addr $(head -n 1 ./hostsfile | sed -n s/[[:space:]]slots.*//p) \
           /usr/bin/bash -c "$CMD"
 ```
 

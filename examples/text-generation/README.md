@@ -198,7 +198,7 @@ PT_HPU_ENABLE_LAZY_COLLECTIVES=true \
 QUANT_CONFIG=./quantization_config/maxabs_measure.json \
 LOG_LEVEL_INC=0 \
 python -u run_lm_eval.py \
---model_name_or_path ./Meta-Llama-3.1-405B-Instruct \
+--model_name_or_path meta-llama/Llama-3.1-405B-Instruct \
 --batch_size 2 \
 --num_beams 1 \
 --attn_softmax_bf16 \

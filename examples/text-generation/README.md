@@ -190,16 +190,15 @@ PT_HPU_LAZY_MODE=1 python ../gaudi_spawn.py --use_deepspeed --world_size 8 run_g
 --flash_attention_causal_mask
 ```
 
-To run Llama3-405B inference on 16 Gaudi2 cards use the following command:
+To run Llama3-405B inference on 16 Gaudi2 cards, use the following command:
 ```bash
-HOSTSFILE=$HABANA_SOFTWARE_STACK/optimum-habana-fork/examples/text-generation/hostsfile
-
+HOSTSFILE=./hostsfile
 CMD="HF_DATASETS_TRUST_REMOTE_CODE=true \
 PT_HPU_ENABLE_LAZY_COLLECTIVES=true \
-QUANT_CONFIG=${HABANA_SOFTWARE_STACK}/optimum-habana-fork/examples/text-generation/quantization_config/maxabs_measure.json \
+QUANT_CONFIG=./quantization_config/maxabs_measure.json \
 LOG_LEVEL_INC=0 \
-python -u ${HABANA_SOFTWARE_STACK}/optimum-habana-fork/examples/text-generation/run_lm_eval.py \
---model_name_or_path ${MODEL} \
+python -u run_lm_eval.py \
+--model_name_or_path ./Meta-Llama-3.1-405B-Instruct \
 --batch_size 2 \
 --num_beams 1 \
 --attn_softmax_bf16 \
@@ -213,8 +212,6 @@ python -u ${HABANA_SOFTWARE_STACK}/optimum-habana-fork/examples/text-generation/
 
 NUM_NODES=2
 DEVICES_PER_NODE=8
-OUTPUT_DIR="./MULTINODE_LLAMA3_405B"
-RUNTIME="2"
 
 deepspeed --num_nodes ${NUM_NODES} \
           --num_gpus ${DEVICES_PER_NODE} \
@@ -222,7 +219,7 @@ deepspeed --num_nodes ${NUM_NODES} \
           --no_python \
           --hostfile=$HOSTSFILE \
           --master_addr $(head -n 1 $HOSTSFILE | sed -n s/[[:space:]]slots.*//p) \
-          /usr/bin/bash -c "$CMD" 2>&1 | tee ${OUTPUT_DIR}/log_${RUNTIME}.txt
+          /usr/bin/bash -c "$CMD"
 ```
 
 To run Llama3-405B inference on 8 Gaudi3 cards use the following command:

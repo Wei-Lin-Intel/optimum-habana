@@ -12,5 +12,14 @@
         "overlap_comm": false,
         "contiguous_gradients": false,
         "stage3_gather_16bit_weights_on_model_save": true
+<<<<<<< HEAD
+=======
+    },
+    "timers": {
+        "throughput": {
+           "enabled": true,
+           "synchronized": false
+        }
+>>>>>>> 49f4ae5a (Adding missing comma (#159))
     }
 }

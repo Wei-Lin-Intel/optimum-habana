@@ -121,6 +121,7 @@ def _prepare_cross_attention_mask(
         - if there's pading in cross_attention_mask in the right. do not masked it, or else it will impact softmax in crossattention
     """
     # reshape so it can be used by attn module
+<<<<<<< HEAD
     # Updated cross_attention_mask alignment logic to ensure memory alignment with dtype size (256-byte boundary)
     cross_attention_mask = cross_attention_mask.to(dtype)
     dtype_size = (
@@ -132,6 +133,11 @@ def _prepare_cross_attention_mask(
     cross_attention_mask = cross_attention_mask.repeat_interleave(aligned_num_vision_tokens, dim=3)
     cross_attention_mask = cross_attention_mask.view(batch_size, text_total_length, -1)
     cross_attention_mask = cross_attention_mask[:, :, : num_vision_tokens * original_dim]
+=======
+    batch_size, text_total_length, *_ = cross_attention_mask.shape
+    cross_attention_mask = cross_attention_mask.repeat_interleave(num_vision_tokens, dim=3)
+    cross_attention_mask = cross_attention_mask.view(batch_size, text_total_length, -1)
+>>>>>>> 6521bf36 (Revert "[SW-218544] Perform the transpose in BF16 to optimize execution time.…" (#166))
     cross_attention_mask = cross_attention_mask.unsqueeze(1)
 
     # invert the mask

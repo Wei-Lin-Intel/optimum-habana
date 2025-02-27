@@ -91,10 +91,10 @@ def speed_metrics(
     """
 
     runtime = time.time() - start_time
-    result = {f"{split}_runtime": round(runtime, 4)}
     if runtime == 0:
-        return result
+        return {f"{split}_runtime": runtime}
 
+    result = {}
     # Adjust runtime if log_evaluate_save_time should not be included
     if log_evaluate_save_time is not None:
         runtime = runtime - log_evaluate_save_time
@@ -102,6 +102,10 @@ def speed_metrics(
     # Adjust runtime if there were warmup steps
     if start_time_after_warmup is not None:
         runtime = runtime + start_time - start_time_after_warmup
+        warmup_time = start_time_after_warmup - start_time
+        result[f"{split}_warmup_time"] = round(warmup_time, 4)
+
+    result[f"{split}_runtime"] = round(runtime, 4)
 
     # Compute throughputs
     if num_samples is not None:

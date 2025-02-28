@@ -75,6 +75,7 @@ from .deepseek_v3 import (
     DeepseekV3Config,
     DeepseekV3ForCausalLM,
 )
+<<<<<<< HEAD
 from .detr import (
     gaudi_DetrConvModel_forward,
     gaudi_DetrHungarianMatcher_forward,
@@ -84,6 +85,9 @@ from .detr import (
     gaudi_DetrLoss_loss_cardinality,
     gaudi_DetrLoss_loss_labels,
 )
+=======
+from .detr import gaudi_DetrConvModel_forward
+>>>>>>> dfc85ba8 (Deepseek v3 support (#173))
 from .esm import (
     gaudi_esm_for_protein_folding_forward,
     gaudi_esmfolding_trunk_forward,

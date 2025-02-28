@@ -34,6 +34,7 @@ from .generation import (
     gaudi_MaxTimeCriteria_call,
     gaudi_StoppingCriteriaList_call,
 )
+<<<<<<< HEAD
 from .integrations.awq import (
     GaudiAWQLinearVersion,
     gaudi_awq_config_post_init,
@@ -41,6 +42,8 @@ from .integrations.awq import (
     gaudi_awq_quantizer_process_model_before_weight_loading,
     gaudi_awq_quantizer_validate_environment,
 )
+=======
+>>>>>>> dfc85ba8 (Deepseek v3 support (#173))
 from .modeling_utils_transformers import load_state_dict
 from .models import (
     GAUDI_WHISPER_ATTENTION_CLASSES,
@@ -317,7 +320,12 @@ def adapt_transformers_to_gaudi():
     # optimize Conv1D
     transformers.pytorch_utils.Conv1D.forward = gaudi_conv1d_forward
 
+<<<<<<< HEAD
     # override of load_state_dict for deepseekv3. Delete on upgrade to transformers v4.48
+=======
+    # override of load_state_dict for deepseekv3.
+    # TODO: Remove this override when upgrading to transformers v4.48
+>>>>>>> dfc85ba8 (Deepseek v3 support (#173))
     transformers.modeling_utils.load_state_dict = load_state_dict
 
     # Optimization tweak for ViT

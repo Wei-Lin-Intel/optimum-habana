@@ -21,6 +21,7 @@ Conditional text generation on Habana Gaudi/Gaudi2.
 import argparse
 import json
 import logging
+import numpy as np
 import math
 import os
 import time
@@ -149,6 +150,11 @@ def setup_parser(parser):
         type=str,
         nargs="*",
         help='Optional argument to give a prompt of your choice as input. Can be a single string (eg: --prompt "Hello world"), or a list of space-separated strings (eg: --prompt "Hello world" "How are you?")',
+    )
+    parser.add_argument(
+        "--out_name",
+        default=None,
+        type=str,
     )
     parser.add_argument(
         "--bad_words",
@@ -398,16 +404,42 @@ def setup_parser(parser):
     return args
 
 
+def prepare_zero_embeddings(model, input_tokens):
+    # Get the original shape from input_tokens
+    batch_size = input_tokens["input_ids"].shape[0]
+    seq_length = input_tokens["input_ids"].shape[1]
+    
+    # Get the embedding dimension from the model
+    hidden_size = model.config.hidden_size
+    
+    # Create zero tensor for inputs_embeds with the same shape
+    device = next(model.parameters()).device
+    dtype = next(model.parameters()).dtype
+    
+    zero_embeds = torch.zeros((batch_size, seq_length, hidden_size), 
+                              device=device, 
+                              dtype=dtype)
+    
+    return {"inputs_embeds": zero_embeds}
+
 def prepare_generation_embedding(model, model_name, input_tokens):
     batch_size = input_tokens["input_ids"].size(0)
 
-    inputs_embeds = model.get_input_embeddings()(input_tokens["input_ids"])
+    # inputs_embeds = model.get_input_embeddings()(input_tokens["input_ids"])
+    seq_length = input_tokens["input_ids"].shape[1]
 
-    if inputs_embeds.size(0) != batch_size:
-        inputs_embeds = inputs_embeds.expand(batch_size, -1, -1)
+    device = next(model.parameters()).device
+    dtype = next(model.parameters()).dtype
+    hidden_size = model.config.hidden_size
+    zero_embeds = torch.zeros((batch_size, seq_length, hidden_size), 
+                              device=device, 
+                              dtype=dtype)
+
+    if zero_embeds.size(0) != batch_size:
+        zero_embeds = zero_embeds.expand(batch_size, -1, -1)
 
     attention_mask = input_tokens["attention_mask"]
-    return {"inputs_embeds": inputs_embeds, "attention_mask": attention_mask}
+    return {"inputs_embeds": zero_embeds, "attention_mask": attention_mask}
 
 
 def main():
@@ -469,14 +501,14 @@ def main():
             input_sentences = assemble_prompt(prompt_size=args.max_input_tokens, book_path=download_book(book_ids[0]))
         else:
             input_sentences = [
-                "DeepSpeed is a machine learning framework",
-                "He is working on",
-                "He has a",
-                "He got all",
-                "Everyone is happy and I can",
-                "The new movie that got Oscar this year",
-                "In the far far distance from our galaxy,",
-                "Peace is the only way",
+                "DeepSpeed is a machine learning framework DeepSpeed is a machine learning framework DeepSpeed is a machine learning framework DeepSpeed is a machine learning framework DeepSpeed is a machine learning framework DeepSpeed is a machine learning framework DeepSpeed is a machine learning framework DeepSpeed is a machine learning framework",
+                # "He is working on",
+                # "He has a",
+                # "He got all",
+                # "Everyone is happy and I can",
+                # "The new movie that got Oscar this year",
+                # "In the far far distance from our galaxy,",
+                # "Peace is the only way",
             ]
 
         if args.batch_size > len(input_sentences):
@@ -529,8 +561,10 @@ def main():
                     if torch.is_tensor(input_tokens[t]):
                         input_tokens[t] = input_tokens[t].to(args.device)
 
+            # breakpoint()
             input_data = {}
             if args.input_embeds:
+                print("using zeroes")
                 inputs_embeds = prepare_generation_embedding(model, args.model_name_or_path, input_tokens)
                 if inputs_embeds is not None:
                     input_data.update(inputs_embeds)
@@ -540,6 +574,23 @@ def main():
                     input_data.update(input_tokens)
             else:
                 input_data.update(input_tokens)
+
+            # # Your main code
+            # print(input_tokens)
+            # input_data = {}
+            # print("\n\n Using zeroes \n\n")
+            #
+            # # Replace the original token IDs with zero embeddings
+            # zero_embeds = prepare_zero_embeddings(model, input_tokens)
+            # input_data.update(zero_embeds)
+            #
+            # # Keep the attention mask from the original input
+            # if "attention_mask" in input_tokens:
+            #     input_data["attention_mask"] = input_tokens["attention_mask"]
+            # print(input_data)
+            # input_data = {'inputs_embeds': torch.zeros((10, 1024, 4096)), 'attention_mask': input_tokens.attention_mask}
+
+
 
             iteration_times = []
             outputs = model.generate(
@@ -554,9 +605,9 @@ def main():
                 iteration_times=iteration_times,
                 profiling_record_shapes=args.profiling_record_shapes,
             ).cpu()
-            first_token_time = iteration_times[0] + encode_duration
+            first_token_time = iteration_times[0] # + encode_duration
             logger.info(f"Time to first token = {first_token_time * 1000}ms")
-            return tokenizer.batch_decode(outputs, skip_special_tokens=True)
+            return tokenizer.batch_decode(outputs, skip_special_tokens=True), first_token_time*1000
 
         from optimum.habana.utils import HabanaProfile
 
@@ -595,23 +646,56 @@ def main():
         HabanaProfile.enable()
         total_new_tokens_generated = 0
         logger.info("Running generate...")
-        t0 = time.perf_counter()
+
+        # if os.getenv("BLOCKS_STATS_SAVE_PATH", None) and os.path.exists(os.getenv("BLOCKS_STATS_SAVE_PATH", None)):
+        #     os.remove(os.getenv("BLOCKS_STATS_SAVE_PATH", None))
+
+
+        ttfts = []
+        throughputs = []
         # Benchmark over n_iterations iterations
         if dyn_prompt_lens is None:
             for i in range(args.n_iterations):
-                generated = generate(None, args.reduce_recompile)
+                torch_hpu.synchronize()
+                t0 = time.perf_counter()
+                generated, time_to_ft = generate(None, args.reduce_recompile)
+                ttfts.append(time_to_ft)
+                duration = time.perf_counter() - t0
+                torch_hpu.synchronize()
+                total_new_tokens_generated = args.batch_size * args.max_new_tokens
+                throughput = total_new_tokens_generated / duration
+                throughputs.append(throughput)
+            pass
         else:
             repeated_prompt_len = cycle(dyn_prompt_lens)
             for i in range(args.n_iterations):
                 prompt_len = next(repeated_prompt_len)
                 print("Generating for shape,", prompt_len)
-                generated = generate(prompt_len, args.reduce_recompile)
-        duration = time.perf_counter() - t0
-        total_new_tokens_generated = args.n_iterations * args.batch_size * args.max_new_tokens
-        throughput = total_new_tokens_generated / duration
+                torch_hpu.synchronize()
+                t0 = time.perf_counter()
+                generated, time_to_ft = generate(prompt_len, args.reduce_recompile)
+                ttfts.append(time_to_ft)
+                duration = time.perf_counter() - t0
+                torch_hpu.synchronize()
+                total_new_tokens_generated = args.batch_size * args.max_new_tokens
+                throughput = total_new_tokens_generated / duration
+                throughputs.append(throughput)
+        
 
+        ttfts_np = np.array(ttfts)
+        throughputs_np = np.array(throughputs)
+
+        average_throughtput = throughputs_np.mean()
+        var_throughput = throughputs_np.var()
+
+        average_ttft = ttfts_np.mean()
+        ttfts_var = ttfts_np.var()
+
+
+        print("throughputs", throughputs)
         print()
         print("Input/outputs:")
+        
         all_inputs = []
         all_outputs = []
         for i, input_sentence in enumerate(zip(input_sentences)):
@@ -630,11 +714,17 @@ def main():
             output_dir.mkdir(parents=True, exist_ok=True)
 
             results = {
-                "throughput": throughput,
-                "input": all_inputs,
-                "output": all_outputs,
+                "throughputs_raw": throughputs,
+                "throughput_mean": average_throughtput,
+                "throughput_var": var_throughput,
+                "ttft": average_ttft,
+                "ttft_var": ttfts_var,
+                "ttfts_raw": ttfts
+
+                # "input": all_inputs,
+                # "output": all_outputs,
             }
-            with (output_dir / "results.json").open("w", encoding="utf-8") as f:
+            with (output_dir / f"{args.out_name}.json").open("w", encoding="utf-8") as f:
                 json.dump(results, f, ensure_ascii=False, indent=4)
 
         stats = "Input embeds" if args.input_embeds else "Input tokens"

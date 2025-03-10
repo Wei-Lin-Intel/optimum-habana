@@ -200,6 +200,19 @@ def main():
         type=int,
         help="Seed to use for random generation. Useful to reproduce your runs with `--do_sample`.",
     )
+<<<<<<< HEAD
+=======
+    parser.add_argument(
+        "--sdp_on_bf16",
+        action="store_true",
+        help="Allow PyTorch to use reduced precision in the SDPA math backend",
+    )
+    parser.add_argument(
+        "--logits_bf16",
+        action="store_true",
+        help="Compute logits in bf16",
+    )
+>>>>>>> 4316a56e (Optimize memory utilization by keeping logits in BF16. (#193))
 
     args = parser.parse_args()
 
@@ -336,7 +349,11 @@ def main():
         "use_flash_attention": args.use_flash_attention,
         "flash_attention_recompute": args.flash_attention_recompute,
         "limit_hpu_graphs": args.limit_hpu_graphs,
+<<<<<<< HEAD
         "do_sample": args.do_sample,
+=======
+        "logits_bf16": args.logits_bf16,
+>>>>>>> 4316a56e (Optimize memory utilization by keeping logits in BF16. (#193))
     }
 
     if args.sdp_on_bf16:

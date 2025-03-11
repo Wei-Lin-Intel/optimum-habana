@@ -699,12 +699,12 @@ def main():
         all_inputs = []
         all_outputs = []
         for i, input_sentence in enumerate(zip(input_sentences)):
-            print(f"input {i + 1}: {input_sentence}")
+            # print(f"input {i + 1}: {input_sentence}")
             all_inputs.append(input_sentence)
             for j, output in enumerate(
                 zip(generated[args.num_return_sequences * i : args.num_return_sequences * (i + 1)])
             ):
-                print(f"output {i + 1}.{j + 1}: {output}")
+                # print(f"output {i + 1}.{j + 1}: {output}")
                 all_outputs.append(output)
             print()
 

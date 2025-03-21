@@ -201,7 +201,7 @@ class HabanaModelAdapter(HFLM):
             logits = logits[:, :-padding_length, :]
         logits = logits.to(torch.float32)
         return logits
-    
+
     def get_model_info(self) -> dict:
         """
         Patched method to get Hugging Face model information for experiment reproducibility.

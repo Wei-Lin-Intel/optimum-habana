@@ -13,4 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+<<<<<<< HEAD
 __version__ = "1.17.0.dev0"
+=======
+__version__ = "1.16.0"
+>>>>>>> d9e7f73e (Merge 1.16 (#203))

@@ -1465,6 +1465,12 @@ class GaudiLlamaModel(LlamaModel):
             if output_attentions:
                 all_self_attns += (layer_outputs[1],)
 
+<<<<<<< HEAD
+=======
+        if split_prompt:
+            hidden_states = torch.cat(hidden_states_split, dim=0)
+
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
         hidden_states = self.norm(hidden_states)
 
         # add hidden states from the last decoder layer

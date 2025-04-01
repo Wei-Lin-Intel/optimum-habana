@@ -32,7 +32,11 @@ if OH_DEVICE_CONTEXT not in ["gaudi1"]:
             # ("llava-hf/llava-1.5-13b-hf", 1),
             ("llava-hf/llava-v1.6-mistral-7b-hf", 1),
             ("llava-hf/llava-v1.6-vicuna-7b-hf", 1),
+<<<<<<< HEAD
             pytest.param("llava-hf/llava-v1.6-vicuna-13b-hf", 1, marks=pytest.mark.x8),
+=======
+            ("llava-hf/llava-v1.6-vicuna-13b-hf", 1),
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
         ],
     }
 else:
@@ -120,10 +124,16 @@ def _test_image_to_text(
         with open(Path(tmp_dir) / "results.json") as fp:
             results = json.load(fp)
 
+        device = "gaudi2" if os.environ.get("GAUDI2_CI", "0") == "1" else "gaudi1"
+
         # Ensure performance requirements (throughput) are met
         baseline.assertRef(
             compare=lambda actual, ref: actual >= (2 - TIME_PERF_FACTOR) * ref,
+<<<<<<< HEAD
             context=[OH_DEVICE_CONTEXT],
+=======
+            context=[device],
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
             throughput=results["throughput"],
         )
 

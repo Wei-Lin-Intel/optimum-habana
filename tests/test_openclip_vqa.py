@@ -63,10 +63,16 @@ def _test_openclip_vqa(model_name: str, baseline):
         with open(Path(tmp_dir) / "results.json") as fp:
             results = json.load(fp)
 
+        device = "gaudi2" if os.environ.get("GAUDI2_CI", "0") == "1" else "gaudi1"
+
         # Ensure performance requirements (throughput) are met
         baseline.assertRef(
             compare=lambda actual, ref: actual >= (2 - TIME_PERF_FACTOR) * ref,
+<<<<<<< HEAD
             context=[OH_DEVICE_CONTEXT],
+=======
+            context=[device],
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
             throughput=results["throughput"],
         )
 

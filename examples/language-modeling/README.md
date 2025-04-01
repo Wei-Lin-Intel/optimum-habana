@@ -175,7 +175,11 @@ converge slightly slower (over-fitting takes more epochs).
 ### Multi-card Training
 
 ```bash
+<<<<<<< HEAD
 python ../gaudi_spawn.py \
+=======
+PT_HPU_LAZY_MODE=1 python ../gaudi_spawn.py \
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     --world_size 8 --use_mpi run_mlm.py \
     --model_name_or_path roberta-base \
     --dataset_name wikitext \

@@ -128,7 +128,46 @@ from .clip_coco_utils import calculate_clip_score, download_files
 from .utils import OH_DEVICE_CONTEXT
 
 
+<<<<<<< HEAD
 IS_GAUDI1 = bool("gaudi1" == OH_DEVICE_CONTEXT)
+=======
+IS_GAUDI2 = os.environ.get("GAUDI2_CI", "0") == "1"
+
+
+if IS_GAUDI2:
+    THROUGHPUT_BASELINE_BF16 = 1.086
+    THROUGHPUT_BASELINE_AUTOCAST = 0.394
+    TEXTUAL_INVERSION_THROUGHPUT = 131.7606336456344
+    TEXTUAL_INVERSION_RUNTIME = 1.542460777796805
+    TEXTUAL_INVERSION_SDXL_THROUGHPUT = 2.6694
+    TEXTUAL_INVERSION_SDXL_RUNTIME = 74.92
+    CONTROLNET_THROUGHPUT = 120.123522340414
+    CONTROLNET_RUNTIME = 1.8647471838630736
+    INPAINT_THROUGHPUT_BASELINE_BF16 = 1.025
+    INPAINT_XL_THROUGHPUT_BASELINE_BF16 = 0.175
+    THROUGHPUT_UNCONDITIONAL_IMAGE_BASELINE_BF16 = 0.145
+    SDXL_THROUGHPUT = 0.301
+    SVD_THROUGHPUT = 0.012
+    SD3_THROUGHPUT = 0.006
+    FLUX_THROUGHPUT = 0.03
+    FLUX_DEV_I2I_THROUGHPUT = 0.12
+    I2V_THROUGHPUT = 0.017
+else:
+    THROUGHPUT_BASELINE_BF16 = 0.275
+    THROUGHPUT_BASELINE_AUTOCAST = 0.114
+    TEXTUAL_INVERSION_THROUGHPUT = 122.7445217395719
+    TEXTUAL_INVERSION_RUNTIME = 1.8249286960053723
+    TEXTUAL_INVERSION_SDXL_THROUGHPUT = 2.695
+    TEXTUAL_INVERSION_SDXL_RUNTIME = 74.19
+    CONTROLNET_THROUGHPUT = 78.51566937458146
+    CONTROLNET_RUNTIME = 2.852933710993966
+    INPAINT_THROUGHPUT_BASELINE_BF16 = 0.272
+    INPAINT_XL_THROUGHPUT_BASELINE_BF16 = 0.042
+    THROUGHPUT_UNCONDITIONAL_IMAGE_BASELINE_BF16 = 0.045
+    SDXL_THROUGHPUT = 0.074
+    SVD_THROUGHPUT = 0.012
+    I2V_THROUGHPUT = 0.008
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 
 
 _run_custom_bf16_ops_test_ = parse_flag_from_env("CUSTOM_BF16_OPS", default=False)
@@ -630,11 +669,31 @@ class GaudiStableDiffusionPipelineTester(TestCase):
         self.assertEqual(len(outputs.images), num_images_per_prompt * len(prompts))
 
         # Throughput regression test
+<<<<<<< HEAD
         self.baseline.assertRef(
             compare=lambda actual, ref: actual >= (0.95 * ref),
             context=[OH_DEVICE_CONTEXT],
             throughput=outputs.throughput,
         )
+
+        n = 0
+        clip_score_avg = 0.0
+        for i in range(len(outputs.images)):
+            # Check expected shape for each output image
+            self.assertEqual(outputs.images[i].shape, (512, 512, 3))
+
+            if np.any(outputs.images[i] != 0):
+                clip_score = calculate_clip_score(np.expand_dims(outputs.images[i], axis=0), prompts)
+                clip_score_avg += clip_score
+                n += 1
+
+        # Quality test (check that the average CLIP score of valid output images is well in the 30s range)
+        clip_score_avg /= n
+        CLIP_SCORE_THRESHOLD = 30.0
+        self.assertGreaterEqual(clip_score_avg, CLIP_SCORE_THRESHOLD)
+=======
+        self.assertGreaterEqual(outputs.throughput, 0.95 * THROUGHPUT_BASELINE_BF16)
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 
         n = 0
         clip_score_avg = 0.0
@@ -681,6 +740,7 @@ class GaudiStableDiffusionPipelineTester(TestCase):
 
         # Check expected number of output images
         self.assertEqual(len(outputs.images), num_images_per_prompt * len(prompts))
+<<<<<<< HEAD
 
         # Throughput regression test
         self.baseline.assertRef(
@@ -689,6 +749,12 @@ class GaudiStableDiffusionPipelineTester(TestCase):
             throughput=outputs.throughput,
         )
 
+=======
+
+        # Throughput regression test
+        self.assertGreaterEqual(outputs.throughput, 0.95 * THROUGHPUT_BASELINE_AUTOCAST)
+
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     @custom_bf16_ops
     @slow
     def test_no_generation_regression_ldm3d(self):
@@ -721,11 +787,15 @@ class GaudiStableDiffusionPipelineTester(TestCase):
         self.assertEqual(len(outputs.depth), num_images_per_prompt * len(prompts))
 
         # Throughput regression test
+<<<<<<< HEAD
         self.baseline.assertRef(
             compare=lambda actual, ref: actual >= (0.95 * ref),
             context=[OH_DEVICE_CONTEXT],
             throughput=outputs.throughput,
         )
+=======
+        self.assertGreaterEqual(outputs.throughput, 0.95 * THROUGHPUT_BASELINE_AUTOCAST)
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 
         n = 0
         clip_score_avg = 0.0
@@ -1381,6 +1451,10 @@ class GaudiStableDiffusionXLPipelineTester(TestCase):
 
         os.environ.pop("PATCH_SDPA")
 
+<<<<<<< HEAD
+=======
+    @pytest.mark.skip("Temporary workaround for neural_compressor import issue.")
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     def test_stable_diffusion_xl_optimized_fp8(self):
         import habana_frameworks.torch.hpu as torch_hpu
 
@@ -1480,11 +1554,15 @@ class GaudiStableDiffusionXLPipelineTester(TestCase):
         self.assertEqual(len(outputs.images), num_images_per_prompt * len(prompts))
 
         # Throughput regression test
+<<<<<<< HEAD
         self.baseline.assertRef(
             compare=lambda actual, ref: actual >= (0.95 * ref),
             context=[OH_DEVICE_CONTEXT],
             throughput=outputs.throughput,
         )
+=======
+        self.assertGreaterEqual(outputs.throughput, 0.95 * SDXL_THROUGHPUT)
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 
 
 class GaudiStableDiffusion3PipelineTester(TestCase):
@@ -1716,7 +1794,11 @@ class GaudiStableDiffusion3PipelineTester(TestCase):
 
     @slow
     @check_gated_model_access("stabilityai/stable-diffusion-3-medium-diffusers")
+<<<<<<< HEAD
     @pytest.mark.skipif(IS_GAUDI1, reason="does not fit into Gaudi1 memory")
+=======
+    @pytest.mark.skipif(not IS_GAUDI2, reason="does not fit into Gaudi1 memory")
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     def test_sd3_inference(self):
         repo_id = "stabilityai/stable-diffusion-3-medium-diffusers"
 
@@ -1738,11 +1820,15 @@ class GaudiStableDiffusion3PipelineTester(TestCase):
         )
 
         # Check expected performance of FLUX.1 dev img-to-img model
+<<<<<<< HEAD
         self.baseline.assertRef(
             compare=lambda actual, ref: actual >= (0.95 * ref),
             context=[OH_DEVICE_CONTEXT],
             throughput=outputs.throughput,
         )
+=======
+        self.assertGreaterEqual(outputs.throughput, 0.95 * SD3_THROUGHPUT)
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 
 
 class GaudiStableDiffusionControlNetPipelineTester(TestCase):
@@ -2615,6 +2701,7 @@ class TrainControlNet(TestCase):
     Tests the train_controlnet.py script for Gaudi.
     """
 
+<<<<<<< HEAD
     @pytest.fixture(autouse=True)
     def _use_(self, baseline):
         """
@@ -2622,6 +2709,8 @@ class TrainControlNet(TestCase):
         """
         self.baseline = baseline
 
+=======
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     def test_script_train_controlnet(self):
         path_to_script = (
             Path(os.path.dirname(__file__)).parent
@@ -3063,11 +3152,15 @@ class GaudiStableVideoDiffusionPipelineTester(TestCase):
         self.assertEqual(len(outputs.frames[0]), 25)
 
         # Throughput regression test
+<<<<<<< HEAD
         self.baseline.assertRef(
             compare=lambda actual, ref: actual >= (0.95 * ref),
             context=[OH_DEVICE_CONTEXT],
             throughput=outputs.throughput,
         )
+=======
+        self.assertGreaterEqual(outputs.throughput, 0.95 * SVD_THROUGHPUT)
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 
 
 class GaudiStableVideoDiffusionControlNetPipelineTester(TestCase):
@@ -5124,11 +5217,15 @@ class StableDiffusionInpaintPipelineTests(
         self.assertEqual(len(outputs.images), num_images_per_prompt * len(prompts))
 
         # Throughput regression test
+<<<<<<< HEAD
         self.baseline.assertRef(
             compare=lambda actual, ref: actual >= (0.95 * ref),
             context=[OH_DEVICE_CONTEXT],
             throughput=outputs.throughput,
         )
+=======
+        self.assertGreaterEqual(outputs.throughput, 0.95 * INPAINT_THROUGHPUT_BASELINE_BF16)
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 
 
 class StableDiffusionXLInpaintPipelineTests(PipelineLatentTesterMixin, PipelineTesterMixin, TestCase):
@@ -5751,11 +5848,15 @@ class StableDiffusionXLInpaintPipelineTests(PipelineLatentTesterMixin, PipelineT
         self.assertEqual(len(outputs.images), num_images_per_prompt * len(prompts))
 
         # Throughput regression test
+<<<<<<< HEAD
         self.baseline.assertRef(
             compare=lambda actual, ref: actual >= (0.95 * ref),
             context=[OH_DEVICE_CONTEXT],
             throughput=outputs.throughput,
         )
+=======
+        self.assertGreaterEqual(outputs.throughput, 0.95 * INPAINT_XL_THROUGHPUT_BASELINE_BF16)
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 
 
 class GaudiDDPMPipelineTester(TestCase):
@@ -6257,7 +6358,11 @@ class GaudiFluxImg2ImgPipelineTester(TestCase):
 
     @slow
     @check_gated_model_access("black-forest-labs/FLUX.1-dev")
+<<<<<<< HEAD
     @pytest.mark.skipif(IS_GAUDI1, reason="does not fit into Gaudi1 memory")
+=======
+    @pytest.mark.skipif(not IS_GAUDI2, reason="does not fit into Gaudi1 memory")
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     def test_flux_img2img_inference(self):
         repo_id = "black-forest-labs/FLUX.1-dev"
         image_path = "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/diffusers/cat.png"
@@ -6286,11 +6391,15 @@ class GaudiFluxImg2ImgPipelineTester(TestCase):
         )
 
         # Check expected performance of FLUX.1 dev img-to-img model
+<<<<<<< HEAD
         self.baseline.assertRef(
             compare=lambda actual, ref: actual >= (0.95 * ref),
             context=[OH_DEVICE_CONTEXT],
             throughput=outputs.throughput,
         )
+=======
+        self.assertGreaterEqual(outputs.throughput, 0.95 * FLUX_DEV_I2I_THROUGHPUT)
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 
 
 class I2VGenXLPipelineTests(TestCase):
@@ -6303,6 +6412,7 @@ class I2VGenXLPipelineTests(TestCase):
     supports_dduf = False
     test_layerwise_casting = True
 
+<<<<<<< HEAD
     @pytest.fixture(autouse=True)
     def _use_(self, baseline):
         """
@@ -6310,6 +6420,8 @@ class I2VGenXLPipelineTests(TestCase):
         """
         self.baseline = baseline
 
+=======
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     def get_dummy_components(self):
         torch.manual_seed(0)
         scheduler = GaudiDDIMScheduler(
@@ -6503,9 +6615,13 @@ class I2VGenXLPipelineTests(TestCase):
             [0.44921875, 0.3642578, 0.38671875, 0.46484375, 0.41210938, 0.45874023, 0.49536133, 0.4387207, 0.48242188]
         )
         assert numpy_cosine_similarity_distance(image_slice.flatten(), expected_slice.flatten()) < 1e-3
+<<<<<<< HEAD
 
         self.baseline.assertRef(
             compare=lambda actual, ref: actual >= (0.95 * ref),
             context=[OH_DEVICE_CONTEXT],
             throughput=output.throughput,
         )
+=======
+        self.assertGreaterEqual(output.throughput, 0.95 * I2V_THROUGHPUT)
+>>>>>>> d9e7f73e (Merge 1.16 (#203))

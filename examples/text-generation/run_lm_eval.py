@@ -29,11 +29,18 @@ import lm_eval.tasks
 import psutil
 import torch
 import torch.nn.functional as F
+<<<<<<< HEAD
+=======
+import transformers
+from lm_eval import evaluator, utils
+from lm_eval.models.huggingface import HFLM, TemplateLM
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 
 # Local imports
 from run_generation import setup_parser
 from utils import finalize_quantization, initialize_model, save_model
 
+from optimum.habana.transformers.generation import GaudiGenerationConfig
 from optimum.habana.utils import get_hpu_memory_stats
 
 
@@ -85,13 +92,17 @@ def setup_lm_eval_parser():
         help="Tasks to run",
         default=["hellaswag", "lambada_openai", "piqa", "winogrande"],
     )
+<<<<<<< HEAD
     parser.add_argument("--limit_iters", type=int, help="limit examples to run that many iterations", default=None)
+=======
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     parser.add_argument(
         "--show_config",
         action="store_true",
         default=False,
         help="If True, shows the the full config of all tasks at the end of the evaluation.",
     )
+    parser.add_argument("--limit_iters", type=int, help="limit examples to run that many iterations", default=None)
     parser.add_argument("--max_graphs", type=int, help="Maximum number of HPU graphs", default=None)
     args = setup_parser(parser)
 
@@ -243,6 +254,7 @@ class HabanaModelAdapter(lm_eval.base.BaseLM):
 
 def main():
     args = setup_lm_eval_parser()
+    transformers.GenerationConfig = GaudiGenerationConfig
     model, _, tokenizer, generation_config = initialize_model(args, logger)
 
     if args.trust_remote_code:
@@ -274,9 +286,19 @@ def main():
             mem = get_hpu_memory_stats()
             for k, v in mem.items():
                 print("{:35} = {} GB".format(k[:-5].replace("_", " ").capitalize(), v))
+<<<<<<< HEAD
         json.dump(results, open(args.output_file, "w"), indent=2)
         if args.show_config:
             print(json.dumps(results, indent=2))
+=======
+
+        json_str = json.dumps(results, indent=2, default=utils.handle_non_serializable, ensure_ascii=False)
+        with open(args.output_file, "w", encoding="utf-8") as f:
+            f.write(json_str)
+        if args.show_config:
+            print(json_str)
+
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     if args.quant_config:
         finalize_quantization(model)
     if args.save_quantized_model_with_inc:

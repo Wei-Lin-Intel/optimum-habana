@@ -22,8 +22,11 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 from optimum.habana.transformers import modeling_utils
 
+<<<<<<< HEAD
 from .utils import OH_DEVICE_CONTEXT
 
+=======
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 
 modeling_utils.adapt_transformers_to_gaudi()
 
@@ -45,8 +48,12 @@ def get_model(token: str):
     return model
 
 
+<<<<<<< HEAD
 @pytest.mark.skipif("gaudi1" == OH_DEVICE_CONTEXT, reason="execution not supported on gaudi1")
 def test_nf4_quantization_inference(token: str, baseline):
+=======
+def test_nf4_quantization_inference(token: str):
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, token=token.value)
 
     model = get_model(token)
@@ -65,4 +72,8 @@ def test_nf4_quantization_inference(token: str, baseline):
     outputs = model.generate(**inputs, generation_config=generation_config, hpu_graphs=True, lazy_mode=True)
     decoded_output = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
+<<<<<<< HEAD
     baseline.assertEqual(output=decoded_output)
+=======
+    assert decoded_output == "Hello my name is Marlene and I am 36 years old. I am a very happy person, I love to"
+>>>>>>> d9e7f73e (Merge 1.16 (#203))

@@ -5,9 +5,12 @@
     },
     "gaudi2": {
       "throughput": 1472
+<<<<<<< HEAD
     },
     "gaudi3": {
       "throughput": 1472
+=======
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     }
   },
   "tests/test_openclip_vqa.py::test_openclip_vqa_bf16[microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224]": {
@@ -16,9 +19,12 @@
     },
     "gaudi2": {
       "throughput": 1816
+<<<<<<< HEAD
     },
     "gaudi3": {
       "throughput": 1816
+=======
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     }
   }
 }

@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 import pytest
 
 from .test_examples import TIME_PERF_FACTOR
+<<<<<<< HEAD
 from .utils import OH_DEVICE_CONTEXT
 
 
@@ -16,6 +17,24 @@ MODELS_TO_TEST = {
         "LanguageBind/Video-LLaVA-7B-hf",
     ],
 }
+=======
+
+
+if os.environ.get("GAUDI2_CI", "0") == "1":
+    # Gaudi2 CI baselines
+    MODELS_TO_TEST = {
+        "bf16": [
+            ("LanguageBind/Video-LLaVA-7B-hf", 27.72902536827787),
+        ],
+    }
+else:
+    # Gaudi1 CI baselines
+    MODELS_TO_TEST = {
+        "bf16": [
+            ("LanguageBind/Video-LLaVA-7B-hf", 9.22975629675865),
+        ],
+    }
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 
 
 def _install_requirements():
@@ -26,7 +45,11 @@ def _install_requirements():
     assert return_code == 0
 
 
+<<<<<<< HEAD
 def _test_video_llava(model_name: str, baseline):
+=======
+def _test_video_llava(model_name: str, baseline: float):
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     _install_requirements()
     command = ["python3"]
     path_to_example_dir = Path(__file__).resolve().parent.parent / "examples"
@@ -61,6 +84,7 @@ def _test_video_llava(model_name: str, baseline):
             results = json.load(fp)
 
         # Ensure performance requirements (throughput) are met
+<<<<<<< HEAD
         baseline.assertRef(
             compare=lambda throughput, expect: throughput >= (2 - TIME_PERF_FACTOR) * expect,
             context=[OH_DEVICE_CONTEXT],
@@ -70,4 +94,11 @@ def _test_video_llava(model_name: str, baseline):
 
 @pytest.mark.parametrize("model_name", MODELS_TO_TEST["bf16"])
 def test_video_llava_bf16(model_name: str, baseline):
+=======
+        assert results["throughput"] >= (2 - TIME_PERF_FACTOR) * baseline
+
+
+@pytest.mark.parametrize("model_name, baseline", MODELS_TO_TEST["bf16"])
+def test_video_llava_bf16(model_name: str, baseline: float):
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     _test_video_llava(model_name, baseline)

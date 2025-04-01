@@ -20,7 +20,11 @@ except ImportError:
 
 
 check_min_version("4.45.0")
+<<<<<<< HEAD
 check_optimum_habana_min_version("1.17.0.dev0")
+=======
+check_optimum_habana_min_version("1.16.0")
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 
 # Setup logging
 logging.basicConfig(

@@ -57,10 +57,19 @@ def _test_sentence_transformers(
         diff_time = end_time - start_time
         measured_throughput = len(sentences) / diff_time
 
+<<<<<<< HEAD
     # Only assert the last measured throughtput as the first iteration is used as a warmup
     baseline.assertRef(
         compare=lambda actual, ref: actual >= (2 - TIME_PERF_FACTOR) * ref,
         context=[OH_DEVICE_CONTEXT],
+=======
+    device = "gaudi2" if os.environ.get("GAUDI2_CI", "0") == "1" else "gaudi1"
+
+    # Only assert the last measured throughtput as the first iteration is used as a warmup
+    baseline.assertRef(
+        compare=lambda actual, ref: actual >= (2 - TIME_PERF_FACTOR) * ref,
+        context=[device],
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
         measured_throughput=measured_throughput,
     )
 

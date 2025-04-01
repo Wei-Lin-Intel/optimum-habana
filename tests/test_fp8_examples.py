@@ -10,6 +10,7 @@ from .test_examples import ACCURACY_PERF_FACTOR, TIME_PERF_FACTOR
 from .utils import OH_DEVICE_CONTEXT
 
 
+<<<<<<< HEAD
 MODELS_TO_TEST = {
     "fp8": [
         (
@@ -23,6 +24,26 @@ MODELS_TO_TEST = {
         ),
     ],
 }
+=======
+if os.environ.get("GAUDI2_CI", "0") == "1":
+    # Gaudi2 CI baselines
+    MODELS_TO_TEST = {
+        "fp8": [
+            (
+                "mistralai/Mistral-7B-Instruct-v0.2",
+                "tatsu-lab/alpaca",
+                "",
+                "language-modeling",
+                8,
+                8,
+                "run_lora_clm.py",
+            ),
+        ],
+    }
+else:
+    # FP8 is not supported on Gaudi1
+    MODELS_TO_TEST = {"fp8": []}
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 
 
 def _test_fp8_train(
@@ -104,15 +125,25 @@ def _test_fp8_train(
         with open(Path(tmp_dir) / "all_results.json") as fp:
             results = json.load(fp)
 
+        device = "gaudi2" if os.environ.get("GAUDI2_CI", "0") == "1" else "gaudi1"
+
         # Ensure performance requirements (throughput) are met
         baseline.assertRef(
             compare=lambda actual, ref: actual >= (2 - TIME_PERF_FACTOR) * ref,
+<<<<<<< HEAD
             context=[OH_DEVICE_CONTEXT],
+=======
+            context=[device],
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
             train_samples_per_second=results["train_samples_per_second"],
         )
         baseline.assertRef(
             compare=lambda actual, ref: actual >= ACCURACY_PERF_FACTOR * ref,
+<<<<<<< HEAD
             context=[OH_DEVICE_CONTEXT],
+=======
+            context=[device],
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
             eval_accuracy=results["eval_accuracy"],
         )
 

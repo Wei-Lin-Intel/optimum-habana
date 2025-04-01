@@ -582,6 +582,7 @@ class GaudiStableDiffusion3Pipeline(GaudiDiffusionPipeline, StableDiffusion3Pipe
                 lora_scale=lora_scale,
             )
 
+<<<<<<< HEAD
             # Pad the prompt embeddings ( text prompt feature space ) to the nearest multiple of the alignment size, the value which is compatible with softmax_hf8 kernels
             kernel_input_alignment_size = int(256 / prompt_embeds.element_size())
 
@@ -591,6 +592,8 @@ class GaudiStableDiffusion3Pipeline(GaudiDiffusionPipeline, StableDiffusion3Pipe
             prompt_embeds = torch.nn.functional.pad(prompt_embeds, (0, 0, 0, pad_size))
             negative_prompt_embeds = torch.nn.functional.pad(negative_prompt_embeds, (0, 0, 0, pad_size))
 
+=======
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
             # 4. Prepare timesteps
             timesteps, num_inference_steps = retrieve_timesteps(self.scheduler, num_inference_steps, device, timesteps)
             num_warmup_steps = max(len(timesteps) - num_inference_steps * self.scheduler.order, 0)

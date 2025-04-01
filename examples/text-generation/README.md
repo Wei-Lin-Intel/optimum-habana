@@ -132,6 +132,10 @@ Here are a few settings you may be interested in:
 - `--prompt` to benchmark the model on one or several prompts of your choice
 - `--attn_softmax_bf16` to run attention softmax layer in bfloat16 precision provided that the model (such as Llama) supports it
 - `--trim_logits` to calculate logits only for the last token in the first time step provided that the model (such as Llama) supports it
+<<<<<<< HEAD
+=======
+- `--use_mark_dynamic` Mark the required tensor(s) as dynamic with min/max tensor shape derived from input and output tokens. Only applicable in Dynamic Mode execution.
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 - `--attn_batch_split` specifies the number of smaller batches into which attention and MLP processing are split to improve parallelization. By default, no splitting is performed (value is 1). Splitting is enabled only for prompt processing. This configuration is most effective for batch sizes (BS) > 125 and tensor parallelism (TP) >= 2, with a recommended value of '3' splits.
 
 For example, you can reproduce the results presented in [this blog post](https://huggingface.co/blog/habana-gaudi-2-bloom) with the following command:
@@ -190,7 +194,11 @@ python ../gaudi_spawn.py --use_deepspeed --world_size 8 run_generation.py \
 
 To run Llama3-405B inference on 8 Gaudi3 cards use the following command:
 ```bash
+<<<<<<< HEAD
 ENABLE_LB_BUNDLE_ALL_COMPUTE_MME=0 ENABLE_EXPERIMENTAL_FLAGS=1 \
+=======
+ENABLE_LB_BUNDLE_ALL_COMPUTE_MME=0 ENABLE_EXPERIMENTAL_FLAGS=1 PT_HPU_LAZY_MODE=1 \
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 python ../gaudi_spawn.py --use_deepspeed --world_size 8 run_generation.py \
 --model_name_or_path meta-llama/Llama-3.1-405B-Instruct \
 --max_new_tokens 2048 \
@@ -645,7 +653,11 @@ After quantizing the model, we can save it to a local path.
 
 Here is an example of how to quantize and save the LLama3.1-70B model on two cards:
 ```bash
+<<<<<<< HEAD
 QUANT_CONFIG=./quantization_config/maxabs_quant.json python ../gaudi_spawn.py \
+=======
+QUANT_CONFIG=./quantization_config/maxabs_quant.json PT_HPU_LAZY_MODE=1 python ../gaudi_spawn.py \
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 --use_deepspeed --world_size 2 run_generation.py \
 --model_name_or_path meta-llama/Llama-3.1-70B \
 --attn_softmax_bf16 \
@@ -672,7 +684,11 @@ You can load pre-quantized FP8 models using the `--load_quantized_model_with_inc
 
 Below is an example of how to load `neuralmagic/Meta-Llama-3.1-70B-Instruct-FP8` on two cards.
 ```bash
+<<<<<<< HEAD
 python ../gaudi_spawn.py \
+=======
+PT_HPU_LAZY_MODE=1 python ../gaudi_spawn.py \
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 --use_deepspeed --world_size 2 run_lm_eval.py \
 -o acc_load_fp8_model.txt \
 --model_name_or_path neuralmagic/Meta-Llama-3.1-70B-Instruct-FP8 \
@@ -850,7 +866,11 @@ pip install -r requirements_lm_eval.txt
 > ENABLE_LB_BUNDLE_ALL_COMPUTE_MME=0 COMPLEXGUID_DISABLE_RMS_NORM=true ENABLE_EXPERIMENTAL_FLAGS=true for llama-2-70b-hf[PTQ fp8]
 >
 > COMPLEXGUID_DISABLE_RMS_NORM=true ENABLE_EXPERIMENTAL_FLAGS=true for Llama-3.1-70B-Instruct[PTQ fp8] and llama-2-70b-hf[bf16]
+<<<<<<< HEAD
 > 
+=======
+>
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 > If custom models on hub is being used, please set env variable HF_DATASETS_TRUST_REMOTE_CODE=true instead of arg --trust_remote_code with the installed lm_eval version and dependency datasets==2.21.0
 
 

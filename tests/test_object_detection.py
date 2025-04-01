@@ -38,11 +38,16 @@ def is_eager_mode():
     return os.environ.get("PT_HPU_LAZY_MODE", "1") == "0"
 
 
+def is_eager_mode():
+    return os.environ.get("PT_HPU_LAZY_MODE", "1") == "0"
+
+
 class GaudiDETRTester(TestCase):
     """
     Tests for Object Detection - DETR
     """
 
+<<<<<<< HEAD
     @pytest.fixture(autouse=True)
     def _use_(self, baseline):
         """
@@ -50,6 +55,8 @@ class GaudiDETRTester(TestCase):
         """
         self.baseline = baseline
 
+=======
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     def get_expected_loc(self, mode="default"):
         expected_location_def = np.array([344.0622, 24.8543, 640.3398, 373.7401])
         expected_location_ac = np.array([342, 25.25, 636, 376])
@@ -142,11 +149,16 @@ class GaudiDETRTester(TestCase):
                 model_end_time = time.time()
                 total_model_time = total_model_time + (model_end_time - model_start_time)
 
+<<<<<<< HEAD
         self.baseline.assertRef(
             compare=lambda latency, expect: latency <= (TIME_PERF_FACTOR * expect),
             context=[OH_DEVICE_CONTEXT],
             latency=total_model_time * 1000 / iterations,  # in terms of ms
         )
+=======
+        latency = total_model_time * 1000 / iterations  # in terms of ms
+        self.assertLessEqual(latency, TIME_PERF_FACTOR * LATENCY_DETR_BF16_GRAPH_BASELINE)
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 
 
 class GaudiDetrResnet50_Tester(GaudiDETRTester):

@@ -348,6 +348,27 @@ def setup_parser(parser):
         default="inc_quantized_model",
         help="A path to save quantized checkpoint.",
     )
+<<<<<<< HEAD
+=======
+    parser.add_argument(
+        "--pt2e_save",
+        action="store_true",
+        help="run pt2e calibration and save. If this argument is not used, but pt2e_path argument is used, load and inference with pt2e quantization will run.",
+    )
+    parser.add_argument(
+        "--pt2e_path",
+        default=None,
+        type=str,
+        help="specify the path where pt2e quantization related information will be saved, or loaded from",
+    )
+    parser.add_argument(
+        "--pt2e_quant_dtype",
+        type=str,
+        choices=["int8", "fp8_143", "fp8_152"],
+        default="fp8_143",
+        help="Set pt2e quantization data type. Available options: int8, fp8_143 [default], fp8_152",
+    )
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 
     quant_parser_group = parser.add_mutually_exclusive_group()
     quant_parser_group.add_argument(

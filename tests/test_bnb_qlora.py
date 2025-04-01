@@ -22,11 +22,21 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 from optimum.habana import GaudiConfig, GaudiTrainer, GaudiTrainingArguments
 from optimum.habana.transformers import modeling_utils
+<<<<<<< HEAD
 
 from .utils import OH_DEVICE_CONTEXT
 
 
 modeling_utils.adapt_transformers_to_gaudi()
+=======
+
+
+modeling_utils.adapt_transformers_to_gaudi()
+
+assert os.environ.get("GAUDI2_CI", "0") == "1", "Execution does not support on Gaudi1"
+try:
+    import sys
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 
 
 MODEL_ID = "meta-llama/Llama-3.2-1B"
@@ -79,6 +89,7 @@ def get_model(token: str):
     return model
 
 
+<<<<<<< HEAD
 @pytest.mark.skipif("gaudi1" == OH_DEVICE_CONTEXT, reason="execution not supported on gaudi1")
 def test_nf4_quantization_inference(token: str, baseline):
     try:
@@ -89,6 +100,9 @@ def test_nf4_quantization_inference(token: str, baseline):
     except subprocess.CalledProcessError:
         pytest.fail("Failed to install peft==0.12.0")
 
+=======
+def test_nf4_quantization_inference(token: str):
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, token=token.value)
     # needed for llama tokenizer
     tokenizer.pad_token = tokenizer.eos_token

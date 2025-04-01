@@ -143,6 +143,10 @@ def gaudi_mixtral_repeat_kv(
 
 class GaudiMixtralSparseMoeBlock(MixtralSparseMoeBlock):
     def forward(self, hidden_states: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+<<<<<<< HEAD
+=======
+        _, _, hidden_dim = hidden_states.shape
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
         original_shape = hidden_states.shape
         hidden_dim = original_shape[2]
         hidden_states = hidden_states.view(-1, hidden_dim)

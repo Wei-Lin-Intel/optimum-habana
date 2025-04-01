@@ -40,10 +40,18 @@ pip install -r openclip_requirements.txt
 By default, the script runs the sample outlined in [BiomedCLIP-PubMedBERT_256-vit_base_patch16_224 notebook](https://huggingface.co/microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224/blob/main/biomed_clip_example.ipynb). One can also can also run other OpenCLIP models by specifying model, classifier labels and image URL(s) like so:
 
 ```bash
+<<<<<<< HEAD
 python run_openclip_vqa.py \
+=======
+PT_HPU_LAZY_MODE=1 python run_openclip_vqa.py \
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     --model_name_or_path laion/CLIP-ViT-g-14-laion2B-s12B-b42K \
     --labels "a dog" "a cat" \
     --image_path "http://images.cocodataset.org/val2017/000000039769.jpg" \
     --use_hpu_graphs \
     --bf16
+<<<<<<< HEAD
 ```
+=======
+```
+>>>>>>> d9e7f73e (Merge 1.16 (#203))

@@ -2,33 +2,45 @@
   "tests/test_image_to_text_example.py::test_image_to_text_bf16[HuggingFaceM4/idefics2-8b-1]": {
     "gaudi2": {
       "throughput": 21.89944593215077
+<<<<<<< HEAD
     },
     "gaudi3": {
       "throughput": 21.89944593215077
+=======
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     }
   },
   "tests/test_image_to_text_example.py::test_image_to_text_bf16[Qwen/Qwen2-VL-2B-Instruct-1]": {
     "gaudi2": {
       "throughput": 28.755882208438422
+<<<<<<< HEAD
     },
     "gaudi3": {
       "throughput": 28.755882208438422
+=======
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     }
   },
   "tests/test_image_to_text_example.py::test_image_to_text_bf16[Qwen/Qwen2-VL-7B-Instruct-1]": {
     "gaudi2": {
       "throughput": 19.32562189532818
+<<<<<<< HEAD
     },
     "gaudi3": {
       "throughput": 19.32562189532818
+=======
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     }
   },
   "tests/test_image_to_text_example.py::test_image_to_text_bf16[google/paligemma-3b-mix-224-1]": {
     "gaudi2": {
       "throughput": 132.8949150246155
+<<<<<<< HEAD
     },
     "gaudi3": {
       "throughput": 132.8949150246155
+=======
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     }
   },
   "tests/test_image_to_text_example.py::test_image_to_text_bf16[llava-hf/llava-1.5-13b-hf-1]": {
@@ -37,9 +49,12 @@
     },
     "gaudi2": {
       "throughput": 48.54364937033955
+<<<<<<< HEAD
     },
     "gaudi3": {
       "throughput": 48.54364937033955
+=======
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     }
   },
   "tests/test_image_to_text_example.py::test_image_to_text_bf16[llava-hf/llava-1.5-7b-hf-1]": {
@@ -48,9 +63,12 @@
     },
     "gaudi2": {
       "throughput": 77.98733740859008
+<<<<<<< HEAD
     },
     "gaudi3": {
       "throughput": 77.98733740859008
+=======
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     }
   },
   "tests/test_image_to_text_example.py::test_image_to_text_bf16[llava-hf/llava-v1.6-mistral-7b-hf-1]": {
@@ -59,9 +77,12 @@
     },
     "gaudi2": {
       "throughput": 33.17984878151546
+<<<<<<< HEAD
     },
     "gaudi3": {
       "throughput": 33.17984878151546
+=======
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     }
   },
   "tests/test_image_to_text_example.py::test_image_to_text_bf16[llava-hf/llava-v1.6-vicuna-13b-hf-1]": {
@@ -70,73 +91,100 @@
     },
     "gaudi2": {
       "throughput": 23.527610042925
+<<<<<<< HEAD
     },
     "gaudi3": {
       "throughput": 23.527610042925
+=======
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     }
   },
   "tests/test_image_to_text_example.py::test_image_to_text_bf16[llava-hf/llava-v1.6-vicuna-7b-hf-1]": {
     "gaudi2": {
       "throughput": 35.00608681379742
+<<<<<<< HEAD
     },
     "gaudi3": {
       "throughput": 35.00608681379742
+=======
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     }
   },
   "tests/test_image_to_text_example.py::test_image_to_text_bf16[meta-llama/Llama-3.2-11B-Vision-Instruct-1]": {
     "gaudi2": {
       "throughput": 18.974541922240313
+<<<<<<< HEAD
     },
     "gaudi3": {
       "throughput": 18.974541922240313
+=======
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     }
   },
   "tests/test_image_to_text_example.py::test_image_to_text_bf16[tiiuae/falcon-11B-vlm-1]": {
     "gaudi2": {
       "throughput": 23.69260849957278
+<<<<<<< HEAD
     },
     "gaudi3": {
       "throughput": 23.69260849957278
+=======
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     }
   },
   "tests/test_image_to_text_example.py::test_image_to_text_fp8[llava-hf/llava-1.5-13b-hf-1]": {
     "gaudi2": {
       "throughput": 67.20488222876344
+<<<<<<< HEAD
     },
     "gaudi3": {
       "throughput": 67.20488222876344
+=======
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     }
   },
   "tests/test_image_to_text_example.py::test_image_to_text_fp8[llava-hf/llava-1.5-7b-hf-1]": {
     "gaudi2": {
       "throughput": 98.72578382705062
+<<<<<<< HEAD
     },
     "gaudi3": {
       "throughput": 98.72578382705062
+=======
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     }
   },
   "tests/test_image_to_text_example.py::test_image_to_text_fp8[llava-hf/llava-v1.6-mistral-7b-hf-1]": {
     "gaudi2": {
       "throughput": 45.011551008367086
+<<<<<<< HEAD
     },
     "gaudi3": {
       "throughput": 45.011551008367086
+=======
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     }
   },
   "tests/test_image_to_text_example.py::test_image_to_text_fp8[llava-hf/llava-v1.6-vicuna-13b-hf-1]": {
     "gaudi2": {
       "throughput": 30.9535718774675
+<<<<<<< HEAD
     },
     "gaudi3": {
       "throughput": 30.9535718774675
+=======
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     }
   },
   "tests/test_image_to_text_example.py::test_image_to_text_fp8[llava-hf/llava-v1.6-vicuna-7b-hf-1]": {
     "gaudi2": {
       "throughput": 45.18544502949674
+<<<<<<< HEAD
     },
     "gaudi3": {
       "throughput": 45.18544502949674
+=======
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     }
   }
 }

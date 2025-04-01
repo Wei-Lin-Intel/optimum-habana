@@ -43,4 +43,8 @@ python3 run_example_sam.py \
     --use_hpu_graphs \
     --bf16 \
     --print_result
+<<<<<<< HEAD
 ```
+=======
+```
+>>>>>>> d9e7f73e (Merge 1.16 (#203))

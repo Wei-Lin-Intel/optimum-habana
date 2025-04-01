@@ -131,8 +131,13 @@ def setup_const_serialization(const_serialization_path):
 
 def setup_env(args):
     # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
+<<<<<<< HEAD
     check_min_version("4.45.0")
     check_optimum_habana_min_version("1.17.0.dev0")
+=======
+    check_min_version("4.34.0")
+    check_optimum_habana_min_version("1.16.0")
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     # TODO: SW-167588 - WA for memory issue in hqt prep_model
     os.environ.setdefault("EXPERIMENTAL_WEIGHT_SHARING", "FALSE")
 
@@ -815,6 +820,7 @@ class SetTrueOrFalseOrNone(argparse.Action):
     If an invalid value is provided, an argparse.ArgumentTypeError is raised.
     """
 
+<<<<<<< HEAD
     def __call__(self, parser, namespace, values, option_string=None):
         value_map = {
             "true": True,
@@ -840,3 +846,48 @@ class SetTrueOrFalseOrNone(argparse.Action):
                 raise argparse.ArgumentTypeError(
                     f"Invalid value for {option_string}: {values}. Expected one of: {', '.join(value_map.keys())}."
                 )
+=======
+    # default values
+    min_val = 128
+    max_val = min_val + 128
+
+    if args.dataset_name == "tatsu-lab/alpaca":
+        # have a single bucket of dynamic compilation
+        min_val = args.max_new_tokens
+        max_val = 128 + args.max_new_tokens  # derived from compilation stats
+
+    return {
+        "dim_0": {"min": 0, "max": 0},  # 0 mean don't set dynamic
+        "dim_1": {"min": min_val, "max": max_val},
+    }
+
+
+# TODO: This will be removed in v1.20 Synapse release
+# Override neural_compressor split_rank_state_dict for loading neural_magic models on multi-cards.
+def local_split_rank_state_dict(model, gathered_state_dict):
+    """split state_dict for current local_rank."""
+    from neural_compressor.torch.algorithms.fp8_quant.save_load import (
+        cur_accelerator,
+        local_rank,
+        split_weights,
+        world_size,
+    )
+
+    rank_state_dict = {}
+    for name, param in model.named_parameters():
+        if name in gathered_state_dict:
+            full_weight = gathered_state_dict[name]
+            if len(param.shape) != 0 and full_weight.shape != param.shape:
+                if full_weight.shape[0] != param.shape[0]:
+                    split_weight = split_weights(full_weight, world_size, local_rank, split_axis=0).clone()
+                elif full_weight.shape[1] != param.shape[1]:
+                    split_weight = split_weights(full_weight, world_size, local_rank, split_axis=1).clone()
+                else:
+                    split_weight = split_weights(full_weight, world_size, local_rank, split_axis=0).clone()
+            else:
+                split_weight = full_weight
+            rank_state_dict[name] = split_weight
+        cur_accelerator.synchronize()
+
+    return rank_state_dict
+>>>>>>> d9e7f73e (Merge 1.16 (#203))

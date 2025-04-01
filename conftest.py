@@ -1,8 +1,11 @@
 import json
 import logging
+<<<<<<< HEAD
 import operator
 import os
 import sys
+=======
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 from pathlib import Path
 
 import pytest
@@ -73,9 +76,12 @@ class BaselineRequest:
             logging.getLogger().info(f"{'.'.join(context + [key])}:ref    = {ref}")
             assert compare(actual, ref)
 
+<<<<<<< HEAD
     def assertEqual(self, context=[], **kwargs):
         self.assertRef(operator.eq, context, **kwargs)
 
+=======
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 
 class Secret:
     """
@@ -95,6 +101,7 @@ class Secret:
 def pytest_addoption(parser):
     parser.addoption("--token", action="store", default=None)
     parser.addoption("--rebase", action="store_true", help="rebase baseline references from current run")
+<<<<<<< HEAD
     parser.addoption(
         "--device",
         "--device-context",
@@ -105,6 +112,8 @@ def pytest_addoption(parser):
             " If unspecified, the default is to auto-detect the device."
         ),
     )
+=======
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 
 
 @pytest.fixture
@@ -112,6 +121,7 @@ def token(request):
     return Secret(request.config.option.token)
 
 
+<<<<<<< HEAD
 def pytest_configure(config):
     name = ""
     try:
@@ -172,6 +182,11 @@ def pytest_report_header(config):
 
     return header
 
+=======
+def pytest_sessionstart(session):
+    session.stash["baseline"] = Baseline(session)
+
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 
 def pytest_sessionfinish(session):
     session.stash["baseline"].finalize()

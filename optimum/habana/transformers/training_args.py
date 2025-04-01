@@ -107,6 +107,11 @@ class GaudiTrainingArguments(TrainingArguments):
             Set value of 'inline_inbuilt_nn_modules' parameter for torch._dynamo.config. Currently, disabling this parameter improves the performance of the ALBERT model.
         cache_size_limit(`int`, *optional*, defaults to 'None'):
             Set value of 'cache_size_limit' parameter for torch._dynamo.config
+<<<<<<< HEAD
+=======
+        allow_unspec_int_on_nn_module (`bool`, *optional*, defaults to `None`):
+            Set value of 'allow_unspec_int_on_nn_module' parameter for torch._dynamo.config.
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
         disable_tensor_cache_hpu_graphs (`bool`, *optional*, defaults to `False`):
             Whether to disable tensor cache when using hpu graphs. If True, tensors won't be cached in hpu graph and memory can be saved.
         max_hpu_graphs (`int`, *optional*):
@@ -898,6 +903,12 @@ class GaudiTrainingArguments(TrainingArguments):
         if self.inline_inbuilt_nn_modules is not None:
             torch._dynamo.config.inline_inbuilt_nn_modules = self.inline_inbuilt_nn_modules
 
+<<<<<<< HEAD
+=======
+        if self.allow_unspec_int_on_nn_module is not None:
+            torch._dynamo.config.allow_unspec_int_on_nn_module = self.allow_unspec_int_on_nn_module
+
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
         if self.torch_compile and self.cache_size_limit is not None:
             torch._dynamo.config.cache_size_limit = self.cache_size_limit
 

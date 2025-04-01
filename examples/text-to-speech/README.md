@@ -33,4 +33,8 @@ python3 run_pipeline.py \
     --text "Hello, my dog is cooler than you!" \
     --use_hpu_graphs \
     --bf16
+<<<<<<< HEAD
 ```
+=======
+```
+>>>>>>> d9e7f73e (Merge 1.16 (#203))

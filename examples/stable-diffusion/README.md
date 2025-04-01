@@ -219,7 +219,11 @@ python text_to_image_generation.py \
 SDXL also supports distributed inferencing with Intel Gaudi accelerators. Below is an example of generating SDXL images in a distributed manner using two prompts on two HPUs:
 
 ```bash
+<<<<<<< HEAD
 python ../gaudi_spawn.py --world_size 2 text_to_image_generation.py \
+=======
+PT_HPU_LAZY_MODE=1 python ../gaudi_spawn.py --world_size 2 text_to_image_generation.py \
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     --model_name_or_path stabilityai/stable-diffusion-xl-base-1.0 \
     --prompts "Sailing ship painting by Van Gogh" "A shiny flying horse taking off" \
     --prompts_2 "Red tone" "Blue tone" \
@@ -242,7 +246,11 @@ inference in mixed FP8 precision.
 
 Here is how to generate SDXL images with optimized pipeline in FP8 precision:
 ```bash
+<<<<<<< HEAD
 QUANT_CONFIG=quantization/stable-diffusion-xl/quantize_config.json \
+=======
+QUANT_CONFIG=quantization/stable-diffusion-xl/quantize_config.json PT_HPU_LAZY_MODE=1 \
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 python text_to_image_generation.py \
     --model_name_or_path stabilityai/stable-diffusion-xl-base-1.0 \
     --prompts "Sailing ship painting by Van Gogh" \
@@ -305,7 +313,11 @@ huggingface-cli login
 Here is how to generate SD3 images with a single prompt:
 
 ```bash
+<<<<<<< HEAD
 python text_to_image_generation.py \
+=======
+PT_HPU_LAZY_MODE=1 python text_to_image_generation.py \
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     --model_name_or_path stabilityai/stable-diffusion-3-medium-diffusers \
     --prompts "Sailing ship painting by Van Gogh" \
     --num_images_per_prompt 10 \
@@ -325,7 +337,11 @@ This model can also be quantized with some ops running in FP8 precision.
 Before quantization, run stats collection using measure mode:
 
 ```bash
+<<<<<<< HEAD
 QUANT_CONFIG=quantization/stable-diffusion-3/measure_config.json \
+=======
+QUANT_CONFIG=quantization/stable-diffusion-3/measure_config.json PT_HPU_LAZY_MODE=1 \
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 python text_to_image_generation.py \
     --model_name_or_path stabilityai/stable-diffusion-3-medium-diffusers \
     --prompts "Sailing ship painting by Van Gogh" \
@@ -345,7 +361,11 @@ python text_to_image_generation.py \
 After stats collection, here is how to run SD3 in quantization mode:
 
 ```bash
+<<<<<<< HEAD
 QUANT_CONFIG=quantization/stable-diffusion-3/quantize_config.json \
+=======
+QUANT_CONFIG=quantization/stable-diffusion-3/quantize_config.json PT_HPU_LAZY_MODE=1 \
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 python text_to_image_generation.py \
     --model_name_or_path stabilityai/stable-diffusion-3-medium-diffusers \
     --prompts "Sailing ship painting by Van Gogh" \
@@ -481,7 +501,11 @@ The ControlNet example can be run with multiple prompts by supplying more than o
 Additionally, it supports distributed execution. Below is an example of generating images conditioned by the Canny edge model using two prompts on two HPUs:
 
 ```bash
+<<<<<<< HEAD
 python ../gaudi_spawn.py --world_size 2 text_to_image_generation.py \
+=======
+PT_HPU_LAZY_MODE=1 python ../gaudi_spawn.py --world_size 2 text_to_image_generation.py \
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     --model_name_or_path CompVis/stable-diffusion-v1-4 \
     --controlnet_model_name_or_path lllyasviel/sd-controlnet-canny \
     --prompts "futuristic-looking woman" "a rusty robot" \
@@ -526,7 +550,11 @@ python text_to_image_generation.py \
 ### Stable Diffusion XL Inpainting
 
 ```bash
+<<<<<<< HEAD
 python text_to_image_generation.py \
+=======
+PT_HPU_LAZY_MODE=1 python text_to_image_generation.py \
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     --model_name_or_path  diffusers/stable-diffusion-xl-1.0-inpainting-0.1 \
     --base_image https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/diffusers/inpaint.png \
     --mask_image https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/diffusers/inpaint_mask.png \
@@ -553,6 +581,93 @@ This section provides examples of additional inference techniques based on Stabl
 Here is how to perform unconditional image generation on Intel Gaudi. For more details,  please refer to the 
 [Unconditional Image Generation](https://huggingface.co/docs/diffusers/using-diffusers/unconditional_image_generation)
 section in the Hugging Face documentation.
+<<<<<<< HEAD
+=======
+
+```bash
+PT_HPU_LAZY_MODE=1 python unconditional_image_generation.py \
+    --model_name_or_path "google/ddpm-ema-celebahq-256" \
+    --batch_size 16 \
+    --use_habana \
+    --use_gaudi_ddim_scheduler \
+    --use_hpu_graphs \
+    --sdp_on_bf16 \
+    --bf16 \
+    --save_outputs \
+    --output_dir "/tmp/"
+```
+
+### Controlling Brightness
+
+Here is an example of how to control brightness. For more information, please refer to the
+[Control Brightness](https://huggingface.co/docs/diffusers/main/en/using-diffusers/control_brightness)
+section in the Hugging Face documentation.
+
+```bash
+PT_HPU_MAX_COMPOUND_OP_SIZE=1 PT_HPU_LAZY_MODE=1 \
+python text_to_image_generation.py \
+    --model_name_or_path ptx0/pseudo-journey-v2 \
+    --prompts "A lion in galaxies, spirals, nebulae, stars, smoke, iridescent, intricate detail, octane render, 8k" \
+    --num_images_per_prompt 1 \
+    --batch_size 1 \
+    --use_habana \
+    --use_hpu_graphs \
+    --image_save_dir /tmp/stable_diffusion_images_brightness \
+    --seed 33 \
+    --use_zero_snr \
+    --guidance_scale 0.7 \
+    --timestep_spacing trailing
+```
+
+### Prompt Weighting
+
+Here is an example of how to run prompt weighting. For more information, please refer to the
+[Weighted Prompts](https://huggingface.co/docs/diffusers/main/en/using-diffusers/weighted_prompts)
+section in the Hugging Face documentation.
+
+```bash
+PT_HPU_LAZY_MODE=1 python text_to_image_generation.py \
+    --model_name_or_path CompVis/stable-diffusion-v1-4 \
+    --prompts "a red cat playing with a ball+++" "a red cat playing with a ball---" \
+    --num_images_per_prompt 4 \
+    --batch_size 4 \
+    --use_habana --use_hpu_graphs \
+    --image_save_dir /tmp/stable_diffusion_images_compel \
+    --seed 33 \
+    --sdp_on_bf16 \
+    --bf16 \
+    --num_inference_steps 20 \
+    --use_compel
+```
+
+### Controlling Image Quality
+
+Here is an example of how to improve image quality. For more details, please refer to the
+[Image Quality](https://huggingface.co/docs/diffusers/main/en/using-diffusers/image_quality)
+section in the Hugging Face documentation.
+
+```bash
+PT_HPU_LAZY_MODE=1 python text_to_image_generation.py \
+    --model_name_or_path CompVis/stable-diffusion-v1-4 \
+    --prompts "A squirrel eating a burger" \
+    --num_images_per_prompt 4 \
+    --batch_size 4 \
+    --use_habana \
+    --image_save_dir /tmp/stable_diffusion_images_freeu \
+    --seed 33 \
+    --use_freeu \
+    --sdp_on_bf16 \
+    --bf16
+```
+
+## Image-to-Image Generation
+
+Images can also be generated using initial input images to guide the diffusion-based image generation process.
+
+### Stable Diffusion-based Image-to-Image
+
+Here is how to generate images using a single prompt and an input image with the `timbrooks/instruct-pix2pix` model, which is based on Stable Diffusion:
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 
 ```bash
 python unconditional_image_generation.py \
@@ -745,7 +860,11 @@ This section demonstrates how to use the `GaudiTextToVideoSDPipeline` for text-t
 The pipeline employs a UNet3D structure and generates videos through an iterative denoising process.
 
 ```bash
+<<<<<<< HEAD
 python text_to_video_generation.py \
+=======
+PT_HPU_LAZY_MODE=1 python text_to_video_generation.py \
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     --model_name_or_path ali-vilab/text-to-video-ms-1.7b \
     --prompts "An astronaut riding a horse" \
     --use_habana \
@@ -790,7 +909,11 @@ python image_to_video_generation.py \
 Here is how to generate videos with several image prompts:
 
 ```bash
+<<<<<<< HEAD
 PT_HPU_MAX_COMPOUND_OP_SIZE=1 \
+=======
+PT_HPU_MAX_COMPOUND_OP_SIZE=1 PT_HPU_LAZY_MODE=1 \
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
 python image_to_video_generation.py \
     --model_name_or_path "stabilityai/stable-video-diffusion-img2vid-xt" \
     --image_path \
@@ -817,7 +940,11 @@ python image_to_video_generation.py \
 Here is how to generate video conditioned by depth:
 
 ```bash
+<<<<<<< HEAD
 python image_to_video_generation.py \
+=======
+PT_HPU_LAZY_MODE=1 python image_to_video_generation.py \
+>>>>>>> d9e7f73e (Merge 1.16 (#203))
     --model_name_or_path "stabilityai/stable-video-diffusion-img2vid" \
     --controlnet_model_name_or_path "CiaraRowles/temporal-controlnet-depth-svd-v1" \
     --control_image_path \

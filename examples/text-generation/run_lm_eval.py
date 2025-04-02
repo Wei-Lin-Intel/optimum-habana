@@ -98,15 +98,49 @@ def setup_lm_eval_parser():
     return args
 
 
+<<<<<<< HEAD
 class HabanaModelAdapter(lm_eval.base.BaseLM):
     def __init__(self, tokenizer, model, args, options):
         super().__init__()
+=======
+class HabanaModelAdapter(HFLM):
+    def __init__(
+        self,
+        tokenizer: AutoTokenizer,
+        model: AutoModelForCausalLM,
+        args: argparse.Namespace,
+        options: GenerationConfig,
+        backend: Literal["default", "causal", "seq2seq"] = "default",
+        logits_cache: bool = True,
+        add_bos_token: Optional[bool] = True,
+        prefix_token_id: Optional[int] = None,
+        delta: Optional[str] = None,
+        **kwargs,
+    ) -> None:
+        # To skip cuda code of the HFLM init
+        TemplateLM.__init__(self)
+>>>>>>> b89fe1cc (Fix missing custom_prefix_token_id (#213))
         self.tokenizer = tokenizer
         self.model = model
         self._batch_size = args.batch_size
         self.buckets = sorted(args.buckets)
         self.options = options
+<<<<<<< HEAD
         self._device = args.device
+=======
+        self.device_ = args.device
+        self.pretrained = model
+        self.peft = args.peft_model
+        self.delta = delta
+        self.custom_prefix_token_id = prefix_token_id
+        # determine which of 'causal' and 'seq2seq' backends to use for HF models
+        self._get_backend(config=self._config, backend=backend, trust_remote_code=args.trust_remote_code)
+        self.logits_cache = logits_cache
+        self.add_bos_token = add_bos_token
+        self._max_length = options.max_length
+        self.batch_size_per_gpu = int(args.batch_size)
+        self.revision = args.model_revision
+>>>>>>> b89fe1cc (Fix missing custom_prefix_token_id (#213))
         self.model_inputs = {"use_cache": self.options.use_cache}
         if self.model.config.model_type in [
             "llama",

@@ -23,26 +23,16 @@ import json
 import logging
 import math
 import os
-import time
+import struct
 from itertools import cycle
 from pathlib import Path
 
+import pandas as pd
 import torch
 from transformers import BatchEncoding
-from utils import (
-    SetTrueOrFalseOrNone,
-    adjust_batch,
-    count_hpu_graphs,
-    finalize_quantization,
-    initialize_model,
-    save_model,
-)
+from utils import adjust_batch, count_hpu_graphs, finalize_quantization, initialize_model, save_model
 
-<<<<<<< HEAD
-from optimum.habana.utils import get_hpu_memory_stats
-=======
 from optimum.habana.utils import HabanaGenerationTime, HabanaProfile, get_hpu_memory_stats
->>>>>>> eb25ee4d ([SW-216910] Sequence profiling in text generation)
 
 
 logging.basicConfig(
@@ -54,6 +44,21 @@ logger = logging.getLogger(__name__)
 
 
 def setup_parser(parser):
+    class StoreTrueFalseAction(argparse.Action):
+        def __call__(self, parser, namespace, values, option_string=None):
+            if isinstance(values, bool) or values is None:
+                # Flag passed without any value -> set to True
+                setattr(namespace, self.dest, True)
+            else:
+                # Flag passed with value -> pattern match and set accordingly
+                value_str = values.lower()
+                if value_str in ("true", "1", "yes"):
+                    setattr(namespace, self.dest, True)
+                elif value_str in ("false", "0", "no"):
+                    setattr(namespace, self.dest, False)
+                else:
+                    raise ValueError(f"Invalid value for {option_string}: {values}")
+
     # Arguments management
     parser.add_argument("--device", "-d", type=str, choices=["hpu"], help="Device to run", default="hpu")
     parser.add_argument(
@@ -96,6 +101,12 @@ def setup_parser(parser):
         default=None,
         type=str,
         help="Optional argument if you want to assess your model on a given dataset of the HF Hub.",
+    )
+    parser.add_argument(
+        "--dataset",
+        default="/mnt/weka/data/mlperf_inference/llama2/processed-data.pkl",
+        type=str,
+        help="path of the dataset to run rouge evaluation and measurement for rouge",
     )
     parser.add_argument(
         "--column_name",
@@ -277,24 +288,33 @@ def setup_parser(parser):
     )
     parser.add_argument(
         "--use_flash_attention",
-        action="store_true",
+        nargs="?",
+        const=True,
+        default=False,
+        action=StoreTrueFalseAction,
         help="Whether to enable Habana Flash Attention, provided that the model supports it.",
     )
     parser.add_argument(
         "--flash_attention_recompute",
-        action="store_true",
+        nargs="?",
+        const=True,
+        default=False,
+        action=StoreTrueFalseAction,
         help="Whether to enable Habana Flash Attention in recompute mode on first token generation. This gives an opportunity of splitting graph internally which helps reduce memory consumption.",
     )
     parser.add_argument(
         "--flash_attention_causal_mask",
-        action="store_true",
+        nargs="?",
+        const=True,
+        default=False,
+        action=StoreTrueFalseAction,
         help="Whether to enable Habana Flash Attention in causal mode on first token generation.",
     )
     parser.add_argument(
         "--flash_attention_fast_softmax",
         nargs="?",
-        const=None,
-        action=SetTrueOrFalseOrNone,
+        const=None,  # Default value handled post-parsing
+        action=StoreTrueFalseAction,
         help="Whether to enable Habana Flash Attention in fast softmax mode.",
     )
     parser.add_argument(
@@ -344,9 +364,6 @@ def setup_parser(parser):
         help="Run the inference with dataset for specified --n_iterations(default:5)",
     )
     parser.add_argument(
-        "--sdp_on_bf16", action="store_true", help="Allow pyTorch to use reduced precision in the SDPA math backend"
-    )
-    parser.add_argument(
         "--save_quantized_model_with_inc",
         action="store_true",
         help="Save quantized Huggingface checkpoint using INC.",
@@ -354,8 +371,34 @@ def setup_parser(parser):
     parser.add_argument(
         "--saved_model_path",
         type=str,
-        default="inc_quantized_model",
+        default="saved_results",
         help="A path to save quantized checkpoint.",
+    )
+    parser.add_argument(
+        "--sdp_on_bf16", action="store_true", help="Allow pyTorch to use reduced precision in the SDPA math backend"
+    )
+    parser.add_argument(
+        "--pt2e_quant",
+        action="store_true",
+        help="Whether to use pt2e kind of quant flow or not.",
+    )
+    parser.add_argument(
+        "--quant_dtype",
+        default="fp8_143",
+        type=str,
+        help="Set pt2e quantization data type. Available options: int8, fp8_143 [default], fp8_152",
+    )
+    parser.add_argument(
+        "--pt2e_load",
+        default=None,
+        type=str,
+        help="Set pt2e load path i.e. deserialize quantized model using torch.export.load from given path",
+    )
+    parser.add_argument(
+        "--pt2e_save",
+        default=None,
+        type=str,
+        help="Set pt2e save path i.e. serialize quantized model using torch.export.save at given path",
     )
 
     quant_parser_group = parser.add_mutually_exclusive_group()
@@ -365,11 +408,6 @@ def setup_parser(parser):
         help="Load an AutoGPTQ quantized checkpoint using AutoGPTQ.",
     )
     quant_parser_group.add_argument(
-        "--load_quantized_model_with_autoawq",
-        action="store_true",
-        help="Load an AutoAWQ quantized checkpoint using AutoAWQ.",
-    )
-    quant_parser_group.add_argument(
         "--disk_offload",
         action="store_true",
         help="Whether to enable device map auto. In case no space left on cpu, weights will be offloaded to disk.",
@@ -377,7 +415,7 @@ def setup_parser(parser):
     quant_parser_group.add_argument(
         "--load_quantized_model_with_inc",
         action="store_true",
-        help="Load a quantized Huggingface checkpoint using INC.",
+        help="Load a Huggingface quantized checkpoint using INC.",
     )
     quant_parser_group.add_argument(
         "--local_quantized_inc_model_path",
@@ -385,11 +423,17 @@ def setup_parser(parser):
         default=None,
         help="Path to neural-compressor quantized model, if set, the checkpoint will be loaded.",
     )
-    parser.add_argument(
+    quant_parser_group.add_argument(
         "--attn_batch_split",
         default=1,
         type=int,
         help="Specify the batch size split for attention and mlp layers. 1 for no split. This is enabled only for prompt.",
+    )
+
+    parser.add_argument(
+        "--use_mark_dynamic",
+        action="store_true",
+        help="Mark the required tensor(s) as dynamic with min/max tensor shape derived from input and output tokens. Only applicable in Dynamic Mode execution.",
     )
 
     args = parser.parse_args()
@@ -400,24 +444,32 @@ def setup_parser(parser):
     if not args.use_hpu_graphs:
         args.limit_hpu_graphs = False
 
-    if args.use_flash_attention and args.flash_attention_fast_softmax is None:
-        logger.warning(
-            "`--flash_attention_fast_softmax` was not set; defaulting to True due to `--use_flash_attention` being enabled."
-        )
+    if args.use_flash_attention and not args.flash_attention_fast_softmax:
         args.flash_attention_fast_softmax = True
-    else:
-        args.flash_attention_fast_softmax = False
 
     args.quant_config = os.getenv("QUANT_CONFIG", "")
     if args.quant_config and args.load_quantized_model_with_autogptq:
         raise RuntimeError("Setting both quant_config and load_quantized_model_with_autogptq is unsupported. ")
-    if args.quant_config and args.load_quantized_model_with_autoawq:
-        raise RuntimeError("Setting both quant_config and load_quantized_model_with_autoawq is unsupported. ")
 
     if args.quant_config == "" and args.disk_offload:
         logger.warning(
             "`--disk_offload` was tested only with fp8, it may not work with full precision. If error raises try to remove the --disk_offload flag."
         )
+
+    if args.use_mark_dynamic:
+        assert args.max_input_tokens == -1, (
+            "--use_mark_dynamic should be used only with Dynamic Mode aka max_input_tokens == -1."
+        )
+
+    if args.pt2e_quant:
+        args.torch_compile = False
+        args.use_hpu_graphs = False
+        if args.quant_dtype not in ["int8", "fp8_143", "fp8_152"]:
+            logger.info("[pt2e_quant] Unsupported quantization data type! Using fp8_143 by default.")
+            args.quant_dtype = "fp8_143"
+        if args.pt2e_load and args.pt2e_save:
+            raise RuntimeError("[pt2e_quant] Either pt2e_load or pt2e_save path should be given!")
+
     return args
 
 
@@ -439,7 +491,7 @@ def main():
     model, assistant_model, tokenizer, generation_config = initialize_model(args, logger)
 
     use_lazy_mode = True
-    if args.torch_compile:
+    if args.torch_compile or args.pt2e_quant:
         use_lazy_mode = False
 
     import habana_frameworks.torch.hpu as torch_hpu
@@ -447,9 +499,6 @@ def main():
     if args.sdp_on_bf16:
         torch._C._set_math_sdp_allow_fp16_bf16_reduction(True)
 
-<<<<<<< HEAD
-    if args.dataset_name is None:
-=======
     active_profiler = HabanaProfile(
         warmup=args.profiling_warmup_steps,
         active=args.profiling_steps,
@@ -495,7 +544,6 @@ def main():
         def generate(input_tokens, size=None, reduce_recompile=False, disable_profiling=False):
             """Generates sequences from the input sentences and returns them."""
             profiler = disabled_profiler if disable_profiling else per_token_profiler
-
             timer = HabanaGenerationTime()
             timer.start()
             print(f"Step4+ starting time is {timer.start_time * 1000}", flush=True)
@@ -519,7 +567,7 @@ def main():
             for i in range(len(outputs)):
                 outputs[i] = outputs[i][args.max_input_tokens :]
             timer.step()
-            duration = timer.last_duration
+            duration = timer.total_time()
             print(f"Total E2E time of this batch is {duration:.3f}s", flush=True)
             return outputs
 
@@ -561,7 +609,6 @@ def main():
         timer.step()
         # Benchmark over n_iterations iterations
         N = len(input_sentences)
-
         per_sequence_profiler.start()
         if dyn_prompt_lens is None:
             for i in range(args.n_iterations):
@@ -585,7 +632,6 @@ def main():
                 per_sequence_profiler.step()
         timer.step()
         duration = timer.last_duration
-        per_sequence_profiler.stop()
         total_new_tokens_generated = args.n_iterations * args.batch_size * args.max_new_tokens
         throughput = total_new_tokens_generated / duration
 
@@ -626,7 +672,6 @@ def main():
         print(separator)
         print()
     elif args.dataset_name is None:
->>>>>>> eb25ee4d ([SW-216910] Sequence profiling in text generation)
         # Benchmark over the prompts below
         if args.prompt:
             input_sentences = args.prompt
@@ -689,16 +734,12 @@ def main():
         elif args.batch_size < len(input_sentences):
             input_sentences = input_sentences[: args.batch_size]
 
-        def generate(size=None, reduce_recompile=False):
+        def generate(size=None, reduce_recompile=False, disable_profiling=False):
             """Generates sequences from the input sentences and returns them."""
-<<<<<<< HEAD
-            encode_t0 = time.perf_counter()
-=======
             profiler = disabled_profiler if disable_profiling else per_token_profiler
             timer = HabanaGenerationTime()
             timer.start()
             print(f"Step4+ starting time is {timer.start_time * 1000}", flush=True)
->>>>>>> eb25ee4d ([SW-216910] Sequence profiling in text generation)
             # Tokenization
             if args.max_input_tokens > 0:
                 if hasattr(model.config, "type_vocab_size") and model.config.type_vocab_size > 0:
@@ -728,7 +769,8 @@ def main():
                 input_tokens = BatchEncoding({"input_ids": input_ids, "attention_mask": attention_mask})
             else:
                 input_tokens = tokenizer.batch_encode_plus(input_sentences, return_tensors="pt", padding=True)
-            encode_duration = time.perf_counter() - encode_t0
+            timer.step()
+            encode_duration = timer.last_duration
 
             if size is not None:
                 input_tokens = adjust_batch(input_tokens, size)
@@ -751,42 +793,38 @@ def main():
                 input_data.update(input_tokens)
 
             iteration_times = []
-            outputs = model.generate(
+            output_tokens = model.generate(
                 **input_data,
                 generation_config=generation_config,
                 assistant_model=assistant_model,
                 lazy_mode=use_lazy_mode,
                 hpu_graphs=args.use_hpu_graphs,
-<<<<<<< HEAD
-                profiling_steps=args.profiling_steps,
-                profiling_warmup_steps=args.profiling_warmup_steps,
-=======
->>>>>>> eb25ee4d ([SW-216910] Sequence profiling in text generation)
                 ignore_eos=args.ignore_eos,
                 iteration_times=iteration_times,
                 profiler=profiler,
             ).cpu()
+            outputs = tokenizer.batch_decode(output_tokens, skip_special_tokens=True)
+            timer.step()
+            duration = timer.total_time()
             first_token_time = iteration_times[0] + encode_duration
             logger.info(f"Time to first token = {first_token_time * 1000}ms")
-            return tokenizer.batch_decode(outputs, skip_special_tokens=True)
+            print(f"Total E2E time of this iteration is {duration:.3f}s", flush=True)
+            return outputs
 
-        from optimum.habana.utils import HabanaProfile
-
-        # compilation stage disable profiling
-        HabanaProfile.disable()
         # Compilation
         logger.info("Graph compilation...")
         dyn_prompt_lens = args.simulate_dyn_prompt
-        t0 = time.perf_counter()
+        timer = HabanaGenerationTime()
+        timer.start()
         # The first three iterations take longer because of graph compilation
         if dyn_prompt_lens is None or len(set(dyn_prompt_lens)) == 1:
             for i in range(args.warmup):
                 if dyn_prompt_lens is None:
                     print(f"Warming up iteration {i + 1}/{args.warmup}", flush=True)
-                    generate(None, args.reduce_recompile)
+                    generate(None, args.reduce_recompile, disable_profiling=True)
                 else:
                     print(f"Warming up for shape {dyn_prompt_lens[0]} iteration {i + 1}/{args.warmup}", flush=True)
-                    generate(dyn_prompt_lens[0], args.reduce_recompile)
+                    generate(dyn_prompt_lens[0], args.reduce_recompile, disable_profiling=True)
         else:
             if args.bucket_size > 0:
                 mn = min(dyn_prompt_lens)
@@ -801,13 +839,14 @@ def main():
                     lst = list(range(min_prompt_len, max_sentence_len + 1, args.bucket_size))
                     for sz in lst:
                         print(f"Warming up for shape {sz - 1} iteration {i + 1}/{args.warmup}", flush=True)
-                        generate(sz - 1, args.reduce_recompile)
+                        generate(sz - 1, args.reduce_recompile, disable_profiling=True)
         torch_hpu.synchronize()
-        compilation_duration = time.perf_counter() - t0
-        HabanaProfile.enable()
+        timer.step()
+        compilation_duration = timer.last_duration
+
         total_new_tokens_generated = 0
         logger.info("Running generate...")
-        t0 = time.perf_counter()
+        timer.step()
         # Benchmark over n_iterations iterations
         per_sequence_profiler.start()
         if dyn_prompt_lens is None:
@@ -820,14 +859,9 @@ def main():
                 prompt_len = next(repeated_prompt_len)
                 print("Generating for shape,", prompt_len)
                 generated = generate(prompt_len, args.reduce_recompile)
-<<<<<<< HEAD
-        duration = time.perf_counter() - t0
-=======
                 per_sequence_profiler.step()
         timer.step()
         duration = timer.last_duration
-        per_sequence_profiler.stop()
->>>>>>> eb25ee4d ([SW-216910] Sequence profiling in text generation)
         total_new_tokens_generated = args.n_iterations * args.batch_size * args.max_new_tokens
         throughput = total_new_tokens_generated / duration
 
@@ -880,7 +914,7 @@ def main():
 
         assert not args.simulate_dyn_prompt, "Both dataset_name and simulate_dyn_prompt are set"
 
-        raw_dataset = load_dataset(args.dataset_name, trust_remote_code=args.trust_remote_code)
+        raw_dataset = load_dataset(args.dataset_name)
         if "test" in raw_dataset:
             split = "test"
         elif "validation" in raw_dataset:
@@ -949,13 +983,9 @@ def main():
 
         dataloader = DataLoader(raw_dataset, batch_size=args.batch_size, collate_fn=collate_fn)
 
-<<<<<<< HEAD
-        def generate_dataset(batch):
-=======
         def generate_dataset(batch, disable_profiling=False):
             profiler = disabled_profiler if disable_profiling else per_token_profiler
 
->>>>>>> eb25ee4d ([SW-216910] Sequence profiling in text generation)
             prompt = tokenizer.batch_decode(batch["input_ids"], skip_special_tokens=True)
             # Move inputs to target device(s)
             for t in batch:
@@ -967,48 +997,67 @@ def main():
                 generation_config=generation_config,
                 lazy_mode=use_lazy_mode,
                 hpu_graphs=args.use_hpu_graphs,
-<<<<<<< HEAD
-                profiling_steps=args.profiling_steps,
-                profiling_warmup_steps=args.profiling_warmup_steps,
-=======
->>>>>>> eb25ee4d ([SW-216910] Sequence profiling in text generation)
                 ignore_eos=args.ignore_eos,
                 profiler=profiler,
             ).cpu()
             return prompt, outputs
 
-        # warmup
-        from optimum.habana.utils import HabanaProfile
+        def mark_tensor_dynamic(generation_config, batch):
+            if generation_config.use_mark_dynamic:
+                for t in batch:
+                    if torch.is_tensor(batch[t]):
+                        if generation_config.mark_dyn_dim_0_min and generation_config.mark_dyn_dim_0_max:
+                            # batch dimension as dynamic
+                            torch._dynamo.mark_dynamic(
+                                batch[t],
+                                0,
+                                min=generation_config.mark_dyn_dim_0_min,
+                                max=generation_config.mark_dyn_dim_0_max,
+                            )
 
-        # compilation stage disable profiling
-        HabanaProfile.disable()
+                        if generation_config.mark_dyn_dim_1_min and generation_config.mark_dyn_dim_1_max:
+                            torch._dynamo.mark_dynamic(
+                                batch[t],
+                                1,
+                                min=generation_config.mark_dyn_dim_1_min,
+                                max=generation_config.mark_dyn_dim_1_max,
+                            )
+
         # Compilation
         logger.info("Graph compilation...")
-        t0 = time.perf_counter()
+        timer = HabanaGenerationTime()
+        timer.start()
         for i, batch in enumerate(dataloader):
-            generate_dataset(batch)
+            if i == 0:
+                mark_tensor_dynamic(generation_config, batch)
+            print("Warming up", flush=True)
+
+            timer = HabanaGenerationTime()
+            timer.start()
+            print(f"Step4+ starting time is {timer.start_time * 1000}", flush=True)
+            generate_dataset(batch, disable_profiling=True)
+            if generation_config.use_mark_dynamic:
+                generation_config.use_mark_dynamic = False
+            timer.step()
+            print(f"Total E2E time of this iteration is {timer.total_time():.3f}s", flush=True)
             # The first three iterations take longer because of graph compilation
             if (i + 1) == 3:
                 break
         torch_hpu.synchronize()
-        compilation_duration = time.perf_counter() - t0
-        HabanaProfile.enable()
+        timer.step()
+        compilation_duration = timer.total_time()
 
         total_new_tokens_generated = 0
         duration = 0
         separator = "-" * 50
         logger.info("Running generate dataset...")
-<<<<<<< HEAD
-        t_start = time.time()
-=======
         timer = HabanaGenerationTime()
         timer.start()
         per_sequence_profiler.start()
->>>>>>> eb25ee4d ([SW-216910] Sequence profiling in text generation)
         for i, batch in enumerate(dataloader):
-            t0 = time.perf_counter()
-            prompt, outputs = generate_dataset(batch)
-            duration += time.perf_counter() - t0
+            with HabanaGenerationTime() as timer:
+                prompt, outputs = generate_dataset(batch)
+            duration += timer.last_duration
             total_new_tokens_generated += args.batch_size * args.max_new_tokens
             print(separator)
             print(f"Batch n°{i + 1}")
@@ -1019,13 +1068,9 @@ def main():
             print(separator)
             if args.run_partial_dataset and args.n_iterations == i + 1:
                 break
-<<<<<<< HEAD
-        t_end = time.time()
-=======
             per_sequence_profiler.step()
         per_sequence_profiler.stop()
         timer.step()
->>>>>>> eb25ee4d ([SW-216910] Sequence profiling in text generation)
 
         throughput = total_new_tokens_generated / duration
         # Print Stats
@@ -1036,12 +1081,24 @@ def main():
         print("Stats:")
         print(separator)
         print(stats)
-        print("Total runtime for dataset:", t_end - t_start)
+        print("Total runtime for dataset:", timer.last_duration)
         mem = get_hpu_memory_stats()
         for k, v in mem.items():
             print("{:35} = {} GB".format(k[:-5].replace("_", " ").capitalize(), v))
-        print(f"Graph compilation duration          = {compilation_duration} seconds")
+        if prompt_length > 0:
+            print(f"Graph compilation duration          = {compilation_duration} seconds")
         print(separator)
+
+    if args.pt2e_quant:
+        from utils import PT2EQTestManager
+
+        repeat = PT2EQTestManager.update_state(model)
+        if repeat:
+            main()
+            return
+        if PT2EQTestManager.ready_to_save():
+            PT2EQTestManager.save_model()
+
     if args.quant_config:
         finalize_quantization(model)
     if args.save_quantized_model_with_inc:

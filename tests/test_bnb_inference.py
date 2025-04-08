@@ -56,7 +56,12 @@ def test_nf4_quantization_inference(token: str, baseline):
     generation_config.use_cache = True
     generation_config.use_flash_attention = True
 
+<<<<<<< HEAD
     model = wrap_in_hpu_graph(model)
+=======
+    # TODO: Uncomment after SW-224176 (and related torch.compile issues) is fixed
+    # model.model = torch.compile(model.model, backend="hpu_backend")
+>>>>>>> c676254e (Disable torch.compile mode (#223))
 
     input_text = "Hello my name is"
     inputs = tokenizer(input_text, return_tensors="pt").to(device="hpu")
@@ -64,5 +69,9 @@ def test_nf4_quantization_inference(token: str, baseline):
     torch.manual_seed(42)
     outputs = model.generate(**inputs, generation_config=generation_config, hpu_graphs=True, lazy_mode=True)
     decoded_output = tokenizer.decode(outputs[0], skip_special_tokens=True)
+<<<<<<< HEAD
 
     baseline.assertEqual(output=decoded_output)
+=======
+    assert decoded_output == "Hello my name is Kelsey and I am a 16 year old girl who loves to draw and paint. I have"
+>>>>>>> c676254e (Disable torch.compile mode (#223))

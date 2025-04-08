@@ -132,8 +132,14 @@ def test_nf4_quantization_inference(token: str, baseline):
         output_dir="results",
         lr_scheduler_type="linear",
         use_habana=True,
-        use_lazy_mode=True,
+        use_lazy_mode=False,
         pipelining_fwd_bwd=True,
+<<<<<<< HEAD
+=======
+        # TODO: Uncomment after SW-224176 (and related torch.compile issues) is fixed
+        # torch_compile=True,
+        # torch_compile_backend="hpu_backend",
+>>>>>>> c676254e (Disable torch.compile mode (#223))
     )
 
     trainer = GaudiTrainer(

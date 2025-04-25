@@ -396,9 +396,12 @@ def setup_parser(parser):
         args.limit_hpu_graphs = False
 
     if args.use_flash_attention and args.flash_attention_fast_softmax is None:
+<<<<<<< HEAD
         logger.warning(
             "`--flash_attention_fast_softmax` was not set; defaulting to True due to `--use_flash_attention` being enabled."
         )
+=======
+>>>>>>> 050c758f ([SW-226565] User can unset fast softmax in text-generation)
         args.flash_attention_fast_softmax = True
     else:
         args.flash_attention_fast_softmax = False

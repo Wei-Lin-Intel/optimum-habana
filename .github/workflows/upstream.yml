@@ -13,8 +13,12 @@ concurrency:
 jobs:
   transformers:
     name: Upstream Transformers
+<<<<<<< HEAD
     runs-on:
       group: itac-bm-emr-gaudi3-dell-2gaudi
+=======
+    runs-on: [self-hosted, linux, x64, gaudi2, fast]
+>>>>>>> 2716fa94 ([SW-224376] Upgrade .github (#269))
 
     container:
       image: docker://vault.habana.ai/gaudi-docker/1.20.0/ubuntu22.04/habanalabs/pytorch-installer-2.6.0:latest
@@ -88,8 +92,12 @@ jobs:
 
   accelerate:
     name: Upstream Accelerate
+<<<<<<< HEAD
     runs-on:
       group: itac-bm-emr-gaudi3-dell-2gaudi
+=======
+    runs-on: [self-hosted, linux, x64, gaudi2, fast]
+>>>>>>> 2716fa94 ([SW-224376] Upgrade .github (#269))
 
     container:
       image: docker://vault.habana.ai/gaudi-docker/1.20.0/ubuntu22.04/habanalabs/pytorch-installer-2.6.0:latest

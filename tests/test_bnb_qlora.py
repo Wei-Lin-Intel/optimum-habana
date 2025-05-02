@@ -15,7 +15,6 @@
 
 import os
 
-import pytest
 import torch
 from datasets import load_dataset
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
@@ -25,6 +24,11 @@ from optimum.habana import GaudiConfig, GaudiTrainer, GaudiTrainingArguments
 
 from .utils import OH_DEVICE_CONTEXT
 
+<<<<<<< HEAD
+=======
+assert os.environ.get("GAUDI2_CI", "0") == "1", "Execution does not support on Gaudi1"
+
+>>>>>>> 19fc265c (Remove peft installtion from test (#270))
 
 MODEL_ID = "meta-llama/Llama-3.2-1B"
 

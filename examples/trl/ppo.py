@@ -12,6 +12,10 @@ from trl import AutoModelForCausalLMWithValueHead
 from trl.core import LengthSampler
 
 from optimum.habana.accelerate import GaudiAccelerator
+<<<<<<< HEAD
+=======
+from optimum.habana.environment import disable_kernel
+>>>>>>> 28416195 ([SW-227118] Refactor feature detection and RMSNorm integration for Habana Gaudi (#262))
 from optimum.habana.trl import GaudiPPOConfig, GaudiPPOTrainer, adapt_PreTrainedModelWrapper_to_gaudi
 from optimum.habana.utils import HabanaGenerationTime, set_seed
 
@@ -79,6 +83,7 @@ class ScriptArguments:
     )
 
 
+disable_kernel("FusedRMSNorm")
 adapt_PreTrainedModelWrapper_to_gaudi()
 parser = HfArgumentParser(ScriptArguments)
 script_args: ScriptArguments = parser.parse_args_into_dataclasses()[0]

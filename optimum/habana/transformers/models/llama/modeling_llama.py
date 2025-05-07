@@ -27,6 +27,10 @@ from ....distributed.tensorparallel import (
     reduce_from_tensor_model_parallel_region,
 )
 from ....distributed.tp import TPModule
+<<<<<<< HEAD
+=======
+from ....features import import_usable_component
+>>>>>>> 28416195 ([SW-227118] Refactor feature detection and RMSNorm integration for Habana Gaudi (#262))
 from ...modeling_attn_mask_utils import (
     _gaudi_prepare_4d_causal_attention_mask,
 )
@@ -57,6 +61,11 @@ except ImportError:
     FusedSDPA = None
 
 import habana_frameworks.torch.core as htcore
+
+
+FusedRMSNorm, has_fused_rms_norm = import_usable_component(
+    "habana_frameworks.torch.hpex.normalization", "FusedRMSNorm"
+)
 
 
 def gaudi_llama_rmsnorm_forward(self, hidden_states):

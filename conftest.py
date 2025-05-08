@@ -124,6 +124,8 @@ def pytest_configure(config):
         out_dir = os.getenv("ARTIFACTS_DIR", os.getcwd())
         os.makedirs(out_dir, exist_ok=True)
         config.option.xmlpath = os.path.join(out_dir, f"result_{timestamp}.xml")
+        print(f"[DEBUG] ARTIFACTS_DIR = {out_dir}")
+        print(f"[DEBUG] XML path set to: {config.option.xmlpath}")
 
     # Bitsandbytes installation for {test_bnb_qlora.py test_bnb_inference.py} tests
     # This change will be reverted shortly

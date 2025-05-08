@@ -121,7 +121,9 @@ def pytest_configure(config):
     if not junitxml_path:
         import time
         timestamp = time.strftime("%Y%m%d%H%M%S")
-        config.option.xmlpath = f"/root/result_{timestamp}.xml"
+        out_dir = os.getenv("ARTIFACTS_DIR", os.getcwd())
+        os.makedirs(out_dir, exist_ok=True)
+        config.option.xmlpath = os.path.join(out_dir, f"result_{timestamp}.xml")
 
     # Bitsandbytes installation for {test_bnb_qlora.py test_bnb_inference.py} tests
     # This change will be reverted shortly

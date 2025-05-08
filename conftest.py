@@ -113,6 +113,12 @@ def token(request):
 
 
 def pytest_configure(config):
+    junitxml_path = config.getoption("--junitxml")
+    if not junitxml_path:
+        import time
+        timestamp = time.strftime("%Y%m%d%H%M%S")
+        config.option.xmlpath = f"/root/result_{timestamp}.xml"
+
     # Bitsandbytes installation for {test_bnb_qlora.py test_bnb_inference.py} tests
     # This change will be reverted shortly
     bnb_tests = any("bnb" in name for name in config.known_args_namespace.file_or_dir)

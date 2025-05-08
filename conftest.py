@@ -113,7 +113,11 @@ def token(request):
 
 
 def pytest_configure(config):
-    junitxml_path = config.getoption("--junitxml")
+    try:
+        junitxml_path = config.getoption("junitxml")  # zalecana forma: bez "--"
+    except ValueError:
+        junitxml_path = None
+
     if not junitxml_path:
         import time
         timestamp = time.strftime("%Y%m%d%H%M%S")

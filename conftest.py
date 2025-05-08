@@ -3,6 +3,7 @@ import logging
 import operator
 import os
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -113,6 +114,17 @@ def token(request):
 
 
 def pytest_configure(config):
+    try:
+        junitxml_path = config.getoption("junitxml")  # zalecana forma: bez "--"
+    except ValueError:
+        junitxml_path = None
+
+    if not junitxml_path:
+        timestamp = time.strftime("%Y%m%d%H%M%S")
+        out_dir = os.getenv("ARTIFACTS_DIR", os.getcwd())
+        os.makedirs(out_dir, exist_ok=True)
+        config.option.xmlpath = os.path.join(out_dir, f"result_{timestamp}.xml")
+
     # Bitsandbytes installation for {test_bnb_qlora.py test_bnb_inference.py} tests
     # This change will be reverted shortly
     bnb_tests = any("bnb" in name for name in config.known_args_namespace.file_or_dir)

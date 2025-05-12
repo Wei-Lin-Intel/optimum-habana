@@ -177,7 +177,45 @@ def patch_scoped_linear_all_reduce(model):
         patch_scoped_linear_all_reduce(module)
 
 
+<<<<<<< HEAD
 def get_torch_compiled_model(model, logger):
+=======
+def compile_regions(model, **kwargs):
+    """
+    A standalone function to compile regions of a model.
+
+    Args:
+        model (torch.nn.Module): The model or module to be compiled.
+        kwargs (dict): Additional kwargs for torch.compile.
+    """
+    if isinstance(model, torch.nn.ModuleList):
+        for name, module in model.named_children():
+            module = torch.compile(module, **kwargs)
+            setattr(model, name, module)
+    else:
+        if model._modules:  # If model has submodules, recurse and reassign
+            for name, module in model.named_children():
+                compiled_module = compile_regions(module, **kwargs)
+                if compiled_module is not None:  # Only reassign if something is returned
+                    setattr(model, name, compiled_module)
+        else:  # Leaf node
+            compiled_model = torch.compile(model, **kwargs)
+            return compiled_model
+    return model
+
+
+def get_torch_compiled_model(model, logger, args):
+    if args.cache_size_limit is not None:
+        torch._dynamo.config.cache_size_limit = args.cache_size_limit
+    compile_fn = torch.compile
+    if args.regional_compile:
+        compile_fn = compile_regions
+
+    compile_kwargs = {
+        "backend": "hpu_backend",
+        "options": {"force_static_compile": args.force_static_compile, "keep_input_mutations": True},
+    }
+>>>>>>> 919acce2 (Fixed lost modules in regional compilation (#274))
     # for gpt_bigcode, mpt, bloom, gpt2 model_type
     if hasattr(model, "transformer"):
         model.transformer = torch.compile(

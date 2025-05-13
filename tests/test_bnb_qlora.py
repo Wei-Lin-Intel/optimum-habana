@@ -78,8 +78,22 @@ def get_model(token: str):
     return model
 
 
+<<<<<<< HEAD
 @pytest.mark.skipif("gaudi1" == OH_DEVICE_CONTEXT, reason="execution not supported on gaudi1")
 def test_nf4_quantization_finetuning(token: str, baseline):
+=======
+modeldata = [
+    ("meta-llama/Llama-3.2-1B", 8, 8, 1.225),
+    ("meta-llama/Llama-3.1-8B", 4, 4, 1.044),
+]
+
+
+@pytest.mark.parametrize("model_id, train_bs, eval_bs, expected_loss", modeldata)
+@pytest.mark.parametrize("compile_on", [True, False])
+def test_nf4_quantization_finetuning(
+    token: str, model_id: str, train_bs: int, eval_bs: int, expected_loss: float, compile_on: bool
+):
+>>>>>>> 3be3a46f (Enable torch.compile mode (#280))
     os.environ["PT_HPU_LAZY_MODE"] = "0"
     from optimum.habana.transformers import modeling_utils
 
@@ -133,9 +147,25 @@ def test_nf4_quantization_finetuning(token: str, baseline):
         use_lazy_mode=False,
         pipelining_fwd_bwd=True,
         adjust_throughput=True,
+<<<<<<< HEAD
         throughput_warmup_steps=2,
     )
 
+=======
+        throughput_warmup_steps=3,
+        gradient_checkpointing=False,
+        torch_compile=True if compile_on else False,
+        torch_compile_backend="hpu_backend" if compile_on else None,
+        compile_dynamic=False if compile_on else None,
+    )
+
+    if PT_PROFILER_ENABLE:
+        training_args.profiling_warmup_steps = 5
+        training_args.profiling_steps = 2
+        training_args.profiling_record_shapes = False
+        training_args.profiling_with_stack = True
+
+>>>>>>> 3be3a46f (Enable torch.compile mode (#280))
     trainer = GaudiTrainer(
         model=model,
         train_dataset=data["train"],

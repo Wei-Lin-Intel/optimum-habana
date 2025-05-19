@@ -20,8 +20,6 @@ REAL_CLONE_URL = $(if $(CLONE_URL),$(CLONE_URL),$(DEFAULT_CLONE_URL))
 export PT_HPU_LAZY_MODE=1
 # will be removed when lazy is disabled
 
-export JUNITXML_DIR
-
 .PHONY:	style test
 
 # Run code quality checks
@@ -171,7 +169,7 @@ slow_tests_fsdp: test_installs
 slow_tests_trl: test_installs
 	python -m pip install trl==0.9.6
 	python -m pip install peft==0.12.0
-	JUNITXML_DIR=$(JUNITXML_DIR) python -m pytest tests/test_trl.py -v -s -k "test_calculate_loss"
+	python -m pytest tests/test_trl.py -v -s -k "test_calculate_loss"
 
 slow_tests_object_segmentation: test_installs
 	python -m pytest tests/test_object_segmentation.py

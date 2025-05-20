@@ -21,6 +21,7 @@ from setuptools import find_namespace_packages, setup
 
 # Ensure we match the version set in optimum/habana/version.py
 filepath = "optimum/habana/version.py"
+filepath = "optimum/habana/version.py"
 try:
     with open(filepath) as version_file:
         (__version__,) = re.findall('__version__ = "(.*)"', version_file.read())

@@ -123,6 +123,7 @@ slow_tests_text_generation_example: test_installs
 slow_tests_text_generation_example_1x: test_installs
 	python -m pip install -r examples/text-generation/requirements_awq.txt
 	BUILD_CUDA_EXT=0 python -m pip install -vvv --no-build-isolation git+https://github.com/HabanaAI/AutoGPTQ.git
+	python -m pip install tiktoken blobfile
 	python -m pytest tests/test_text_generation_example.py tests/test_encoder_decoder.py -m "(not x2) and (not x4) and (not x8)" -v -s --token $(TOKEN)
 
 # Run subset of text-generation non-regression tests that require 2 Gaudi cards

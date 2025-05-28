@@ -17,6 +17,10 @@ from __future__ import annotations
 
 import accelerate
 import os
+from dataclasses import make_dataclass
+from types import MethodType
+
+import accelerate.utils.other
 import torch
 from accelerate import Accelerator
 from accelerate.data_loader import prepare_data_loader
@@ -38,7 +42,6 @@ from accelerate.utils import (
     RNGType,
     TorchDynamoPlugin,
     TorchTensorParallelPlugin,
-    compile_regions,
     convert_outputs_to_fp32,
     is_deepspeed_available,
 )
@@ -60,6 +63,24 @@ from .utils import convert_model as gaudi_convert_model
 
 
 logger = get_logger(__name__)
+
+
+def compile_regions(model, compile_kwargs):
+    if isinstance(model, torch.nn.ModuleList):
+        for name, module in model.named_children():
+            module = torch.compile(module, **compile_kwargs)
+            module.__dict__.pop("_parameters", None)
+            setattr(model, name, module)
+    else:
+        if model._modules:  # If model has submodules, recurse and reassign
+            for name, module in model.named_children():
+                compiled_module = compile_regions(module, compile_kwargs)
+                if compiled_module is not None:  # Only reassign if something is returned
+                    setattr(model, name, compiled_module)
+        else:  # Leaf node
+            model = torch.compile(model, **compile_kwargs)
+            model.__dict__.pop("_parameters", None)
+            return model
 
 
 class GaudiAccelerator(Accelerator):
@@ -307,7 +328,7 @@ class GaudiAccelerator(Accelerator):
             compile_kwargs = self.state.dynamo_plugin.to_kwargs()
             ############################################################################################################
             if self.use_regional_compilation:
-                model = compile_regions(model, **compile_kwargs)
+                compile_regions(model, compile_kwargs)
             else:
                 model = torch.compile(model, **compile_kwargs)
             ############################################################################################################
@@ -523,7 +544,7 @@ class GaudiAccelerator(Accelerator):
                 compile_kwargs = self.state.dynamo_plugin.to_kwargs()
                 ###############################################################################################################
                 if self.use_regional_compilation:
-                    engine.module = compile_regions(engine.module, **compile_kwargs)
+                    compile_regions(engine.module, compile_kwargs)
                 else:
                     engine.compile(
                         backend=compile_kwargs.pop("backend"),
@@ -647,3 +668,10 @@ class GaudiAccelerator(Accelerator):
         )
         self._dataloaders.append(prepared_data_loader)
         return prepared_data_loader
+
+
+def patch_has_compiled_regions(*args, **kwargs):
+    return False
+
+
+accelerate.utils.other.has_compiled_regions = patch_has_compiled_regions

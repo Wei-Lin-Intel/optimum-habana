@@ -1,5 +1,0 @@
-{
-    "method": "HOOKS",
-    "mode": "MEASURE",
-    "dump_stats_path": "quantization/stable-diffusion-3/measure_all/fp8"
-}

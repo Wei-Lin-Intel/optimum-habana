@@ -1,3 +1,0 @@
-from .configuration_deepseek_v2 import DeepseekV2Config
-from .modeling_deepseek_v2 import DeepseekV2ForCausalLM
-from .tokenization_deepseek_v2 import DeepseekTokenizerFast

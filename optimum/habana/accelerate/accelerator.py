@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import accelerate
+import os
 import torch
 from accelerate import Accelerator
 from accelerate.data_loader import prepare_data_loader

@@ -21,6 +21,7 @@ import os
 from dataclasses import make_dataclass
 from types import MethodType
 
+import accelerate.utils.other
 import torch
 from accelerate import Accelerator
 from accelerate.accelerator import _split_batches
@@ -716,3 +717,10 @@ class GaudiAccelerator(Accelerator):
         )
         self._dataloaders.append(prepared_data_loader)
         return prepared_data_loader
+
+
+def patch_has_compiled_regions(*args, **kwargs):
+    return False
+
+
+accelerate.utils.other.has_compiled_regions = patch_has_compiled_regions

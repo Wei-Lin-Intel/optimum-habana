@@ -909,7 +909,7 @@ class GaudiTrainer(Trainer):
             active=self.args.profiling_steps,
             record_shapes=self.args.profiling_record_shapes,
             with_stack=self.args.profiling_with_stack,
-        name="train",
+            name="train",
         )
         hb_profiler.start()
 

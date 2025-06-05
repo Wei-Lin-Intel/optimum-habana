@@ -540,6 +540,7 @@ class GaudiGPTNeoXForCausalLM(GPTNeoXForCausalLM):
             )
         return reordered_past
 
+
 def apply_customized_rope(q, k, cos, sin, position_ids, training=True):
     if q.device.type == "hpu" and FusedRoPE is not None:
         if training:

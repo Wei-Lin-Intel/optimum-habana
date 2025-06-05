@@ -1075,9 +1075,6 @@ def main():
             ).cpu()
             return prompt, outputs
 
-        # warmup
-        from optimum.habana.utils import HabanaProfile
-
         # compilation stage disable profiling
         HabanaProfile.disable()
         # Compilation

@@ -290,7 +290,6 @@ class HabanaGenerationTime(object):
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.step()
 
-
 class HabanaProfile:
     _profilers = []
 

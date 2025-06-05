@@ -152,14 +152,6 @@ class GaudiMixtralSparseMoeBlock(MixtralSparseMoeBlock):
         # router_logits: (batch * sequence_length, n_experts)
         router_logits = self.gate(hidden_states)
 
-        if deepspeed_available and (not self.training):
-            from deepspeed import comm as dist
-
-            if dist.is_initialized():
-                output_tensors = [router_logits.clone() for _ in range(dist.get_world_size())]
-                dist.all_gather(output_tensors, router_logits)
-                router_logits = torch.cat(output_tensors, dim=1)
-
         routing_weights, selected_experts = calculate_routing_tensors(router_logits, self.top_k, hidden_states.dtype)
 
         # TODO

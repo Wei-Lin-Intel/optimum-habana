@@ -191,7 +191,10 @@ class GaudiMixtralSparseMoeBlock(torch.nn.Module):
             hidden_states *= torch.empty_like(hidden_states).uniform_(1.0 - self.jitter_noise, 1.0 + self.jitter_noise)
         hidden_states = hidden_states.view(-1, hidden_dim)
         # router_logits: (batch * sequence_length, n_experts)
-        router_logits = self.gate(hidden_states)
+        full_router_logits = self.gate(hidden_states)
+        router_logits = full_router_logits.clone()
+        router_logits[:] = float("-inf")
+        router_logits[:, self.experts_min:self.experts_max + 1] = full_router_logits[:, self.experts_min:self.experts_max + 1]
 
         routing_weights, selected_experts = calculate_routing_tensors(router_logits, self.top_k, hidden_states.dtype)
 
@@ -220,7 +223,7 @@ class GaudiMixtralSparseMoeBlock(torch.nn.Module):
                 if comm.is_initialized():
                     comm.all_reduce(final_hidden_states)
 
-        return final_hidden_states.view(original_shape), router_logits
+        return final_hidden_states.reshape(original_shape), router_logits
 
     def call_dynamic_moe_op(
         self,

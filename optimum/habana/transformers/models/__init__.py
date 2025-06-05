@@ -163,9 +163,7 @@ from .idefics2 import (
 from .llama import (
     GaudiLlamaAttention,
     GaudiLlamaDecoderLayer,
-    GaudiLlamaDynamicNTKScalingRotaryEmbedding,
     GaudiLlamaForCausalLM,
-    GaudiLlamaLinearScalingRotaryEmbedding,
     GaudiLlamaMLP,
     GaudiLlamaModel,
     GaudiLlamaRotaryEmbedding,

@@ -492,6 +492,7 @@ def main():
     # 1. First, let's load the dataset
     raw_datasets = DatasetDict()
 
+    '''
     load_dataset_kwargs = {
         "path": data_args.dataset_name,
         "name": data_args.dataset_config_name,
@@ -514,6 +515,19 @@ def main():
         print(f"Could not list contents of {data_args.dataset_dir}: {e}")
 
     raw_datasets["train"] = load_dataset(**load_dataset_kwargs)
+    '''
+    print("!!!")
+    DATASET_NAME = "librispeech_asr"
+    CONFIG_NAME = "clean"
+    LOCAL_PATH = "/software/data/librispeech_asr/LibriSpeech"
+    SPLIT = "train.100"
+    raw_datasets["train"] = load_dataset(
+        path=DATASET_NAME,
+        name=CONFIG_NAME,
+        split=SPLIT,
+        data_dir=LOCAL_PATH,
+        trust_remote_code=True,
+    )
 
     if data_args.audio_column_name not in raw_datasets["train"].column_names:
         raise ValueError(

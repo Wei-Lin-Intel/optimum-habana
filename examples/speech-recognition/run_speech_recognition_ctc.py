@@ -497,7 +497,7 @@ def main():
         "name": data_args.dataset_config_name,
         "split": data_args.train_split_name,
         #"token": data_args.token,
-        #"trust_remote_code": data_args.trust_remote_code,
+        "trust_remote_code": data_args.trust_remote_code,
     }
     if data_args.dataset_dir is not None:
         load_dataset_kwargs["data_dir"] = data_args.dataset_dir

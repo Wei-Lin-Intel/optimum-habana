@@ -496,7 +496,7 @@ def main():
         "path": data_args.dataset_name,
         "name": data_args.dataset_config_name,
         "split": data_args.train_split_name,
-        "token": data_args.token,
+        #"token": data_args.token,
         #"trust_remote_code": data_args.trust_remote_code,
     }
     if data_args.dataset_dir is not None:

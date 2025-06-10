@@ -490,7 +490,7 @@ def main():
     set_seed(training_args.seed)
 
     # 1. First, let's load the dataset
-    raw_datasets = DatasetDict()
+    #raw_datasets = DatasetDict()
 
     '''
     load_dataset_kwargs = {
@@ -521,7 +521,7 @@ def main():
     CONFIG_NAME = "clean"
     LOCAL_PATH = "/software/data/librispeech_asr/LibriSpeech"
     SPLIT = "train.100"
-    raw_datasets["train"] = load_dataset(
+    raw_datasets = load_dataset(
         path=DATASET_NAME,
         name=CONFIG_NAME,
         split=SPLIT,

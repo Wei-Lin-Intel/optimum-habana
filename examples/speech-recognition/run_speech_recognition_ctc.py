@@ -506,6 +506,13 @@ def main():
     for k, v in load_dataset_kwargs.items():
         print(f"  {k}: {v}")
 
+    print(f"Listing contents of data_dir: {data_args.dataset_dir}")
+    try:
+        for entry in os.listdir(data_args.dataset_dir):
+            print(f"  - {entry}")
+    except Exception as e:
+        print(f"Could not list contents of {data_args.dataset_dir}: {e}")
+
     raw_datasets["train"] = load_dataset(**load_dataset_kwargs)
 
     if data_args.audio_column_name not in raw_datasets["train"].column_names:

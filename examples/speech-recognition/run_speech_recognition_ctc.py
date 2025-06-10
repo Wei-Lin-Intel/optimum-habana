@@ -502,6 +502,10 @@ def main():
     if data_args.dataset_dir is not None:
         load_dataset_kwargs["data_dir"] = data_args.dataset_dir
 
+    print("Calling load_dataset with arguments:")
+    for k, v in load_dataset_kwargs.items():
+        print(f"  {k}: {v}")
+
     raw_datasets["train"] = load_dataset(**load_dataset_kwargs)
 
     if data_args.audio_column_name not in raw_datasets["train"].column_names:

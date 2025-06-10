@@ -528,6 +528,7 @@ def main():
         data_dir=LOCAL_PATH,
         trust_remote_code=True,
     )
+    print("ENd")
 
     if data_args.audio_column_name not in raw_datasets["train"].column_names:
         raise ValueError(

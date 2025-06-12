@@ -9,7 +9,8 @@ dataset = load_dataset(
     path=DATASET_SCRIPT,
     name=CONFIG_NAME,
     split=SPLIT,
-    data_dir=DATA_DIR
+    data_dir=DATA_DIR,
+    trust_remote_code=True
 )
 
 print(dataset)

@@ -5,23 +5,19 @@ DATASET_NAME = "librispeech_asr"
 CONFIG_NAME = "clean"
 SPLIT = "train.100"
 DATA_DIR = "/software/data/librispeech_asr/LibriSpeech"
-SCRIPT_DIR = "/root/local_librispeech_asr"
+SCRIPT_PATH = "/root/librispeech_asr.py"
 
-# Klonowanie tylko raz
-if not os.path.exists(SCRIPT_DIR):
-    print(f"Cloning dataset definition to {SCRIPT_DIR}...")
-    os.system(f"git clone https://huggingface.co/datasets/openslr/librispeech_asr {SCRIPT_DIR}")
+# Pobierz tylko plik datasetu .py (jeśli nie istnieje)
+if not os.path.exists(SCRIPT_PATH):
+    print(f"Downloading dataset script to {SCRIPT_PATH}...")
+    os.system(
+        f"wget https://raw.githubusercontent.com/huggingface/datasets/main/datasets/librispeech_asr/librispeech_asr.py -O {SCRIPT_PATH}"
+    )
 
-# Skrypt datasetu znajduje się głębiej w strukturze repozytorium
-DATASET_SCRIPT_PATH = os.path.join(SCRIPT_DIR, "librispeech_asr.py")
-
-if not os.path.exists(DATASET_SCRIPT_PATH):
-    raise FileNotFoundError(f"Expected dataset script not found at: {DATASET_SCRIPT_PATH}")
-
-# Wczytanie lokalnego datasetu
-print("Loading dataset using local dataset script...")
+# Użycie lokalnego datasetu
+print("Loading dataset using local script...")
 dataset = load_dataset(
-    path=DATASET_SCRIPT_PATH,
+    path=SCRIPT_PATH,
     name=CONFIG_NAME,
     split=SPLIT,
     data_dir=DATA_DIR,

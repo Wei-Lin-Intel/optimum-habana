@@ -517,6 +517,7 @@ def main():
     raw_datasets["train"] = load_dataset(**load_dataset_kwargs)
     '''
     print("!!!")
+    print(datasets.__version__)
     DATASET_NAME = "librispeech_asr"
     CONFIG_NAME = "clean"
     LOCAL_PATH = "/software/data/librispeech_asr/LibriSpeech"

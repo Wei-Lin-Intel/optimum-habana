@@ -526,7 +526,7 @@ def main():
         name=CONFIG_NAME,
         split=SPLIT,
         data_dir=LOCAL_PATH,
-        trust_remote_code=True,
+        trust_remote_code=False,
     )
     print("ENd")
 

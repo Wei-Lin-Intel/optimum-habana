@@ -39,6 +39,10 @@ CONFIG_NAME = "clean"
 SPLIT = "train.100"
 LOCAL_PATH = "/software/data/librispeech_asr/LibriSpeech"
 
+print("== Permissions Check ==")
+print("Can read data_dir:", os.access(LOCAL_PATH, os.R_OK))
+print("Can execute data_dir:", os.access(LOCAL_PATH, os.X_OK))
+
 print(f"DATASET_NAME = {DATASET_NAME}")
 print(f"CONFIG_NAME  = {CONFIG_NAME}")
 print(f"SPLIT        = {SPLIT}")

@@ -1,33 +1,26 @@
 import os
-import shutil
 from datasets import load_dataset
 
-# Ustawienia
 DATASET_NAME = "librispeech_asr"
 CONFIG_NAME = "clean"
 SPLIT = "train.100"
-SOURCE_DATA = "/software/data/librispeech_asr/LibriSpeech"
-LOCAL_DATA = "/root/librispeech_asr/LibriSpeech"
-LOCAL_SCRIPT = "/root/local_librispeech_asr"
+DATA_DIR = "/software/data/librispeech_asr/LibriSpeech"
+SCRIPT_DIR = "/root/local_librispeech_asr"
 
-# Skopiuj dane jeśli trzeba
-if not os.path.exists(LOCAL_DATA):
-    print(f"Copying dataset from {SOURCE_DATA} to {LOCAL_DATA}...")
-    shutil.copytree(SOURCE_DATA, LOCAL_DATA)
+# Klonowanie definicji lokalnej jeśli nie istnieje
+if not os.path.exists(SCRIPT_DIR):
+    print(f"Cloning dataset definition to {SCRIPT_DIR}...")
+    os.system(f"git clone https://huggingface.co/datasets/openslr/librispeech_asr {SCRIPT_DIR}")
 
-# Sklonuj definicję datasetu jeśli trzeba
-if not os.path.exists(LOCAL_SCRIPT):
-    print(f"Cloning dataset definition to {LOCAL_SCRIPT}...")
-    os.system(f"git clone https://huggingface.co/datasets/openslr/librispeech_asr {LOCAL_SCRIPT}")
-
-# Wczytaj dataset lokalnie
-print("Loading dataset...")
-ds = load_dataset(
-    path=LOCAL_SCRIPT,
+# Wczytanie datasetu
+print("Loading dataset from local path...")
+dataset = load_dataset(
+    path=SCRIPT_DIR,
     name=CONFIG_NAME,
     split=SPLIT,
-    data_dir=LOCAL_DATA,
+    data_dir=DATA_DIR,
     trust_remote_code=True,
 )
 
-print("Loaded dataset:", ds)
+print("Dataset loaded successfully.")
+print(dataset)

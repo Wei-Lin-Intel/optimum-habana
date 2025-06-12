@@ -32,12 +32,23 @@ for path in paths_to_clear:
         print(f"Not found: {path}")
 print()
 
-# Próba wczytania datasetu lokalnie
+# Kopiowanie danych do ścieżki z pełnym dostępem
+ORIGINAL_PATH = "/software/data/librispeech_asr/LibriSpeech"
+COPIED_PATH = "/root/librispeech_asr/LibriSpeech"
+
+print(f"=== Copying LibriSpeech dataset to {COPIED_PATH} ===")
+if os.path.exists(COPIED_PATH):
+    print("Removing existing copy...")
+    shutil.rmtree(COPIED_PATH)
+shutil.copytree(ORIGINAL_PATH, COPIED_PATH)
+print("Copy completed.\n")
+
+# Próba wczytania datasetu lokalnie z nowej ścieżki
 print("=== Attempting to load local LibriSpeech dataset ===")
 DATASET_NAME = "librispeech_asr"
 CONFIG_NAME = "clean"
 SPLIT = "train.100"
-LOCAL_PATH = "/software/data/librispeech_asr/LibriSpeech"
+LOCAL_PATH = COPIED_PATH
 
 print("== Permissions Check ==")
 print("Can read data_dir:", os.access(LOCAL_PATH, os.R_OK))

@@ -34,47 +34,38 @@ style: clean
 	ruff format . setup.py
 
 # Run unit and integration tests
-fast_tests:
-	python -m pip install .[tests]
+fast_tests: test_installs
 	python -m pytest tests/test_gaudi_configuration.py tests/test_trainer_distributed.py tests/test_trainer.py tests/test_trainer_seq2seq.py
 # TODO enable when CI has more servers
 #	python -m pytest test_functional_text_generation_example.py
 
 # Run unit and integration tests related to Diffusers
-fast_tests_diffusers:
-	python -m pip install .[tests]
+fast_tests_diffusers: test_installs
 	python -m pip install -r examples/stable-diffusion/requirements.txt
 	python -m pytest tests/test_diffusers.py
 
 # Run single-card non-regression tests on image classification models
-fast_tests_image_classifications:
-	pip install timm
-	python -m pip install .[tests]
+fast_tests_image_classifications: test_installs
 	python -m pytest tests/test_image_classification.py
 
-# Run unit and integration tests related to Image segmentation
-fast_tests_image_segmentation:
-	python -m pip install .[tests]
+# Run unit and integration tests related to image segmentation
+fast_tests_image_segmentation: test_installs
 	python -m pytest tests/test_image_segmentation.py
 
 # Run unit and integration tests related to text feature extraction
-fast_tests_feature_extraction:
-	python -m pip install .[tests]
+fast_tests_feature_extraction: test_installs
 	python -m pytest tests/test_feature_extraction.py
 
 # Run unit and integration tests related to VideoMAE
-fast_test_videomae:
-	python -m pip install .[tests]
+fast_test_videomae: test_installs
 	python -m pytest tests/test_video_mae.py
 
-# Run unit and integration tests related to Image segmentation
-fast_tests_object_detection:
-	python -m pip install .[tests]
+# Run unit and integration tests related to object detection
+fast_tests_object_detection: test_installs
 	python -m pytest tests/test_object_detection.py
 
 # Run integration tests related to table transformers
-fast_tests_table_transformers:
-	python -m pip install .[tests]
+fast_tests_table_transformers: test_installs
 	python -m pytest tests/test_table_transformer.py
 
 # Run non-performance regressions
@@ -96,22 +87,20 @@ slow_tests_8x: test_installs
 	DATA_CACHE=$(DATA_CACHE) python -m pytest tests/test_examples.py -v -s -k "multi_card"
 
 # Run DeepSpeed non-regression tests
-slow_tests_deepspeed: test_installs
-	python -m pip install git+https://github.com/HabanaAI/DeepSpeed.git@1.21.0
+slow_tests_deepspeed: test_installs install_deepspeed
 	python -m pytest tests/test_examples.py -v -s -k "deepspeed"
 
 slow_tests_diffusers: test_installs
-	python -m pip install -r examples/stable-diffusion/requirements.txt; \
+	python -m pip install -r examples/stable-diffusion/requirements.txt
 	python -m pytest tests/test_diffusers.py -v -s
 
 slow_tests_sentence_transformers: test_installs
 	python -m pytest tests/test_sentence_transformers.py -v -s
 
 # Run all text-generation non-regression tests
-slow_tests_text_generation_example: test_installs
+slow_tests_text_generation_example: test_installs install_deepspeed
 	python -m pip install -r examples/text-generation/requirements_awq.txt
 	BUILD_CUDA_EXT=0 python -m pip install -vvv --no-build-isolation git+https://github.com/HabanaAI/AutoGPTQ.git
-	python -m pip install git+https://github.com/HabanaAI/DeepSpeed.git@1.21.0
 	python -m pip install tiktoken blobfile
 	python -m pytest tests/test_text_generation_example.py tests/test_encoder_decoder.py -v -s --token $(TOKEN)
 
@@ -122,18 +111,15 @@ slow_tests_text_generation_example_1x: test_installs
 	python -m pytest tests/test_text_generation_example.py tests/test_encoder_decoder.py -m "(not x2) and (not x4) and (not x8)" -v -s --token $(TOKEN)
 
 # Run subset of text-generation non-regression tests that require 2 Gaudi cards
-slow_tests_text_generation_example_2x: test_installs
-	python -m pip install git+https://github.com/HabanaAI/DeepSpeed.git@1.21.0
+slow_tests_text_generation_example_2x: test_installs install_deepspeed
 	python -m pytest tests/test_text_generation_example.py -m x2 -v -s --token $(TOKEN)
 
 # Run subset of text-generation non-regression tests that require 4 Gaudi cards
-slow_tests_text_generation_example_4x: test_installs
-	python -m pip install git+https://github.com/HabanaAI/DeepSpeed.git@1.21.0
+slow_tests_text_generation_example_4x: test_installs install_deepspeed
 	python -m pytest tests/test_text_generation_example.py -m x4 -v -s --token $(TOKEN)
 
 # Run subset of text-generation non-regression tests that require 8 Gaudi cards
-slow_tests_text_generation_example_8x: test_installs
-	python -m pip install git+https://github.com/HabanaAI/DeepSpeed.git@1.21.0
+slow_tests_text_generation_example_8x: test_installs install_deepspeed
 	python -m pytest tests/test_text_generation_example.py -m x8 -v -s --token $(TOKEN)
 
 # Run image-to-text non-regression tests
@@ -216,3 +202,6 @@ clean:
 
 test_installs:
 	python -m pip install .[tests]
+
+install_deepspeed:
+	python -m pip install git+https://github.com/HabanaAI/DeepSpeed.git@1.21.0

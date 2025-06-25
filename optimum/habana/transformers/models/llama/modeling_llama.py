@@ -524,7 +524,7 @@ class GaudiLlamaAttention(LlamaAttention):
         if hasattr(self.k_proj, "qweight"):
             return self.k_proj.scales.dtype
         elif hasattr(self.k_proj, "use_qdq") and self.k_proj.use_qdq:
-            return self.k_proj.dequant_weights.hp_dtype
+            return self.k_proj.weight.dtype
         return self.k_proj.weight.dtype
 
     def allocate_kv_cache(self, batch_size, max_seq_len, inp_seq_len):

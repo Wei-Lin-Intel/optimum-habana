@@ -1,3 +1,4 @@
 opencv-python
 compel
 sentencepiece
+numpy==1.26.4

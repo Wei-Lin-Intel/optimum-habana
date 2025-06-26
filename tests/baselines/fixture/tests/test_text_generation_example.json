@@ -9,7 +9,7 @@
   },
   "tests/test_text_generation_example.py::test_text_generation_beam_search[Qwen/Qwen2-7b-Instruct-1-True]": {
     "gaudi2": {
-      "throughput": 91.24938949709826
+      "throughput": 73.69813598459744
     },
     "gaudi3": {
       "throughput": 98.57537548249874
@@ -83,7 +83,7 @@
   },
   "tests/test_text_generation_example.py::test_text_generation_bf16_1x[Qwen/Qwen2-7B-256-False-True]": {
     "gaudi2": {
-      "output": "DeepSpeed is a machine learning framework that provides a unified interface for training deep learning models. It is designed to be easy to use and to provide high performance. DeepSpeed is built on top of PyTorch and TensorFlow, and it supports a wide range of models, including transformers, convolutional neural networks, and recurrent neural networks.\nDeepSpeed is a machine learning framework that provides a unified interface for training deep learning models. It is designed to be easy to use and to provide high performance. DeepSpeed is built on top of Py",
+      "output": "DeepSpeed is a machine learning framework that provides a unified interface for training deep learning models. It is designed to be easy to use and to provide high performance. DeepSpeed is built on top of PyTorch and TensorFlow, and it supports both CPU and GPU training. It is also compatible with a variety of deep learning models, including ResNet, BERT, and GPT-2.\nDeepSpeed is a machine learning framework that provides a unified interface for training deep learning models. It is designed to be easy to use and to",
       "throughput": 8870.945160540245
     },
     "gaudi3": {

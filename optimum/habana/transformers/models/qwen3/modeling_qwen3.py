@@ -22,15 +22,15 @@ from typing import List, Optional, Tuple, Union
 import torch
 from transformers.cache_utils import Cache, DynamicCache, StaticCache
 from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
-from transformers.models.qwen2.configuration_qwen2 import Qwen2Config
-from transformers.models.qwen2.modeling_qwen2 import (
+from transformers.models.qwen3.configuration_qwen3 import Qwen3Config
+from transformers.models.qwen3.modeling_qwen3 import (
     KwargsForCausalLM,
-    Qwen2Attention,
-    Qwen2DecoderLayer,
-    Qwen2ForCausalLM,
-    Qwen2MLP,
-    Qwen2Model,
-    Qwen2RMSNorm,
+    Qwen3Attention,
+    Qwen3DecoderLayer,
+    Qwen3ForCausalLM,
+    Qwen3MLP,
+    Qwen3Model,
+    Qwen3RMSNorm,
     apply_rotary_pos_emb,
     logger,
 )
@@ -69,7 +69,7 @@ except ImportError:
 import habana_frameworks.torch.core as htcore
 
 
-def gaudi_qwen2_rmsnorm_forward(self, hidden_states):
+def gaudi_qwen3_rmsnorm_forward(self, hidden_states):
     if hidden_states.device.type == "hpu" and has_fused_rms_norm:
         # mixed dtypes are not good for FusedRMSNorm, both inputs need to have same dtype
         if hidden_states.dtype != self.weight.dtype:
@@ -87,7 +87,7 @@ def gaudi_qwen2_rmsnorm_forward(self, hidden_states):
         return self.weight * hidden_states.to(input_dtype)
 
 
-class GaudiQwen2MLP(Qwen2MLP):
+class GaudiQwen3MLP(Qwen3MLP):
     def pre_mlp_forward(self, x):
         inputs = self.act_fn(self.gate_proj(x)) * self.up_proj(x)
         output = self.down_proj(inputs)
@@ -103,7 +103,7 @@ class GaudiQwen2MLP(Qwen2MLP):
         return x
 
 
-def gaudi_qwen2_repeat_kv(
+def gaudi_qwen3_repeat_kv(
     query_states: torch.Tensor,
     key_states: torch.Tensor,
     value_states: torch.Tensor,
@@ -180,7 +180,7 @@ def gaudi_eager_attention_forward(
     **kwargs,
 ):
     bsz, q_len = kwargs["input_shape"]
-    query_states, key_states, value_states, attention_mask = gaudi_qwen2_repeat_kv(
+    query_states, key_states, value_states, attention_mask = gaudi_qwen3_repeat_kv(
         query, key, value, attention_mask, module.num_key_value_groups
     )
 
@@ -271,8 +271,8 @@ def get_gaudi_distributed_attention(
         return fused_scaled_dot_product_attention
 
 
-class GaudiQwen2Attention(Qwen2Attention):
-    def __init__(self, config: Qwen2Config, layer_idx: Optional[int] = None):
+class GaudiQwen3Attention(Qwen3Attention):
+    def __init__(self, config: Qwen3Config, layer_idx: Optional[int] = None):
         super().__init__(config, layer_idx)
 
         self.matmul_qk = Matmul()
@@ -280,7 +280,6 @@ class GaudiQwen2Attention(Qwen2Attention):
         self.k_cache = KVCache()
         self.v_cache = KVCache()
 
-        self.max_position_embeddings = config.max_position_embeddings
         self.inp_seq_len = -1
 
         self.rotary_emb = GaudiRotaryEmbedding(config=self.config)
@@ -391,8 +390,8 @@ class GaudiQwen2Attention(Qwen2Attention):
         q_len = input_shape[1]
         hidden_shape = (*input_shape, -1, self.head_dim)
 
-        query_states = self.q_proj(hidden_states).view(hidden_shape).transpose(1, 2)
-        key_states = self.k_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+        query_states = self.q_norm(self.q_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
+        key_states = self.k_norm(self.k_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
         value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
 
         kv_seq_len = key_states.shape[-2]
@@ -488,8 +487,6 @@ class GaudiQwen2Attention(Qwen2Attention):
 
         if use_flash_attention and FusedSDPA is not None:
             attn_weights = None
-            # Qwen2 Famliy should not use fast/bf16 softmax for SDPA due to its magnitude issue
-            softmax_mode = "None" if self.training else "fp32"
             if q_len == 1:
                 # next token
                 attn_output = fused_scaled_dot_product_attention(
@@ -500,13 +497,14 @@ class GaudiQwen2Attention(Qwen2Attention):
                     0.0,
                     False,
                     None,
-                    softmax_mode,
+                    "None",
                     False,
                     None,
                     "None",
                 )
             else:
                 # first token
+                softmax_mode = "fast" if flash_attention_fast_softmax else "None"
                 if flash_attention_causal_mask:
                     attn_output = fused_scaled_dot_product_attention(
                         query_states,
@@ -571,16 +569,16 @@ class GaudiQwen2Attention(Qwen2Attention):
         return attn_output
 
 
-class GaudiQwen2DecoderLayer(Qwen2DecoderLayer):
-    def __init__(self, config: Qwen2Config, layer_idx: int):
-        super(Qwen2DecoderLayer, self).__init__()
+class GaudiQwen3DecoderLayer(Qwen3DecoderLayer):
+    def __init__(self, config: Qwen3Config, layer_idx: int):
+        super(Qwen3DecoderLayer, self).__init__()
         self.hidden_size = config.hidden_size
 
-        self.self_attn = GaudiQwen2Attention(config, layer_idx)
+        self.self_attn = GaudiQwen3Attention(config, layer_idx)
 
-        self.mlp = GaudiQwen2MLP(config)
-        self.input_layernorm = Qwen2RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = Qwen2RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.mlp = GaudiQwen3MLP(config)
+        self.input_layernorm = Qwen3RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.post_attention_layernorm = Qwen3RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def allocate_kv_cache(self, batch_size, max_seq_len, inp_seq_len):
         self.self_attn.allocate_kv_cache(batch_size, max_seq_len, inp_seq_len)
@@ -724,22 +722,22 @@ class GaudiQwen2DecoderLayer(Qwen2DecoderLayer):
         return hidden_states
 
 
-class GaudiQwen2Model(Qwen2Model):
-    def __init__(self, config: Qwen2Config):
+class GaudiQwen3Model(Qwen3Model):
+    def __init__(self, config: Qwen3Config):
         """
-        Copied from https://github.com/huggingface/transformers/blob/v4.40-release/src/transformers/models/qwen2/modeling_qwen2.py#L920
+        Copied from https://github.com/huggingface/transformers/blob/v4.40-release/src/transformers/models/qwen3/modeling_qwen3.py#L920
         1. set fill_value to 1 instead of True
         2. add device=self.device
         """
-        super(Qwen2Model, self).__init__(config)
+        super(Qwen3Model, self).__init__(config)
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size
 
         self.embed_tokens = torch.nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
         self.layers = torch.nn.ModuleList(
-            [GaudiQwen2DecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
+            [GaudiQwen3DecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
-        self.norm = Qwen2RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.norm = Qwen3RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
         self.gradient_checkpointing = False
         # Initialize weights and apply final processing
@@ -942,7 +940,7 @@ class GaudiQwen2Model(Qwen2Model):
         )
 
 
-class GaudiQwen2ForCausalLM(Qwen2ForCausalLM):
+class GaudiQwen3ForCausalLM(Qwen3ForCausalLM):
     def allocate_kv_cache(self, batch_size, max_seq_len, inp_seq_len):
         self.model.allocate_kv_cache(batch_size, max_seq_len, inp_seq_len)
 

@@ -547,7 +547,7 @@ def parse_args(input_args=None):
         "--profiling_warmup_steps",
         default=0,
         type=int,
-        help="Number of steps to ignore for profiling.",
+        help="Number of training steps to ignore for profiling.",
     )
     parser.add_argument(
         "--profiling_steps",

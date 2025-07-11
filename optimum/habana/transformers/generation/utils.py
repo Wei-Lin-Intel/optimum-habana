@@ -2041,6 +2041,7 @@ class GaudiGenerationMixin(GenerationMixin):
             model_kwargs["cache_position"] = torch.arange(cur_len, device=input_ids.device)
 
         this_peer_finished = False
+
         if profiler is not None:
             profiler.start()
 
@@ -2487,6 +2488,7 @@ class GaudiGenerationMixin(GenerationMixin):
 
                     torch_hpu.synchronize()
                 hb_gen_time.step()
+
             if profiler is not None:
                 profiler.step()
 
@@ -2810,6 +2812,7 @@ class GaudiGenerationMixin(GenerationMixin):
 
                     torch_hpu.synchronize()
                 hb_gen_time.step()
+
             if profiler is not None:
                 profiler.step()
 
@@ -2947,7 +2950,8 @@ class GaudiGenerationMixin(GenerationMixin):
             generation_config ([`GaudiGenerationConfig`]):
                 The generation configuration to be used as parametrization of the decoding method.
             synced_gpus (`bool`):
-                Whether to continue running the while loop until max_length (needed for ZeRO stage 3)
+                Whether to continue running the while loop until max_length (needed to avoid deadlocking with
+                `FullyShardedDataParallel` and DeepSpeed ZeRO Stage 3).
             lazy_mode (`bool`, *optional*, defaults to `False`):
                 Whether the run is executed in lazy mode or not (i.e. eager mode).
             profiler (`HabanaProfile`, *optional*, defaults to None):
@@ -3509,7 +3513,8 @@ class GaudiGenerationMixin(GenerationMixin):
             generation_config ([`GaudiGenerationConfig`]):
                 The generation configuration to be used as parametrization of the decoding method.
             synced_gpus (`bool`):
-                Whether to continue running the while loop until max_length (needed for ZeRO stage 3)
+                Whether to continue running the while loop until max_length (needed to avoid deadlocking with
+                `FullyShardedDataParallel` and DeepSpeed ZeRO Stage 3).
             lazy_mode (`bool`, *optional*, defaults to `False`):
                 Whether the run is executed in lazy mode or not (i.e. eager mode).
             profiler (`HabanaProfile`, *optional*, defaults to None):
@@ -3561,7 +3566,8 @@ class GaudiGenerationMixin(GenerationMixin):
             generation_config ([`GaudiGenerationConfig`]):
                 The generation configuration to be used as parametrization of the decoding method.
             synced_gpus (`bool`):
-                Whether to continue running the while loop until max_length (needed for ZeRO stage 3)
+                Whether to continue running the while loop until max_length (needed to avoid deadlocking with
+                `FullyShardedDataParallel` and DeepSpeed ZeRO Stage 3).
             lazy_mode (`bool`, *optional*, defaults to `False`):
                 Whether the run is executed in lazy mode or not (i.e. eager mode).
             profiler (`HabanaProfile`, *optional*, defaults to None):
@@ -4110,6 +4116,7 @@ class GaudiGenerationMixin(GenerationMixin):
 
                     torch_hpu.synchronize()
                 hb_gen_time.step()
+
             if profiler is not None:
                 profiler.step()
 

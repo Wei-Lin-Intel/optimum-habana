@@ -505,13 +505,13 @@ def main():
     args = setup_parser(parser)
     model, assistant_model, tokenizer, generation_config = initialize_model(args, logger)
 
-    from optimum.habana.utils import HabanaGenerationTime, HabanaProfile, get_hpu_memory_stats
-
     use_lazy_mode = True
     if args.torch_compile or args.pt2e_path:
         use_lazy_mode = False
 
     import habana_frameworks.torch.hpu as torch_hpu
+
+    from optimum.habana.utils import HabanaGenerationTime, HabanaProfile, get_hpu_memory_stats
 
     if args.sdp_on_bf16:
         torch._C._set_math_sdp_allow_fp16_bf16_reduction(True)

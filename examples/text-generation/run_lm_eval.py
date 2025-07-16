@@ -24,11 +24,13 @@ import multiprocessing as mp
 import os
 from typing import List, Literal, Optional
 
+from datasets import load_dataset
 import psutil
 import torch
 import torch.nn.functional as F
 from lm_eval import evaluator, utils
 from lm_eval.api.instance import Instance
+from lm_eval.api.task import Task
 from lm_eval.models.huggingface import HFLM, TemplateLM
 from lm_eval.models.utils import stop_sequences_criteria
 
@@ -61,6 +63,45 @@ def LimitedSpawnPool(_):
 
 mp.Pool = LimitedSpawnPool
 
+class CustomTaskFromDataset(Task):
+
+    def __init__(self, dataset, name):
+        super().__init__()
+        self.dataset = dataset
+        self._name = name
+
+    def has_training_docs(self):
+        return False
+
+    def has_validation_docs(self):
+        return True
+
+    def has_test_docs(self):
+        return False
+
+    def validation_docs(self):
+        return self.dataset
+
+    def fewshot_description(self):
+        return ""
+
+    def doc_to_text(self, doc):
+        return doc.get("ctx") or doc.get("context") or doc.get("question") or ""
+
+    def doc_to_target(self, doc):
+        if "label" in doc and "endings" in doc:
+            label = doc["label"]
+            endings = doc["endings"]
+            if isinstance(endings, list) and isinstance(label, int) and label < len(endings):
+                return " " + endings[label]
+        return ""
+
+    def construct_requests(self, doc, ctx):
+        return Instance(
+            request_type="loglikelihood",
+            args=(ctx, self.doc_to_target(doc)),
+            idx=None
+        )
 
 def setup_lm_eval_parser():
     parser = argparse.ArgumentParser(
@@ -347,7 +388,21 @@ def main() -> None:
     with HabanaGenerationTime() as timer:
         with torch.no_grad():
             log_samples = args.log_samples
-            results = evaluator.simple_evaluate(lm, tasks=args.tasks, limit=args.limit_iters, log_samples=log_samples)
+
+            custom_tasks = {}
+            for task_name in args.tasks:
+                try:
+                    dataset = load_dataset(task_name, split="validation")
+                    custom_tasks[task_name] = CustomTaskFromDataset(dataset, name=task_name)
+                except Exception as e:
+                    logger.error(f"Failed to load dataset '{task_name}': {e}")
+
+            results = evaluator.evaluate(
+                lm=lm,
+                task_dict=custom_tasks,
+                limit=args.limit_iters,
+                log_samples=args.log_samples
+            )
         if args.device == "hpu":
             import habana_frameworks.torch.hpu as torch_hpu
 

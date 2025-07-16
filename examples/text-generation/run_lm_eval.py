@@ -66,7 +66,6 @@ mp.Pool = LimitedSpawnPool
 
 class CustomTaskFromDataset(Task):
     def __init__(self, dataset, name):
-        super().__init__()
         self.dataset = dataset
         self._name = name
 

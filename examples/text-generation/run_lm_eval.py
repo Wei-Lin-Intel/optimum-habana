@@ -31,6 +31,7 @@ import torch.nn.functional as F
 from lm_eval import evaluator, utils
 from lm_eval.api.instance import Instance
 from lm_eval.api.task import Task
+from lm_eval.api.metrics import mean
 from lm_eval.models.huggingface import HFLM, TemplateLM
 from lm_eval.models.utils import stop_sequences_criteria
 
@@ -64,7 +65,6 @@ def LimitedSpawnPool(_):
 mp.Pool = LimitedSpawnPool
 
 class CustomTaskFromDataset(Task):
-
     def __init__(self, dataset, name):
         super().__init__()
         self.dataset = dataset
@@ -86,7 +86,7 @@ class CustomTaskFromDataset(Task):
         return ""
 
     def doc_to_text(self, doc):
-        return doc.get("ctx") or doc.get("context") or doc.get("question") or ""
+        return doc.get("ctx", "")
 
     def doc_to_target(self, doc):
         if "label" in doc and "endings" in doc:
@@ -102,6 +102,18 @@ class CustomTaskFromDataset(Task):
             args=(ctx, self.doc_to_target(doc)),
             idx=None
         )
+
+    def process_results(self, doc, results):
+        # Example: accuracy check
+        pred_is_correct = int(results[0] > results[1])  # Mock logic, adjust to real
+        return {"acc": pred_is_correct}
+
+    def aggregation(self):
+        return {"acc": mean}
+
+    def higher_is_better(self):
+        return {"acc": True}
+
 
 def setup_lm_eval_parser():
     parser = argparse.ArgumentParser(
@@ -371,6 +383,20 @@ class HabanaModelAdapter(HFLM):
             model_info["delta_sha"] = get_model_sha(self.delta, self.revision)
         return model_info
 
+def try_load_dataset(task_name):
+    try:
+        if task_name == "winogrande":
+            return load_dataset("winogrande", "winogrande_debiased", split="validation")
+        elif task_name == "lambada_openai":
+            return load_dataset("lambada", "openai", split="validation")
+        elif task_name == "piqa":
+            return load_dataset("piqa", split="validation")
+        else:
+            return load_dataset(task_name, split="validation")
+    except Exception as e:
+        logger.error(f"Failed to load dataset '{task_name}': {e}")
+        return None
+
 
 def main() -> None:
     # Modified based on cli_evaluate function in https://github.com/EleutherAI/lm-evaluation-harness/blob/v0.4.7/lm_eval/__main__.py/#L268
@@ -391,11 +417,9 @@ def main() -> None:
 
             custom_tasks = {}
             for task_name in args.tasks:
-                try:
-                    dataset = load_dataset(task_name, split="validation")
+                dataset = try_load_dataset(task_name)
+                if dataset:
                     custom_tasks[task_name] = CustomTaskFromDataset(dataset, name=task_name)
-                except Exception as e:
-                    logger.error(f"Failed to load dataset '{task_name}': {e}")
 
             results = evaluator.evaluate(
                 lm=lm,

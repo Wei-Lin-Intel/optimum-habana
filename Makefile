@@ -225,4 +225,4 @@ test_installs:
 	python -m pip install .[tests]
 
 install_deepspeed:
-	python -m pip install git+https://github.com/HabanaAI/DeepSpeed.git@1.21.0
+	python -m pip install "git+https://${GH_TOKEN}@github.com/habana-internal/deepspeed-fork.git@v1.22.0"

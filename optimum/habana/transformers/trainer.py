@@ -1033,7 +1033,7 @@ class GaudiTrainer(Trainer):
                         else contextlib.nullcontext
                     )
                     with context():
-                        tr_loss_step = self.training_step(model, inputs, num_items_in_batch)
+                        tr_loss_step = self.training_step(model, inputs)
 
                     if (
                         args.parallel_mode == ParallelMode.DISTRIBUTED

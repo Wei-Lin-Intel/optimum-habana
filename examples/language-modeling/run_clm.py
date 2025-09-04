@@ -65,7 +65,7 @@ logger = logging.getLogger(__name__)
 check_min_version("4.51.0")
 check_optimum_habana_min_version("1.18.0.dev0")
 
-require_version("datasets>=2.14.0", "To fix: pip install -r examples/pytorch/language-modeling/requirements.txt")
+require_version("datasets>=4.0.0", "To fix: pip install -r examples/pytorch/language-modeling/requirements.txt")
 
 adapt_transformers_to_gaudi()
 
@@ -269,7 +269,7 @@ class DataTrainingArguments:
 
     def __post_init__(self):
         if self.streaming:
-            require_version("datasets>=2.0.0", "The streaming feature requires `datasets>=2.0.0`")
+            require_version("datasets>=4.0.0", "The streaming feature requires `datasets>=2.0.0`")
 
         if self.dataset_name is None and self.train_file is None and self.validation_file is None:
             raise ValueError("Need either a dataset name or a training/validation file.")
@@ -502,7 +502,7 @@ def main():
             low_cpu_mem_usage=model_args.low_cpu_mem_usage,
         )
     else:
-        model = AutoModelForCausalLM.from_config(config, trust_remote_code=model_args.trust_remote_code)
+        model = AutoModelForCausalLM.from_config(config )
         n_params = sum({p.data_ptr(): p.numel() for p in model.parameters()}.values())
         logger.info(f"Training new model from scratch - Total size={n_params / 2**20:.2f}M params")
 

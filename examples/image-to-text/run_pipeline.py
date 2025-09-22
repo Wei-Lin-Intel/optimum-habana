@@ -19,6 +19,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import numpy as np
 
 import PIL.Image
 import requests
@@ -100,6 +101,66 @@ def finalize_quantization(model):
 
     finalize_calibration(model)
 
+def extract_stats_from_iteration_times(iteration_times, args):
+    import torch
+
+    world_size = args.world_size if args.world_size > 0 else 1
+    repeats = args.n_iterations * world_size
+
+    local_tensor = torch.tensor(iteration_times, device="hpu")
+
+    if args.global_rank == 0:
+        gathered_tensors = [torch.zeros_like(local_tensor) for _ in range(args.world_size)]
+    else:
+        gathered_tensors = None
+
+    if world_size > 1:
+        import torch.distributed as dist
+        dist.gather(local_tensor, gather_list=gathered_tensors, dst=0)
+    else:
+        gathered_tensors = [local_tensor]
+
+    if args.global_rank == 0:
+        iteration_times = torch.cat(gathered_tensors).cpu().numpy().tolist()
+        n_tokens = len(iteration_times) // repeats
+
+        iteration_times_2d = np.array([iteration_times[i * n_tokens:(i + 1) * n_tokens] for i in range(repeats)])
+        prefill_times = iteration_times_2d[:, 0]
+        decode_token_times = iteration_times_2d[:, 1:].flatten() if n_tokens > 1 else []
+        decode_sequence_times = np.sum(iteration_times_2d[:, 1:], axis=1) if n_tokens > 1 else decode_token_times
+        def get_stats(times):
+            if len(times) == 0:
+                return {
+                    "min": 0,
+                    "max": 0,
+                    "mean": 0,
+                    "stddev": 0,
+                    "cv": 0,
+                    "median": 0,
+                    "p90": 0,
+                    "p95": 0,
+                    "p99": 0,
+                }
+            return {
+                "min": np.min(times),
+                "max": np.max(times),
+                "mean": np.mean(times),
+                "stddev": np.std(times),
+                "cv": np.std(times) / np.mean(times) if np.mean(times) > 0 else 0,
+                "median": np.median(times),
+                "p90": np.percentile(times, 90),
+                "p95": np.percentile(times, 95),
+                "p99": np.percentile(times, 99),
+            }
+        return {
+            "prefill": get_stats(prefill_times),
+            "decode_per_token": get_stats(decode_token_times),
+            "decode_per_sequence": get_stats(decode_sequence_times),
+            "sequence_count": repeats,
+            "tokens_per_sequence": n_tokens,
+        }
+    else:
+        return None
 
 def main():
     parser = argparse.ArgumentParser()
@@ -225,6 +286,11 @@ def main():
         "--trim_logits",
         action="store_true",
         help="Calculate logits only for the last token to save memory in the first step.",
+    )
+    parser.add_argument(
+        "--measure_iteration_times",
+        action="store_true",
+        help="Collect per-token iteration (prefill/decode) times and log aggregated statistics.",
     )
 
     args = parser.parse_args()
@@ -474,6 +540,10 @@ def main():
     if args.quant_config:
         finalize_quantization(generator.model)
 
+    if args.measure_iteration_times:
+        iteration_times = []
+        generate_kwargs["iteration_times"] = iteration_times
+
     with HabanaGenerationTime() as timer:
         for i in range(args.n_iterations):
             result = generator(images, prompt=args.prompt, batch_size=args.batch_size, generate_kwargs=generate_kwargs)
@@ -511,6 +581,12 @@ def main():
     print(f"Graph compilation duration          = {compilation_duration} seconds")
     print(separator)
     print()
+
+    if args.measure_iteration_times:
+        iteration_stats = extract_stats_from_iteration_times(iteration_times, args)
+        if iteration_stats is not None:
+            iteration_stats["throughput"] = throughput
+        logger.info({"iteration_stats": iteration_stats})
 
     # Store results if necessary
     if args.output_dir is not None:

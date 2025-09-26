@@ -273,21 +273,22 @@ def main():
                 "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
             )
 
-    # Initialize our dataset and prepare it for the audio classification task.
+    dataset_name = "speechbrain/common_language"
+    revision = "refs/convert/parquet/full"
+
     raw_datasets = DatasetDict()
     raw_datasets["train"] = load_dataset(
-        data_args.dataset_name,
-        data_args.dataset_config_name,
-        split=data_args.train_split_name,
+        dataset_name,
+        split="train",
         token=model_args.token,
-        trust_remote_code=model_args.trust_remote_code,
+        revision=revision,
     )
+
     raw_datasets["eval"] = load_dataset(
-        data_args.dataset_name,
-        data_args.dataset_config_name,
-        split=data_args.eval_split_name,
+        dataset_name,
+        split="validation",
         token=model_args.token,
-        trust_remote_code=model_args.trust_remote_code,
+        revision=revision,
     )
 
     if data_args.audio_column_name not in raw_datasets["train"].column_names:

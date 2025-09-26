@@ -274,11 +274,12 @@ def main():
             )
 
     dataset_name = "speechbrain/common_language"
-    revision = "refs/convert/parquet/full"
+    revision = "refs/convert/parquet"
 
     raw_datasets = DatasetDict()
     raw_datasets["train"] = load_dataset(
         dataset_name,
+        data_dir="full/train",
         split="train",
         token=model_args.token,
         revision=revision,
@@ -286,6 +287,7 @@ def main():
 
     raw_datasets["eval"] = load_dataset(
         dataset_name,
+        data_dir="full/validation",
         split="validation",
         token=model_args.token,
         revision=revision,

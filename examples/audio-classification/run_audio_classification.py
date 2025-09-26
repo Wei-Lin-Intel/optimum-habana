@@ -288,7 +288,7 @@ def main():
     raw_datasets["eval"] = load_dataset(
         dataset_name,
         data_dir="full/validation",
-        split="validation",
+        split="train",
         token=model_args.token,
         revision=revision,
     )

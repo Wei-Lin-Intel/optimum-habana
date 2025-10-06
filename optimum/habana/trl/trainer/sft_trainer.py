@@ -590,6 +590,7 @@ class GaudiSFTTrainer(SFTTrainer, GaudiTrainer):
         - add pad_max for static shape
         """
 
+        warn0("!!!START!!!", state=self.accelerator.state)
         use_formatting_func = False
         if dataset_text_field is None and self._is_chat_dataset(dataset):
             warn0("Detected chat-style dataset (messages field). Applying chat conversion.", state=self.accelerator.state)

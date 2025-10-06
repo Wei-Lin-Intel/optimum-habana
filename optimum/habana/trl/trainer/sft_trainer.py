@@ -548,6 +548,30 @@ class GaudiSFTTrainer(SFTTrainer, GaudiTrainer):
                 add_special_tokens,
             )
 
+    def _is_chat_dataset(self, dataset) -> bool:
+        """Check if dataset follows a chat-like structure with a 'messages' column."""
+        if not getattr(dataset, "column_names", None) or "messages" not in dataset.column_names:
+            return False
+        try:
+            sample = dataset[0].get("messages", [])
+        except (KeyError, IndexError, TypeError):
+            return False
+        return (
+            isinstance(sample, list)
+            and all(isinstance(m, dict) and "content" in m for m in sample)
+        )
+
+    def _convert_chat_messages_to_text(self, example: dict) -> str:
+        """Flatten Dolly/OAI-style messages into a readable chat string."""
+        messages = example.get("messages")
+        if not isinstance(messages, list):
+            return ""
+        return "\n".join(
+            f"{m.get('role', '') + ': ' if m.get('role') else ''}{m.get('content', '')}"
+            for m in messages
+            if isinstance(m, dict) and m.get("content")
+        )
+
     def _prepare_non_packed_dataloader(
         self,
         tokenizer,
@@ -566,7 +590,13 @@ class GaudiSFTTrainer(SFTTrainer, GaudiTrainer):
         - add pad_max for static shape
         """
 
-        use_formatting_func = formatting_func is not None and dataset_text_field is None
+        use_formatting_func = False
+        if dataset_text_field is None and self._is_chat_dataset(dataset):
+            warn0("Detected chat-style dataset (messages field). Applying chat conversion.", state=self.accelerator.state)
+            formatting_func = lambda x: [self._convert_chat_messages_to_text(x)]
+            use_formatting_func = True
+        elif formatting_func is not None and dataset_text_field is None:
+            use_formatting_func = True
         self._dataset_sanity_checked = False
 
         # Inspired from: https://huggingface.co/learn/nlp-course/chapter7/6?fw=pt

@@ -29,6 +29,7 @@ from typing import Optional
 
 import numpy as np
 import torch
+import torchvision.transforms.functional as functional
 import transformers
 from datasets import load_dataset
 from habana_dataloader_trainer import HabanaDataloaderTrainer
@@ -476,21 +477,45 @@ def main():
 
         elif dataset_mode in ("decoded", "pil"):
 
-            def to_rgb_array(img) -> np.ndarray:
+            def to_rgb_array(img):
                 try:
                     if isinstance(img, dict) and "array" in img:
-                        arr = img["array"]
+                        arr = np.asarray(img["array"], dtype=np.uint8)
+                    elif isinstance(img, Image.Image):
+                        arr = np.asarray(img.convert("RGB"))
                     else:
-                        img_pil = img if isinstance(img, Image) else Image.fromarray(np.asarray(img))
-                        arr = np.asarray(img_pil.convert("RGB"))
+                        arr = np.asarray(Image.fromarray(np.asarray(img)).convert("RGB"))
                     return arr
                 except Exception:
-                    return np.zeros((224, 224, 3), dtype=np.uint8)  # dummy black RGB
+                    # Return black placeholder for corrupt or invalid images
+                    return np.zeros((224, 224, 3), dtype=np.uint8)
 
             def transform_fn(examples):
                 arrays = [to_rgb_array(img) for img in examples[image_column]]
-                tensors = [torch.from_numpy(np.ascontiguousarray(arr)).permute(2, 0, 1) for arr in arrays]
-                tensors = [image_transformations(t) for t in tensors]
+                tensors = []
+
+                target_size = getattr(config.vision_config, "image_size", 224)
+
+                for arr in arrays:
+                    try:
+                        tensor = torch.from_numpy(np.ascontiguousarray(arr)).permute(2, 0, 1).float() / 255.0
+                        tensor = image_transformations(tensor)
+
+                        # Ensure consistent shape for all images
+                        tensor = functional.resize(
+                            tensor,
+                            [target_size, target_size],
+                            interpolation=functional.InterpolationMode.BICUBIC,
+                        )
+
+                        if tensor.ndim == 3 and tensor.shape[0] == 3:
+                            tensors.append(tensor.contiguous())
+                        else:
+                            tensors.append(torch.zeros((3, target_size, target_size), dtype=torch.float32))
+
+                    except Exception:
+                        tensors.append(torch.zeros((3, target_size, target_size), dtype=torch.float32))
+
                 examples["pixel_values"] = tensors
                 return examples
 

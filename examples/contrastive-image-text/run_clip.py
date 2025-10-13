@@ -479,13 +479,14 @@ def main():
             def transform_fn(examples):
                 images = []
                 for img in examples[image_column]:
-                    if isinstance(img, dict) and "array" in img:
-                        tensor = torch.from_numpy(img["array"]).permute(2, 0, 1)
-                    elif hasattr(img, "size"):
-                        tensor = torch.from_numpy(np.asarray(img)).permute(2, 0, 1)
-                    else:
+                    try:
+                        arr = img["array"] if isinstance(img, dict) and "array" in img else np.asarray(img)
+                        if arr.ndim == 2:
+                            arr = np.repeat(arr[..., None], 3, axis=-1)
+                        tensor = torch.from_numpy(arr.copy()).permute(2, 0, 1)
+                        images.append(image_transformations(tensor))
+                    except Exception:
                         continue
-                    images.append(image_transformations(tensor))
                 examples["pixel_values"] = images
                 return examples
 

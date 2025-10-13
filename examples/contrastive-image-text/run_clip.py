@@ -481,12 +481,25 @@ def main():
                 for img in examples[image_column]:
                     try:
                         arr = img["array"] if isinstance(img, dict) and "array" in img else np.asarray(img)
-                        if arr.ndim == 2:
-                            arr = np.repeat(arr[..., None], 3, axis=-1)
+
+                        # Wymuszenie RGB
+                        if arr.ndim == 2:  # grayscale
+                            arr = np.stack([arr] * 3, axis=-1)
+                        elif arr.ndim == 3 and arr.shape[2] == 4:  # RGBA -> RGB
+                            arr = arr[..., :3]
+                        elif arr.ndim == 3 and arr.shape[2] == 1:  # jednokanałowe
+                            arr = np.repeat(arr, 3, axis=-1)
+                        elif arr.ndim != 3 or arr.shape[2] != 3:
+                            continue  # pomijamy nietypowe obrazy
+
                         tensor = torch.from_numpy(arr.copy()).permute(2, 0, 1)
-                        images.append(image_transformations(tensor))
+                        tensor = image_transformations(tensor)
+
+                        if tensor.ndim == 3 and tensor.shape[0] == 3:
+                            images.append(tensor)
                     except Exception:
                         continue
+
                 examples["pixel_values"] = images
                 return examples
 

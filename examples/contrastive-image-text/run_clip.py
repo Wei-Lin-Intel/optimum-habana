@@ -476,31 +476,26 @@ def main():
 
         elif dataset_mode in ("decoded", "pil"):
 
+            def to_rgb_array(img) -> np.ndarray:
+                if isinstance(img, dict) and "array" in img:
+                    arr = img["array"]
+                else:
+                    img_pil = img if isinstance(img, Image) else Image.fromarray(np.asarray(img))
+                    img_rgb = img_pil.convert("RGB")
+                    arr = np.asarray(img_rgb)
+                return arr
+
             def transform_fn(examples):
-                images = []
+                imgs = []
                 for img in examples[image_column]:
                     try:
-                        arr = img["array"] if isinstance(img, dict) and "array" in img else np.asarray(img)
-
-                        # Wymuszenie RGB
-                        if arr.ndim == 2:  # grayscale
-                            arr = np.stack([arr] * 3, axis=-1)
-                        elif arr.ndim == 3 and arr.shape[2] == 4:  # RGBA -> RGB
-                            arr = arr[..., :3]
-                        elif arr.ndim == 3 and arr.shape[2] == 1:  # jednokanałowe
-                            arr = np.repeat(arr, 3, axis=-1)
-                        elif arr.ndim != 3 or arr.shape[2] != 3:
-                            continue  # pomijamy nietypowe obrazy
-
+                        arr = to_rgb_array(img)
                         tensor = torch.from_numpy(arr.copy()).permute(2, 0, 1)
                         tensor = image_transformations(tensor)
-
-                        if tensor.ndim == 3 and tensor.shape[0] == 3:
-                            images.append(tensor)
+                        imgs.append(tensor)
                     except Exception:
                         continue
-
-                examples["pixel_values"] = images
+                examples["pixel_values"] = imgs
                 return examples
 
             def filter_fn(examples):

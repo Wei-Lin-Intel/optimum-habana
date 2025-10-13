@@ -477,25 +477,21 @@ def main():
         elif dataset_mode in ("decoded", "pil"):
 
             def to_rgb_array(img) -> np.ndarray:
-                if isinstance(img, dict) and "array" in img:
-                    arr = img["array"]
-                else:
-                    img_pil = img if isinstance(img, Image) else Image.fromarray(np.asarray(img))
-                    img_rgb = img_pil.convert("RGB")
-                    arr = np.asarray(img_rgb)
-                return arr
+                try:
+                    if isinstance(img, dict) and "array" in img:
+                        arr = img["array"]
+                    else:
+                        img_pil = img if isinstance(img, Image) else Image.fromarray(np.asarray(img))
+                        arr = np.asarray(img_pil.convert("RGB"))
+                    return arr
+                except Exception:
+                    return np.zeros((224, 224, 3), dtype=np.uint8)  # dummy black RGB
 
             def transform_fn(examples):
-                imgs = []
-                for img in examples[image_column]:
-                    try:
-                        arr = to_rgb_array(img)
-                        tensor = torch.from_numpy(arr.copy()).permute(2, 0, 1)
-                        tensor = image_transformations(tensor)
-                        imgs.append(tensor)
-                    except Exception:
-                        continue
-                examples["pixel_values"] = imgs
+                arrays = [to_rgb_array(img) for img in examples[image_column]]
+                tensors = [torch.from_numpy(np.ascontiguousarray(arr)).permute(2, 0, 1) for arr in arrays]
+                tensors = [image_transformations(t) for t in tensors]
+                examples["pixel_values"] = tensors
                 return examples
 
             def filter_fn(examples):

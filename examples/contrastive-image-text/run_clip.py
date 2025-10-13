@@ -487,26 +487,24 @@ def main():
                         arr = np.asarray(Image.fromarray(np.asarray(img)).convert("RGB"))
                     return arr
                 except Exception:
-                    # Return black placeholder for corrupt or invalid images
                     return np.zeros((224, 224, 3), dtype=np.uint8)
 
             def transform_fn(examples):
                 arrays = [to_rgb_array(img) for img in examples[image_column]]
                 tensors = []
-
                 target_size = getattr(config.vision_config, "image_size", 224)
 
                 for arr in arrays:
                     try:
-                        tensor = torch.from_numpy(np.ascontiguousarray(arr)).permute(2, 0, 1).float() / 255.0
-                        tensor = image_transformations(tensor)
+                        tensor = torch.from_numpy(arr.copy()).permute(2, 0, 1).float() / 255.0
 
-                        # Ensure consistent shape for all images
                         tensor = functional.resize(
                             tensor,
                             [target_size, target_size],
                             interpolation=functional.InterpolationMode.BICUBIC,
                         )
+
+                        tensor = image_transformations(tensor)
 
                         if tensor.ndim == 3 and tensor.shape[0] == 3:
                             tensors.append(tensor.contiguous())

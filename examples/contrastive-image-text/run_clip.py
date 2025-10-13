@@ -27,6 +27,7 @@ import sys
 from dataclasses import dataclass, field
 from typing import Optional
 
+import numpy as np
 import torch
 import transformers
 from datasets import load_dataset
@@ -434,22 +435,72 @@ def main():
         examples["attention_mask"] = text_inputs.attention_mask
         return examples
 
-    def transform_images(examples):
-        images = [read_image(image_file, mode=ImageReadMode.RGB) for image_file in examples[image_column]]
-        examples["pixel_values"] = [image_transformations(image) for image in images]
-        return examples
+    def detect_dataset_mode(dataset, image_column, logger=None):
+        """Detect dataset type: path, decoded array, or PIL."""
+        first_split = "train" if "train" in dataset else next(iter(dataset.keys()))
+        sample = dataset[first_split][0][image_column]
 
-    def filter_corrupt_images(examples):
-        """remove problematic images"""
-        valid_images = []
-        for image_file in examples[image_column]:
-            try:
-                Image.open(image_file)
-                valid_images.append(True)
-            except Exception:
-                valid_images.append(False)
-        return valid_images
+        if isinstance(sample, str):
+            mode = "path"
+        elif isinstance(sample, dict) and "array" in sample:
+            mode = "decoded"
+        elif hasattr(sample, "size"):  # PIL.Image.Image
+            mode = "pil"
+        else:
+            mode = "unknown"
 
+        if logger:
+            logger.info(f"Detected dataset image mode: {mode}")
+        return mode
+
+    def make_image_fns(dataset_mode, image_column, image_transformations):
+        """Return the correct (transform_fn, filter_fn) tuple based on dataset mode."""
+
+        if dataset_mode == "path":
+
+            def transform_fn(examples):
+                images = [read_image(p, mode=ImageReadMode.RGB) for p in examples[image_column]]
+                examples["pixel_values"] = [image_transformations(img) for img in images]
+                return examples
+
+            def filter_fn(examples):
+                valid = []
+                for path in examples[image_column]:
+                    try:
+                        with Image.open(path) as im:
+                            im.verify()
+                        valid.append(True)
+                    except Exception:
+                        valid.append(False)
+                return valid
+
+        elif dataset_mode in ("decoded", "pil"):
+
+            def transform_fn(examples):
+                images = []
+                for img in examples[image_column]:
+                    if isinstance(img, dict) and "array" in img:
+                        tensor = torch.from_numpy(img["array"]).permute(2, 0, 1)
+                    elif hasattr(img, "size"):
+                        tensor = torch.from_numpy(np.asarray(img)).permute(2, 0, 1)
+                    else:
+                        continue
+                    images.append(image_transformations(tensor))
+                examples["pixel_values"] = images
+                return examples
+
+            def filter_fn(examples):
+                return [img is not None for img in examples[image_column]]
+
+        else:
+            raise ValueError(f"Unsupported dataset mode: {dataset_mode}")
+
+        return transform_fn, filter_fn
+
+    dataset_mode = detect_dataset_mode(dataset, data_args.image_column, logger)
+    transform_images, filter_corrupt_images = make_image_fns(
+        dataset_mode, data_args.image_column, image_transformations
+    )
     if training_args.do_train:
         if "train" not in dataset:
             raise ValueError("--do_train requires a train dataset")

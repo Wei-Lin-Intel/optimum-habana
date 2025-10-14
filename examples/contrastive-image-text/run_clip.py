@@ -475,30 +475,24 @@ def main():
 
         elif dataset_mode in ("decoded", "pil"):
 
-            def to_rgb_pil(img):
-                try:
-                    if isinstance(img, dict) and "array" in img:
-                        return Image.fromarray(np.asarray(img["array"], dtype=np.uint8)).convert("RGB")
-                    elif isinstance(img, Image.Image):
-                        return img.convert("RGB")
-                    elif isinstance(img, np.ndarray):
-                        return Image.fromarray(img.astype(np.uint8)).convert("RGB")
-                    else:
-                        return Image.fromarray(np.asarray(img).astype(np.uint8)).convert("RGB")
-                except Exception:
-                    return Image.fromarray(np.zeros((224, 224, 3), dtype=np.uint8))
-
             def transform_fn(examples):
-                images = [to_rgb_pil(img) for img in examples[image_column]]
                 tensors = []
                 target_size = getattr(config.vision_config, "image_size", 224)
 
-                for img in images:
+                for img in examples[image_column]:
                     try:
+                        if isinstance(img, dict) and "array" in img:
+                            img = Image.fromarray(np.asarray(img["array"], dtype=np.uint8)).convert("RGB")
+                        elif isinstance(img, np.ndarray):
+                            img = Image.fromarray(img.astype(np.uint8)).convert("RGB")
+                        elif not isinstance(img, Image.Image):
+                            img = Image.fromarray(np.asarray(img, dtype=np.uint8)).convert("RGB")
+
                         tensor = image_transformations(img)
                         if tensor.ndim == 3 and tensor.shape[0] == 3:
                             tensors.append(tensor.contiguous())
                         else:
+                            logger.warning(f"Unexpected tensor shape: {tensor.shape}")
                             tensors.append(torch.zeros((3, target_size, target_size), dtype=torch.float32))
                     except Exception as e:
                         logger.warning(f"Image transform failed: {e}")

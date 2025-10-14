@@ -500,11 +500,14 @@ def main():
 
                         tensor = functional.resize(
                             tensor,
-                            [target_size, target_size],
-                            interpolation=functional.InterpolationMode.BICUBIC,
+                            [image_processor.size["height"], image_processor.size["width"]],
+                            interpolation=InterpolationMode.BICUBIC,
                         )
 
-                        tensor = image_transformations(tensor)
+                        tensor = functional.center_crop(
+                            tensor, [image_processor.size["height"], image_processor.size["width"]]
+                        )
+                        tensor = functional.normalize(tensor, image_processor.image_mean, image_processor.image_std)
 
                         if tensor.ndim == 3 and tensor.shape[0] == 3:
                             tensors.append(tensor.contiguous())

@@ -29,13 +29,12 @@ from typing import Optional
 
 import numpy as np
 import torch
-import torchvision.transforms.functional as functional
 import transformers
 from datasets import load_dataset
 from habana_dataloader_trainer import HabanaDataloaderTrainer
 from PIL import Image
+from torchvision import transforms
 from torchvision.io import ImageReadMode, read_image
-from torchvision.transforms import CenterCrop, ConvertImageDtype, Normalize, Resize
 from torchvision.transforms.functional import InterpolationMode
 from transformers import (
     AutoImageProcessor,
@@ -205,23 +204,22 @@ dataset_name_mapping = {
 }
 
 
-# We use torchvision for faster image pre-processing. The transforms are implemented as nn.Module,
-# so we jit it to be faster.
-class Transform(torch.nn.Module):
+# We use torchvision for efficient image preprocessing.
+# This transform pipeline operates directly on PIL images,
+# converting them to normalized float tensors ready for the model.
+class Transform:
     def __init__(self, image_size, mean, std):
-        super().__init__()
-        self.transforms = torch.nn.Sequential(
-            Resize([image_size], interpolation=InterpolationMode.BICUBIC),
-            CenterCrop(image_size),
-            ConvertImageDtype(torch.float),
-            Normalize(mean, std),
+        self.transforms = transforms.Compose(
+            [
+                transforms.Resize((image_size, image_size), interpolation=InterpolationMode.BICUBIC),
+                transforms.CenterCrop(image_size),
+                transforms.ToTensor(),  # PIL → Tensor [C,H,W] float32
+                transforms.Normalize(mean=mean, std=std),
+            ]
         )
 
-    def forward(self, x) -> torch.Tensor:
-        """`x` should be an instance of `PIL.Image.Image`"""
-        with torch.no_grad():
-            x = self.transforms(x)
-        return x
+    def __call__(self, img):
+        return self.transforms(img)
 
 
 def collate_fn(examples):

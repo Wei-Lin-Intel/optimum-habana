@@ -485,14 +485,20 @@ def main():
                             img = Image.fromarray(np.asarray(img["array"], dtype=np.uint8)).convert("RGB")
                         elif isinstance(img, np.ndarray):
                             img = Image.fromarray(img.astype(np.uint8)).convert("RGB")
-                        elif not isinstance(img, Image.Image):
+                        elif isinstance(img, Image.Image):
+                            img = img.convert("RGB")
+                        else:
                             img = Image.fromarray(np.asarray(img, dtype=np.uint8)).convert("RGB")
 
-                        tensor = image_transformations(img)
+                        tensor = image_transformations(img) 
+
+                        if tensor.ndim == 3 and tensor.shape[0] == 1:
+                            tensor = tensor.repeat(3, 1, 1)
+
                         if tensor.ndim == 3 and tensor.shape[0] == 3:
                             tensors.append(tensor.contiguous())
                         else:
-                            logger.warning(f"Unexpected tensor shape: {tensor.shape}")
+                            logger.warning(f"Unexpected tensor shape after channel fix: {tensor.shape}")
                             tensors.append(torch.zeros((3, target_size, target_size), dtype=torch.float32))
                     except Exception as e:
                         logger.warning(f"Image transform failed: {e}")

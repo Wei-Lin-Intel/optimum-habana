@@ -477,44 +477,33 @@ def main():
 
         elif dataset_mode in ("decoded", "pil"):
 
-            def to_rgb_array(img):
+            def to_rgb_pil(img):
                 try:
                     if isinstance(img, dict) and "array" in img:
-                        arr = np.asarray(img["array"], dtype=np.uint8)
+                        return Image.fromarray(np.asarray(img["array"], dtype=np.uint8)).convert("RGB")
                     elif isinstance(img, Image.Image):
-                        arr = np.asarray(img.convert("RGB"))
+                        return img.convert("RGB")
+                    elif isinstance(img, np.ndarray):
+                        return Image.fromarray(img.astype(np.uint8)).convert("RGB")
                     else:
-                        arr = np.asarray(Image.fromarray(np.asarray(img)).convert("RGB"))
-                    return arr
+                        return Image.fromarray(np.asarray(img).astype(np.uint8)).convert("RGB")
                 except Exception:
-                    return np.zeros((224, 224, 3), dtype=np.uint8)
+                    return Image.fromarray(np.zeros((224, 224, 3), dtype=np.uint8))
 
             def transform_fn(examples):
-                arrays = [to_rgb_array(img) for img in examples[image_column]]
+                images = [to_rgb_pil(img) for img in examples[image_column]]
                 tensors = []
                 target_size = getattr(config.vision_config, "image_size", 224)
 
-                for arr in arrays:
+                for img in images:
                     try:
-                        tensor = torch.from_numpy(arr.copy()).permute(2, 0, 1).float() / 255.0
-
-                        tensor = functional.resize(
-                            tensor,
-                            [image_processor.size["height"], image_processor.size["width"]],
-                            interpolation=InterpolationMode.BICUBIC,
-                        )
-
-                        tensor = functional.center_crop(
-                            tensor, [image_processor.size["height"], image_processor.size["width"]]
-                        )
-                        tensor = functional.normalize(tensor, image_processor.image_mean, image_processor.image_std)
-
+                        tensor = image_transformations(img)
                         if tensor.ndim == 3 and tensor.shape[0] == 3:
                             tensors.append(tensor.contiguous())
                         else:
                             tensors.append(torch.zeros((3, target_size, target_size), dtype=torch.float32))
-
-                    except Exception:
+                    except Exception as e:
+                        logger.warning(f"Image transform failed: {e}")
                         tensors.append(torch.zeros((3, target_size, target_size), dtype=torch.float32))
 
                 examples["pixel_values"] = tensors

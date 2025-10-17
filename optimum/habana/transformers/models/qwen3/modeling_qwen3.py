@@ -985,9 +985,9 @@ class GaudiQwen3ForCausalLM(Qwen3ForCausalLM):
                 s = i * 16384
                 e = (i + 1) * 16384 if i < seq_tiles - 1 else batched_len
                 logit_slice = self.lm_head(hidden_states[s:e, :]).float()
-                logits_list.append(logit_slice.unsqueeze(0))
+                logits_list.append(logit_slice)
                 htcore.mark_step()
-            logits = torch.cat(logits_list, dim=0)
+            logits = torch.cat(logits_list, dim=0).reshape(bs, seq_len, -1)
         else:
             logits = self.lm_head(hidden_states[:, slice_indices, :]).float()
 
